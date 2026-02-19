@@ -65,7 +65,6 @@ class DoneEvent:
 AgentEvent = StatusEvent | TextChunk | DoneEvent
 
 _TOOL_STATUS: dict[str, str] = {
-    "new_search_session": "starting new search session",
     "keyword_search": "keyword searching vault",
     "vector_search": "semantic searching vault for",
     "obsidian_global_search": "searching vault for",
@@ -95,7 +94,9 @@ _EXTRA_MCP_SERVERS = [
 
 
 def _status_for_tool(name: str, args: dict[str, JsonValue]) -> str:
-    prefix = _TOOL_STATUS.get(name, f"calling {name}")
+    prefix = _TOOL_STATUS.get(name, "")
+    if not prefix:
+        return ""
     queries = args.get("queries")
     detail = (
         args.get("filePath")
@@ -232,7 +233,9 @@ class VaultAgent:
                 except json.JSONDecodeError:
                     args = {}
 
-                yield StatusEvent(message=_status_for_tool(tool_name, args))
+                status = _status_for_tool(tool_name, args)
+                if status:
+                    yield StatusEvent(message=status)
                 result = await self._call_tool(tool_name, args)
                 messages.append(
                     _Message(role="tool", tool_call_id=tc.id, content=result)
