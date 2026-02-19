@@ -6,7 +6,6 @@ import typing
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import Literal
 
 import litellm
 from mcp import ClientSession, StdioServerParameters
@@ -290,7 +289,7 @@ class VaultAgent:
     async def _agent_loop(  # noqa: PLR0914
         self, messages: list[_Message], use_full_tools: bool = True
     ) -> AsyncGenerator[AgentEvent | tuple[str, str]]:
-        phase: Literal["search", "edit"] = "search"
+        phase: typing.Literal["search", "edit"] = "search"
         tool_log: list[tuple[str, dict[str, JsonValue], str]] = []
 
         while True:
