@@ -1,0 +1,87 @@
+[project]
+name = "dragonglass"
+dynamic = ["version", "readme"]
+description = "LLM-powered Obsidian vault agent with TUI"
+license = { text = "MIT" }
+requires-python = "~=3.11"
+dependencies = [
+  "litellm >= 1.60",
+  "textual >= 3.0",
+  "httpx >= 0.27",
+  "pydantic >= 2.0",
+  "pydantic-settings >= 2.0",
+  "mcp >= 1.4",
+  "python-dotenv >= 1.0",
+  "fastmcp >= 2.0",
+]
+
+[[project.authors]]
+name = "Anton Lu"
+email = "anton96lu@gmail.com"
+
+[project.urls]
+repository = "https://github.com/antolu/dragonglass"
+
+[project.optional-dependencies]
+dev = ["pre-commit", "ruff", "mypy"]
+
+[project.scripts]
+dragonglass = "dragonglass.cli:main"
+
+[build-system]
+requires = ["setuptools >= 61", "setuptools-scm[toml] ~= 6.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "dragonglass/_version.py"
+local_scheme = "no-local-version"
+
+[tool.setuptools.dynamic]
+readme = { file = ["README.md"], content-type = "text/markdown" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dragonglass*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+dragonglass = ["py.typed"]
+
+[tool.black]
+target-version = ["py311"]
+line-length = 88
+include = '\.pyi?$'
+
+[tool.ruff]
+exclude = [
+  ".bzr", ".direnv", ".eggs", ".git", ".hg", ".mypy_cache", ".nox",
+  ".pants.d", ".pytype", ".ruff_cache", ".svn", ".tox", ".venv",
+  "__pypackages__", "_build", "buck-out", "build", "dist",
+  "node_modules", "venv", ".venv",
+]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "F", "E", "W", "I", "N", "UP", "PLC", "PLE", "PLW", "PLR",
+  "TRY", "PERF", "RUF",
+  "B", "C4", "FBT", "A", "EM", "ISC", "FA", "G", "PIE", "PYI",
+  "PT", "Q", "RSE", "RET", "SLF", "SIM",
+]
+fixable = ["ALL"]
+ignore = ["E501", "W505", "ISC001", "PLW2901", "N806", "G004", "TRY003", "EM101", "EM102", "FBT001", "FBT002"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.mypy]
+disallow_untyped_defs = true
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = ["litellm.*", "textual.*", "fastmcp.*"]
+ignore_missing_imports = true
+
+[tool.pyright]
+reportPrivateImportUsage = "none"
