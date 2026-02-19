@@ -1,0 +1,9 @@
+{
+  "name": "dragonglass-mcp-deps",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@modelcontextprotocol/server-sequential-thinking": "latest",
+    "obsidian-mcp-server": "latest"
+  }
+}

@@ -85,7 +85,7 @@ _TOOL_STATUS: dict[str, str] = {
 _EXTRA_MCP_SERVERS = [
     StdioServerParameters(
         command="npx",
-        args=["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        args=["@modelcontextprotocol/server-sequential-thinking"],
     ),
     StdioServerParameters(
         command="uvx",
