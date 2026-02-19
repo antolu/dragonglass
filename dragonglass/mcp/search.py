@@ -71,17 +71,21 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         return {"total_found": len(session.file_paths), "query_count": len(queries)}
 
     @m.tool()
-    async def vector_search(query: str, top_n: int = 10) -> list[dict[str, Any]]:
+    async def vector_search(
+        query: str, top_n: int = 10, min_score: float = 0.35
+    ) -> list[dict[str, Any]]:
         """Perform semantic (vector) search.
         If keyword_search was called previously in this session, this search is restricted
         to those files (allowlist). If no keywords were found, it falls back to a global search.
+
+        A min_score of 0.35-0.40 is generally good for filtering noise.
         """
         session = get_current_session()
         allowlist = session.allowlist if session else []
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                payload = {"text": query, "top_n": top_n}
+                payload = {"text": query, "top_n": top_n, "min_score": min_score}
                 if allowlist:
                     payload["allowlist"] = allowlist
 
@@ -90,7 +94,8 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                     json=payload,
                 )
                 resp.raise_for_status()
-                return resp.json().get("results", [])
+                results = resp.json().get("results", [])
+                return [r for r in results if r.get("score", 0) >= min_score]
         except Exception as e:
             return [{"error": f"Vector search error: {e}"}]
 
