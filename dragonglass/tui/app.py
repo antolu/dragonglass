@@ -53,7 +53,8 @@ class DragonglassApp(App[None]):
         super().__init__()
         self._agent: VaultAgent | None = None
 
-    def compose(self) -> ComposeResult:  # noqa: PLR6301
+    @typing.override
+    def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield RichLog(id="log", wrap=True, highlight=True, markup=True)
         yield Input(id="input", placeholder="Type a prompt or /help…")
@@ -65,8 +66,18 @@ class DragonglassApp(App[None]):
         log = self.query_one("#log", RichLog)
         log.write("[dim]Connecting to vault…[/dim]")
         await self._agent.initialise()
+        if not self._agent.agents_note_found:
+            log.write(
+                f"[bold yellow]⚠ Agents note not found[/bold yellow] "
+                f"[dim]({settings.agents_note_path})[/dim]\n"
+                "[dim]Create it in your vault to give the agent custom instructions.[/dim]\n"
+            )
         log.write("[dim]Ready. Type your prompt below.[/dim]\n")
         self.query_one("#input", Input).focus()
+
+    async def on_unmount(self) -> None:
+        if self._agent is not None:
+            await self._agent.close()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         message = event.value.strip()
