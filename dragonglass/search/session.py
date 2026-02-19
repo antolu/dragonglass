@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import dataclasses
 import uuid
-from dataclasses import dataclass
 
 
-@dataclass
+@dataclasses.dataclass
 class ScoredResult:
     path: str
     score: float

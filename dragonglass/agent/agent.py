@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import collections.abc
+import contextlib
+import dataclasses
 import json
 import re
 import typing
-from collections.abc import AsyncGenerator
-from contextlib import AsyncExitStack
-from dataclasses import dataclass
 
 import litellm
 from mcp import ClientSession, StdioServerParameters
@@ -48,22 +48,22 @@ class _Message(typing.TypedDict, total=False):
     tool_call_id: str
 
 
-@dataclass
+@dataclasses.dataclass
 class StatusEvent:
     message: str
 
 
-@dataclass
+@dataclasses.dataclass
 class TextChunk:
     text: str
 
 
-@dataclass
+@dataclasses.dataclass
 class DoneEvent:
     pass
 
 
-@dataclass
+@dataclasses.dataclass
 class UsageEvent:
     prompt_tokens: int
     completion_tokens: int
@@ -197,7 +197,7 @@ class VaultAgent:
         self._litellm_tools: list[_Tool] = []
         self._base_tools: list[_Tool] = []
         self._stdio_sessions: list[ClientSession] = []
-        self._exit_stack = AsyncExitStack()
+        self._exit_stack = contextlib.AsyncExitStack()
         self._search = create_search_server(settings)
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
@@ -256,7 +256,9 @@ class VaultAgent:
             self._litellm_tools.append(lt_tool)
             self._base_tools.append(lt_tool)
 
-    async def run(self, user_message: str) -> AsyncGenerator[AgentEvent]:
+    async def run(
+        self, user_message: str
+    ) -> collections.abc.AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
         self._history.append(_Message(role="user", content=user_message))
         messages: list[_Message] = [
@@ -288,7 +290,7 @@ class VaultAgent:
 
     async def _agent_loop(  # noqa: PLR0914
         self, messages: list[_Message], use_full_tools: bool = True
-    ) -> AsyncGenerator[AgentEvent | tuple[str, str]]:
+    ) -> collections.abc.AsyncGenerator[AgentEvent | tuple[str, str]]:
         phase: typing.Literal["search", "edit"] = "search"
         tool_log: list[tuple[str, dict[str, JsonValue], str]] = []
 
@@ -409,7 +411,7 @@ class VaultAgent:
 class _StdioSessionContext:
     def __init__(self, params: StdioServerParameters) -> None:
         self._params = params
-        self._inner_stack = AsyncExitStack()
+        self._inner_stack = contextlib.AsyncExitStack()
 
     async def __aenter__(self) -> ClientSession:
         read, write = await self._inner_stack.enter_async_context(

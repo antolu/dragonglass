@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import typing
 import urllib.parse
-from typing import Any
 
 import fastmcp
 import httpx
@@ -47,7 +47,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         return {"session_id": session.id, "status": "created"}
 
     @m.tool()
-    async def keyword_search(queries: list[str]) -> dict[str, Any]:
+    async def keyword_search(queries: list[str]) -> dict[str, typing.Any]:
         """Perform keyword search in the vault using multiple query strings.
         Queries can use prefixes like file:, tag:, section:, property:.
         Results across ALL queries are merged into the current session's allowlist.
@@ -73,7 +73,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
     @m.tool()
     async def vector_search(
         query: str, top_n: int = 10, min_score: float = 0.35
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, typing.Any]]:
         """Perform semantic (vector) search.
         If keyword_search was called previously in this session, this search is restricted
         to those files (allowlist). If no keywords were found, it falls back to a global search.
