@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import TextContent
 
 from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.config import Settings
@@ -145,11 +146,9 @@ class VaultAgent:
                 _Tool(
                     type="function",
                     function=_ToolFunction(
-                        name=tool.name,
-                        description=tool.description or "",
-                        parameters=tool.inputSchema
-                        if hasattr(tool, "inputSchema")
-                        else {},
+                        name=getattr(tool, "name", ""),
+                        description=getattr(tool, "description", "") or "",
+                        parameters=getattr(tool, "inputSchema", {}),
                     ),
                 )
             )
@@ -161,8 +160,15 @@ class VaultAgent:
             _Message(role="system", content=self._system_prompt),
             *self._history,
         ]
-        async for event in self._agent_loop(messages):
-            yield event
+        gen = self._agent_loop(messages)
+        try:
+            async for event in gen:
+                yield event
+        except Exception as exc:
+            yield StatusEvent(message=f"Error: {exc}")
+            yield DoneEvent()
+        finally:
+            await gen.aclose()
 
     async def _agent_loop(
         self, messages: list[_Message]
@@ -226,8 +232,9 @@ class VaultAgent:
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
         if name == "search_vault":
             try:
-                result = await self._omnisearch.call_tool(name, args)
-                return result.content[0].text if result.content else "[]"
+                omni_result = await self._omnisearch.call_tool(name, args)
+                first = omni_result.content[0] if omni_result.content else None
+                return first.text if isinstance(first, TextContent) else "[]"
             except Exception as exc:
                 return f"Omnisearch error: {exc}"
 
@@ -235,8 +242,9 @@ class VaultAgent:
             try:
                 tools = await session.list_tools()
                 if any(t.name == name for t in tools.tools):
-                    result = await session.call_tool(name, args)
-                    return result.content[0].text if result.content else ""
+                    call_result = await session.call_tool(name, args)
+                    first = call_result.content[0] if call_result.content else None
+                    return first.text if isinstance(first, TextContent) else ""
             except Exception:
                 continue
 

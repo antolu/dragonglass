@@ -105,14 +105,18 @@ class DragonglassApp(App[None]):
         assert self._agent is not None
 
         response_parts: list[str] = []
-        async for event in self._agent.run(message):
-            match event:
-                case StatusEvent(message=status):
-                    log.write(f"[dim italic]⟳ {status}…[/dim italic]")
-                case TextChunk(text=chunk):
-                    response_parts.append(chunk)
-                case DoneEvent():
-                    break
+        gen = self._agent.run(message)
+        try:
+            async for event in gen:
+                match event:
+                    case StatusEvent(message=status):
+                        log.write(f"[dim italic]⟳ {status}…[/dim italic]")
+                    case TextChunk(text=chunk):
+                        response_parts.append(chunk)
+                    case DoneEvent():
+                        break
+        finally:
+            await gen.aclose()
 
         if response_parts:
             log.write(
