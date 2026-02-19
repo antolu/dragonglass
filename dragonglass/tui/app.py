@@ -6,7 +6,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Footer, Header, Input, RichLog
 
-from dragonglass.agent.agent import DoneEvent, StatusEvent, TextChunk, VaultAgent
+from dragonglass.agent.agent import (
+    DoneEvent,
+    StatusEvent,
+    TextChunk,
+    UsageEvent,
+    VaultAgent,
+)
 from dragonglass.config import get_settings
 
 _SLASH_COMMANDS: dict[str, str | None] = {
@@ -124,6 +130,12 @@ class DragonglassApp(App[None]):
                         log.write(f"[dim italic]⟳ {status}…[/dim italic]")
                     case TextChunk(text=chunk):
                         response_parts.append(chunk)
+                    case UsageEvent(
+                        prompt_tokens=pt, completion_tokens=ct, session_total=st
+                    ):
+                        log.write(
+                            f"[dim]i last call: {pt:,} prompt + {ct:,} completion  │  session total: {st:,}[/dim]"
+                        )
                     case DoneEvent():
                         break
         finally:
