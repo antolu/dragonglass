@@ -13,7 +13,7 @@ from mcp.types import TextContent
 
 from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.config import Settings
-from dragonglass.mcp.omnisearch import create_omnisearch_server
+from dragonglass.mcp.search import create_search_server
 
 JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
 
@@ -65,7 +65,9 @@ class DoneEvent:
 AgentEvent = StatusEvent | TextChunk | DoneEvent
 
 _TOOL_STATUS: dict[str, str] = {
-    "search_vault": "searching vault for",
+    "new_search_session": "starting new search session",
+    "keyword_search": "keyword searching vault",
+    "vector_search": "semantic searching vault for",
     "obsidian_global_search": "searching vault for",
     "obsidian_read_note": "reading note",
     "obsidian_update_note": "updating note",
@@ -76,6 +78,8 @@ _TOOL_STATUS: dict[str, str] = {
     "obsidian_manage_tags": "updating tags of",
     "fetch": "fetching",
     "sequentialthinking": "thinking",
+    "open_note": "opening",
+    "run_command": "running command",
 }
 
 _EXTRA_MCP_SERVERS = [
@@ -92,9 +96,15 @@ _EXTRA_MCP_SERVERS = [
 
 def _status_for_tool(name: str, args: dict[str, JsonValue]) -> str:
     prefix = _TOOL_STATUS.get(name, f"calling {name}")
+    queries = args.get("queries")
     detail = (
         args.get("filePath")
         or args.get("dirPath")
+        or (
+            ", ".join(str(q) for q in queries)
+            if isinstance(queries, list) and queries
+            else None
+        )
         or args.get("query")
         or args.get("url")
         or ""
@@ -112,10 +122,13 @@ class VaultAgent:
         self._litellm_tools: list[_Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = AsyncExitStack()
-        self._omnisearch = create_omnisearch_server(settings)
+        self._search = create_search_server(settings)
+        self.agents_note_found: bool = False
 
     async def initialise(self) -> None:
-        self._system_prompt = await load_system_prompt(self._settings)
+        self._system_prompt, self.agents_note_found = await load_system_prompt(
+            self._settings
+        )
         await self._connect_mcp_servers()
 
     async def _connect_mcp_servers(self) -> None:
@@ -141,7 +154,7 @@ class VaultAgent:
             except Exception:
                 pass
 
-        for tool in await self._omnisearch.list_tools():
+        for tool in await self._search.list_tools():
             self._litellm_tools.append(
                 _Tool(
                     type="function",
@@ -153,7 +166,7 @@ class VaultAgent:
                 )
             )
 
-    async def run(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
+    async def run(self, user_message: str) -> AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
         self._history.append(_Message(role="user", content=user_message))
         messages: list[_Message] = [
@@ -170,19 +183,15 @@ class VaultAgent:
         finally:
             await gen.aclose()
 
-    async def _agent_loop(
-        self, messages: list[_Message]
-    ) -> AsyncGenerator[AgentEvent, None]:
+    async def _agent_loop(self, messages: list[_Message]) -> AsyncGenerator[AgentEvent]:
         while True:
-            kwargs: dict[str, str | bool | list[_Tool] | list[_Message]] = {
+            kwargs: dict[str, typing.Any] = {
                 "model": self._settings.llm_model,
                 "messages": messages,
                 "stream": False,
             }
             if self._litellm_tools:
                 kwargs["tools"] = self._litellm_tools
-            if self._settings.gemini_api_key:
-                kwargs["api_key"] = self._settings.gemini_api_key
 
             response = await litellm.acompletion(**kwargs)
 
@@ -230,13 +239,20 @@ class VaultAgent:
                 )
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
-        if name == "search_vault":
+        search_tools = {
+            "new_search_session",
+            "keyword_search",
+            "vector_search",
+            "open_note",
+            "run_command",
+        }
+        if name in search_tools:
             try:
-                omni_result = await self._omnisearch.call_tool(name, args)
-                first = omni_result.content[0] if omni_result.content else None
+                result = await self._search.call_tool(name, args)
+                first = result.content[0] if result.content else None
                 return first.text if isinstance(first, TextContent) else "[]"
             except Exception as exc:
-                return f"Omnisearch error: {exc}"
+                return f"Search server error: {exc}"
 
         for session in self._stdio_sessions:
             try:
