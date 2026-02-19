@@ -10,9 +10,9 @@ class Settings(BaseSettings):
 
     obsidian_api_url: str = "http://localhost:27123"
     obsidian_api_key: str = ""
-    omnisearch_url: str = "http://localhost:51361"
-    llm_model: str = "gemini/gemini-2.0-flash"
-    gemini_api_key: str = ""
+    ollama_url: str = "http://localhost:11434"
+    vector_search_url: str = "http://localhost:51362"
+    llm_model: str = "gemini/gemini-2.5-flash"
     agents_note_path: str = "AGENTS.md"
 
 
