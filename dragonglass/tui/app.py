@@ -6,6 +6,7 @@ import typing
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Input, RichLog
 
 from dragonglass.agent.agent import (
@@ -34,12 +35,23 @@ Screen {
     background: $surface;
 }
 
-#log {
-    border: solid $primary-darken-2;
+#main-area {
     height: 1fr;
     margin: 1 1 0 1;
+}
+
+#log {
+    border: solid $primary-darken-2;
+    width: 1fr;
     padding: 0 1;
     scrollbar-gutter: stable;
+}
+
+#stats {
+    border: solid $primary-darken-3;
+    width: 26;
+    margin-left: 1;
+    padding: 0 1;
 }
 
 #input {
@@ -61,17 +73,36 @@ class DragonglassApp(App[None]):
         super().__init__()
         self._query_queue: asyncio.Queue[str | None] | None = None
         self._agent_task: asyncio.Task[None] | None = None
+        self._session_total: int = 0
+        self._last_prompt: int = 0
+        self._last_completion: int = 0
 
     @typing.override
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield RichLog(id="log", wrap=True, highlight=True, markup=True)
+        with Horizontal(id="main-area"):
+            yield RichLog(id="log", wrap=True, highlight=True, markup=True)
+            yield RichLog(id="stats", wrap=False, highlight=False, markup=True)
         yield Input(id="input", placeholder="Type a prompt or /help…")
         yield Footer()
 
     async def on_mount(self) -> None:
         self._query_queue = asyncio.Queue()
         self._agent_task = asyncio.create_task(self._agent_worker())
+        self._refresh_stats()
+
+    def _refresh_stats(self) -> None:
+        stats = self.query_one("#stats", RichLog)
+        stats.clear()
+        stats.write("[dim bold]tokens[/dim bold]")
+        stats.write("")
+        stats.write("[dim]prompt[/dim]")
+        stats.write(f"  {self._last_prompt:,}")
+        stats.write("[dim]completion[/dim]")
+        stats.write(f"  {self._last_completion:,}")
+        stats.write("")
+        stats.write("[dim]session[/dim]")
+        stats.write(f"  {self._session_total:,}")
 
     async def _agent_worker(self) -> None:
         settings = get_settings()
@@ -111,15 +142,16 @@ class DragonglassApp(App[None]):
             async for event in gen:
                 match event:
                     case StatusEvent(message=status):
-                        log.write(f"[dim italic]⟳ {status}…[/dim italic]")
+                        self.notify(status, timeout=3)
                     case TextChunk(text=chunk):
                         response_parts.append(chunk)
                     case UsageEvent(
                         prompt_tokens=pt, completion_tokens=ct, session_total=st
                     ):
-                        log.write(
-                            f"[dim]i last call: {pt:,} prompt + {ct:,} completion  │  session total: {st:,}[/dim]"
-                        )
+                        self._last_prompt = pt
+                        self._last_completion = ct
+                        self._session_total = st
+                        self._refresh_stats()
                     case DoneEvent():
                         break
         finally:
