@@ -51,7 +51,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         """Perform keyword search in the vault using multiple query strings.
         Queries can use prefixes like file:, tag:, section:, property:.
         Results across ALL queries are merged into the current session's allowlist.
-        Returns the total number of unique files found.
+        Returns the total number of unique files found and a preview of the first paths.
         """
         session = get_current_session()
         if not session:
@@ -68,7 +68,12 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                 found_paths.update(paths)
 
         session.add_keyword_results(list(found_paths))
-        return {"total_found": len(session.file_paths), "query_count": len(queries)}
+        all_paths = sorted(session.file_paths)
+        return {
+            "total_found": len(all_paths),
+            "query_count": len(queries),
+            "preview_paths": all_paths[:10],
+        }
 
     @m.tool()
     async def vector_search(
@@ -82,10 +87,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         """
         session = get_current_session()
         allowlist = session.allowlist if session else []
+        effective_min = 0.5 if allowlist else min_score
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                payload = {"text": query, "top_n": top_n, "min_score": min_score}
+                payload = {"text": query, "top_n": top_n, "min_score": effective_min}
                 if allowlist:
                     payload["allowlist"] = allowlist
 
@@ -95,7 +101,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                 )
                 resp.raise_for_status()
                 results = resp.json().get("results", [])
-                return [r for r in results if r.get("score", 0) >= min_score]
+                return [r for r in results if r.get("score", 0) >= effective_min]
         except Exception as e:
             return [{"error": f"Vector search error: {e}"}]
 
