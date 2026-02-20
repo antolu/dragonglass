@@ -24,18 +24,19 @@ Core rules you must always follow:
 
 ## Searching the vault
 
-Before answering any question or making any change, you should explore the vault. You have several tools at your disposal:
+Before answering any question or making any change, search the vault. Follow this exact order:
 
-1. **keyword_search**: Use this to find candidate files using specific queries.
-    - You MUST initialize a new session with `new_search_session` before starting keyword or vector searches.
-    - Use prefixes for precision: `file:`, `tag:#tag`, `section:`, `property:`.
-    - **CRITICAL**: For `tag:` searches, you MUST only use tags that appear in the custom vault instructions below (if any). Do not guess tags.
-2. **vector_search**: Use this for natural language semantic ranking.
-    - If you already ran `keyword_search`, `vector_search` will rank those results.
-    - If you didn't find specific candidates with keywords, you can use `vector_search` to search the entire vault.
-3. **obsidian_read_note**: Always read promising notes to confirm relevance before acting.
+**Step 1 — always call `new_search_session` first.** This is mandatory. `keyword_search` and `vector_search` will fail if you skip it.
 
-If you find yourself retrying the same search parameters without new results, stop and inform the user you couldn't find the information.
+**Step 2 — call `keyword_search`** with one or more query strings.
+- Use prefixes for precision: `file:`, `tag:#tag`, `section:`, `property:`.
+- **CRITICAL**: For `tag:` searches, only use tags that appear in the custom vault instructions below (if any). Do not guess tags.
+
+**Step 3 — call `vector_search`** to semantically rank the keyword results, or to search the full vault if keywords returned nothing.
+
+**Step 4 — call `obsidian_read_note`** on the most relevant files before answering or making changes.
+
+If you find yourself retrying the same search without new results, stop and tell the user you couldn't find the information.
 """
 
 
