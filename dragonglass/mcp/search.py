@@ -20,21 +20,97 @@ async def _keyword_search_task(
     headers: dict[str, str],
 ) -> list[str]:
     try:
-        resp = await client.get(
-            f"{obsidian_url}/search/",
-            params={"query": query},
+        resp = await client.post(
+            f"{obsidian_url}/search/simple/",
+            params={"query": query, "contextLength": 0},
             headers=headers,
+        )
+        logger.debug(
+            "_keyword_search_task  query=%r  status=%d  raw_hits=%d  paths=%s",
+            query,
+            resp.status_code,
+            len(resp.json()) if resp.status_code == httpx.codes.OK else 0,
+            [r.get("filename", "") for r in resp.json()]
+            if resp.status_code == httpx.codes.OK
+            else resp.text[:300],
         )
         if resp.status_code == httpx.codes.OK:
             results = resp.json()
-            return [
-                r.get("path", r.get("filename", ""))
-                for r in results
-                if r.get("path") or r.get("filename")
-            ]
+            return [r["filename"] for r in results if r.get("filename")]
     except Exception:
         logger.exception("keyword search failed for query %r", query)
     return []
+
+
+async def _do_keyword_search(
+    settings: Settings, queries: list[str]
+) -> dict[str, typing.Any]:
+    session = get_current_session()
+    if not session:
+        return {"error": "No active search session. Call new_search_session first."}
+
+    found_paths: set[str] = set()
+    logger.debug("keyword_search  queries=%s", queries)
+
+    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+        headers = {"Authorization": f"Bearer {settings.obsidian_api_key}"}
+        for query in queries:
+            paths = await _keyword_search_task(
+                client, query, settings.obsidian_api_url, headers
+            )
+            found_paths.update(paths)
+
+    session.add_keyword_results(list(found_paths))
+    all_paths = sorted(session.file_paths)
+    logger.debug("keyword_search  session_paths=%s", all_paths)
+    return {
+        "total_found": len(all_paths),
+        "query_count": len(queries),
+        "preview_paths": all_paths[:10],
+    }
+
+
+async def _do_vector_search(
+    settings: Settings, query: str, top_n: int, min_score: float
+) -> list[dict[str, typing.Any]]:
+    session = get_current_session()
+    allowlist = session.allowlist if session else []
+    effective_min = 0.5 if allowlist else min_score
+
+    logger.debug(
+        "vector_search  query=%r  top_n=%d  min_score=%.2f  allowlist=%d files",
+        query,
+        top_n,
+        effective_min,
+        len(allowlist),
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            payload: dict[str, typing.Any] = {
+                "text": query,
+                "top_n": top_n,
+                "min_score": effective_min,
+            }
+            if allowlist:
+                payload["allowlist"] = allowlist
+
+            resp = await client.post(
+                f"{settings.vector_search_url}/search/text",
+                json=payload,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+            filtered = [r for r in results if r.get("score", 0) >= effective_min]
+            logger.debug(
+                "vector_search  returned=%d  after_filter=%d  results=%s",
+                len(results),
+                len(filtered),
+                [(r.get("path", "?"), round(r.get("score", 0), 3)) for r in filtered],
+            )
+            return filtered
+    except Exception as e:
+        logger.exception("vector search failed")
+        return [{"error": f"Vector search error: {e}"}]
 
 
 def create_search_server(settings: Settings) -> fastmcp.FastMCP:
@@ -55,27 +131,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         Results across ALL queries are merged into the current session's allowlist.
         Returns the total number of unique files found and a preview of the first paths.
         """
-        session = get_current_session()
-        if not session:
-            return {"error": "No active search session. Call new_search_session first."}
-
-        found_paths: set[str] = set()
-
-        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-            headers = {"Authorization": f"Bearer {settings.obsidian_api_key}"}
-            for query in queries:
-                paths = await _keyword_search_task(
-                    client, query, settings.obsidian_api_url, headers
-                )
-                found_paths.update(paths)
-
-        session.add_keyword_results(list(found_paths))
-        all_paths = sorted(session.file_paths)
-        return {
-            "total_found": len(all_paths),
-            "query_count": len(queries),
-            "preview_paths": all_paths[:10],
-        }
+        return await _do_keyword_search(settings, queries)
 
     @m.tool()
     async def vector_search(
@@ -87,26 +143,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
 
         A min_score of 0.35-0.40 is generally good for filtering noise.
         """
-        session = get_current_session()
-        allowlist = session.allowlist if session else []
-        effective_min = 0.5 if allowlist else min_score
-
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                payload = {"text": query, "top_n": top_n, "min_score": effective_min}
-                if allowlist:
-                    payload["allowlist"] = allowlist
-
-                resp = await client.post(
-                    f"{settings.vector_search_url}/search/text",
-                    json=payload,
-                )
-                resp.raise_for_status()
-                results = resp.json().get("results", [])
-                return [r for r in results if r.get("score", 0) >= effective_min]
-        except Exception as e:
-            logger.exception("vector search failed")
-            return [{"error": f"Vector search error: {e}"}]
+        return await _do_vector_search(settings, query, top_n, min_score)
 
     @m.tool()
     async def open_note(path: str) -> dict[str, str]:
