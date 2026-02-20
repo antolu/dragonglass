@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import typing
 
 from textual.app import App, ComposeResult
@@ -131,10 +132,10 @@ class DragonglassApp(App[None]):
         log.write("")
 
     async def on_unmount(self) -> None:
-        if self._query_queue is not None:
-            await self._query_queue.put(None)
         if self._agent_task is not None:
-            await self._agent_task
+            self._agent_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._agent_task
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         message = event.value.strip()
