@@ -314,26 +314,37 @@ class VaultAgent:
             if tools:
                 kwargs["tools"] = tools
 
-            response = await litellm.acompletion(**kwargs)
+            logger.debug(
+                "LLM request  model=%s  phase=%s  tools=%s  messages=%d",
+                self._settings.llm_model,
+                phase,
+                [t["function"]["name"] for t in tools],
+                len(messages),
+            )
+            for i, m in enumerate(messages):
+                role = m.get("role", "?")
+                content = m.get("content", "")
+                tcs = m.get("tool_calls")
+                if tcs:
+                    logger.debug(
+                        "  msg[%d] %s  tool_calls=%s",
+                        i,
+                        role,
+                        [tc["function"]["name"] for tc in tcs],
+                    )
+                else:
+                    logger.debug("  msg[%d] %s  %s", i, role, str(content)[:200])
 
-            usage = getattr(response, "usage", None)
-            if usage:
-                usage_info = {
-                    "pt": getattr(usage, "prompt_tokens", 0),
-                    "ct": getattr(usage, "completion_tokens", 0),
-                    "tt": getattr(usage, "total_tokens", 0),
-                }
-                self._total_tokens += usage_info["tt"]
-                yield UsageEvent(
-                    prompt_tokens=usage_info["pt"],
-                    completion_tokens=usage_info["ct"],
-                    total_tokens=usage_info["tt"],
-                    session_total=self._total_tokens,
-                )
+            response = await litellm.acompletion(**kwargs)
 
             choice = response.choices[0]
             msg = choice.message
             tool_calls = getattr(msg, "tool_calls", None)
+            logger.debug(
+                "LLM response  tool_calls=%s  content=%s",
+                [tc.function.name for tc in tool_calls] if tool_calls else None,
+                str(msg.content or "")[:200],
+            )
 
             assistant_msg = _Message(role="assistant", content=msg.content or "")
             if tool_calls:
@@ -379,6 +390,9 @@ class VaultAgent:
                     phase = "edit"
 
                 result = await self._call_tool(tool_name, args)
+                logger.debug(
+                    "tool %r  args=%s  result=%s", tool_name, args, result[:300]
+                )
                 tool_log.append((tool_name, args, result))
 
                 messages.append(
