@@ -7,7 +7,7 @@ import typing
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header, Input, RichLog
+from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from dragonglass.agent.agent import (
     DoneEvent,
@@ -55,6 +55,12 @@ Screen {
     padding: 0 1;
 }
 
+#status {
+    height: 1;
+    margin: 0 1;
+    color: $text-muted;
+}
+
 #input {
     dock: bottom;
     margin: 0 1 1 1;
@@ -84,6 +90,7 @@ class DragonglassApp(App[None]):
         with Horizontal(id="main-area"):
             yield RichLog(id="log", wrap=True, highlight=True, markup=True)
             yield RichLog(id="stats", wrap=False, highlight=False, markup=True)
+        yield Static("", id="status", markup=True)
         yield Input(id="input", placeholder="Type a prompt or /help…")
         yield Footer()
 
@@ -140,13 +147,14 @@ class DragonglassApp(App[None]):
 
     async def _process_message(self, agent: VaultAgent, message: str) -> None:
         log = self.query_one("#log", RichLog)
+        status_bar = self.query_one("#status", Static)
         response_parts: list[str] = []
         gen = agent.run(message)
         try:
             async for event in gen:
                 match event:
                     case StatusEvent(message=status):
-                        self.notify(status, timeout=3)
+                        status_bar.update(f"[dim italic]⟳ {status}…[/dim italic]")
                     case TextChunk(text=chunk):
                         response_parts.append(chunk)
                     case UsageEvent(
@@ -159,6 +167,7 @@ class DragonglassApp(App[None]):
                     case DoneEvent():
                         break
         finally:
+            status_bar.update("")
             await gen.aclose()
 
         if response_parts:
