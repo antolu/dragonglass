@@ -13,6 +13,7 @@ from dragonglass.agent.agent import (
     DoneEvent,
     StatusEvent,
     TextChunk,
+    ToolErrorEvent,
     UsageEvent,
     VaultAgent,
 )
@@ -155,6 +156,8 @@ class DragonglassApp(App[None]):
                 match event:
                     case StatusEvent(message=status):
                         status_bar.update(f"[dim italic]⟳ {status}…[/dim italic]")
+                    case ToolErrorEvent(tool=tool, error=error):
+                        log.write(f"[bold red]✗ {tool}[/bold red]  [dim]{error}[/dim]")
                     case TextChunk(text=chunk):
                         response_parts.append(chunk)
                     case UsageEvent(

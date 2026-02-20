@@ -57,6 +57,12 @@ class StatusEvent:
 
 
 @dataclasses.dataclass
+class ToolErrorEvent:
+    tool: str
+    error: str
+
+
+@dataclasses.dataclass
 class TextChunk:
     text: str
 
@@ -74,7 +80,7 @@ class UsageEvent:
     session_total: int
 
 
-AgentEvent = StatusEvent | TextChunk | UsageEvent | DoneEvent
+AgentEvent = StatusEvent | ToolErrorEvent | TextChunk | UsageEvent | DoneEvent
 
 _EVENT_TUPLE_LEN = 2
 _COMPLEX_WORD_THRESHOLD = 15
@@ -295,7 +301,7 @@ class VaultAgent:
         if final_answer:
             self._history.append(_Message(role="assistant", content=final_answer))
 
-    async def _agent_loop(  # noqa: PLR0914
+    async def _agent_loop(  # noqa: PLR0912, PLR0914
         self, messages: list[_Message], use_full_tools: bool = True
     ) -> collections.abc.AsyncGenerator[AgentEvent | tuple[str, str]]:
         phase: typing.Literal["search", "edit"] = "search"
@@ -393,6 +399,8 @@ class VaultAgent:
                 logger.debug(
                     "tool %r  args=%s  result=%s", tool_name, args, result[:300]
                 )
+                if result.startswith(("Search server error:", "Tool '")):
+                    yield ToolErrorEvent(tool=tool_name, error=result)
                 tool_log.append((tool_name, args, result))
 
                 messages.append(
