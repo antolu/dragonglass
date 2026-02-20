@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing
 import urllib.parse
 
@@ -8,6 +9,8 @@ import httpx
 
 from dragonglass.config import Settings
 from dragonglass.search.session import get_current_session, new_session
+
+logger = logging.getLogger(__name__)
 
 
 async def _keyword_search_task(
@@ -29,9 +32,8 @@ async def _keyword_search_task(
                 for r in results
                 if r.get("path") or r.get("filename")
             ]
-    except Exception as e:
-        # We don't want to crash the whole search if one query fails
-        print(f"Error during keyword search for '{query}': {e}")
+    except Exception:
+        logger.exception("keyword search failed for query %r", query)
     return []
 
 
@@ -103,6 +105,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                 results = resp.json().get("results", [])
                 return [r for r in results if r.get("score", 0) >= effective_min]
         except Exception as e:
+            logger.exception("vector search failed")
             return [{"error": f"Vector search error: {e}"}]
 
     @m.tool()
@@ -119,6 +122,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                     return {"status": "opened", "path": path}
                 return {"error": f"HTTP {resp.status_code}"}
         except Exception as exc:
+            logger.exception("open_note failed for path %r", path)
             return {"error": str(exc)}
 
     @m.tool()
@@ -134,6 +138,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                     return {"status": "executed", "command_id": command_id}
                 return {"error": f"HTTP {resp.status_code}"}
         except Exception as exc:
+            logger.exception("run_command failed for %r", command_id)
             return {"error": str(exc)}
 
     return m

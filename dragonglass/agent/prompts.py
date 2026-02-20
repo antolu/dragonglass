@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import datetime
+import logging
 
 import httpx
 
 from dragonglass.config import Settings
+
+logger = logging.getLogger(__name__)
 
 _GLOBAL_INSTRUCTIONS = """\
 You are a personal knowledge management assistant for an Obsidian vault.
@@ -68,5 +71,5 @@ async def _load_agents_note(settings: Settings) -> tuple[str, bool]:
                 return "", False
             return resp.text, True
     except Exception:
-        pass
+        logger.warning("failed to load agents note from vault", exc_info=True)
     return "", False

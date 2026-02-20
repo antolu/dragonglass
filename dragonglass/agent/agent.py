@@ -4,6 +4,7 @@ import collections.abc
 import contextlib
 import dataclasses
 import json
+import logging
 import re
 import typing
 
@@ -15,6 +16,8 @@ from mcp.types import TextContent
 from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.config import Settings
 from dragonglass.mcp.search import create_search_server
+
+logger = logging.getLogger(__name__)
 
 JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
 
@@ -231,7 +234,12 @@ class VaultAgent:
                     self._litellm_tools.append(lt_tool)
                     self._base_tools.append(lt_tool)
             except Exception:
-                pass
+                logger.warning(
+                    "failed to connect MCP server %s %s",
+                    params.command,
+                    params.args,
+                    exc_info=True,
+                )
 
         try:
             think_session = await self._exit_stack.enter_async_context(
@@ -242,7 +250,7 @@ class VaultAgent:
             for tool in result.tools:
                 self._litellm_tools.append(_mcp_tool_to_litellm(tool))
         except Exception:
-            pass
+            logger.warning("failed to connect thinking MCP server", exc_info=True)
 
         for tool in await self._search.list_tools():
             lt_tool = _Tool(
@@ -276,14 +284,13 @@ class VaultAgent:
                     continue
                 yield typing.cast(AgentEvent, event)
         except Exception as exc:
+            logger.exception("agent loop error")
             yield StatusEvent(message=f"Error: {exc}")
             yield DoneEvent()
         finally:
             await gen.aclose()
 
         if summary:
-            # We compress: [summary of tools] followed by [final answer]
-            # to replace the whole chain in history.
             self._history.append(_Message(role="assistant", content=summary))
         if final_answer:
             self._history.append(_Message(role="assistant", content=final_answer))
@@ -301,7 +308,6 @@ class VaultAgent:
                 "stream": False,
             }
             raw_tools = self._litellm_tools if use_full_tools else self._base_tools
-            # Filter tools by phase
             allowed = _SEARCH_TOOLS if phase == "search" else _EDIT_TOOLS
             tools = [t for t in raw_tools if t["function"]["name"] in allowed]
 
@@ -358,6 +364,11 @@ class VaultAgent:
                         tc.function.arguments or "{}"
                     )
                 except json.JSONDecodeError:
+                    logger.warning(
+                        "could not parse tool call arguments for %r: %r",
+                        tool_name,
+                        tc.function.arguments,
+                    )
                     args = {}
 
                 status = _status_for_tool(tool_name, args)
@@ -389,6 +400,7 @@ class VaultAgent:
                 text = first.text if isinstance(first, TextContent) else "[]"
                 return _truncate_result(text)
             except Exception as exc:
+                logger.exception("search server error calling %r", name)
                 return f"Search server error: {exc}"
 
         for session in self._stdio_sessions:
@@ -400,6 +412,9 @@ class VaultAgent:
                     text = first.text if isinstance(first, TextContent) else ""
                     return _truncate_result(text)
             except Exception:
+                logger.warning(
+                    "tool call %r failed on a session, trying next", name, exc_info=True
+                )
                 continue
 
         return f"Tool '{name}' not found"

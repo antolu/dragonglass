@@ -17,6 +17,7 @@ from dragonglass.agent.agent import (
     VaultAgent,
 )
 from dragonglass.config import get_settings
+from dragonglass.log import LOG_FILE
 
 _SLASH_COMMANDS: dict[str, str | None] = {
     "/autolink": "Auto-linking is coming in phase 2.",
@@ -103,6 +104,9 @@ class DragonglassApp(App[None]):
         stats.write("")
         stats.write("[dim]session[/dim]")
         stats.write(f"  {self._session_total:,}")
+        stats.write("")
+        stats.write("[dim]log[/dim]")
+        stats.write(f"  [dim]{LOG_FILE}[/dim]")
 
     async def _agent_worker(self) -> None:
         settings = get_settings()
