@@ -36,6 +36,10 @@ def setup_logging() -> None:
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
+
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
     root.addHandler(handler)
 
     for name in _NOISY_LOGGERS:
