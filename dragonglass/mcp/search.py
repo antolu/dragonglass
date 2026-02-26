@@ -126,10 +126,12 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
 
     @m.tool()
     async def keyword_search(queries: list[str]) -> dict[str, typing.Any]:
-        """Perform keyword search in the vault using multiple query strings.
-        Queries can use prefixes like file:, tag:, section:, property:.
-        Results across ALL queries are merged into the current session's allowlist.
-        Returns the total number of unique files found and a preview of the first paths.
+        """Search the vault for files matching one or more text queries.
+
+        IMPORTANT: the parameter is named `queries` (not queryStrings or query_strings).
+        Pass a JSON array of strings, e.g. {"queries": ["Milano Ancona", "tag:#travel"]}.
+        Supports prefixes: file:, tag:, section:, property:.
+        Results from all queries are merged into the session allowlist.
         """
         return await _do_keyword_search(settings, queries)
 

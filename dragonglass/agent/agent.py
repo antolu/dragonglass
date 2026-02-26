@@ -279,15 +279,11 @@ class VaultAgent:
             _Message(role="system", content=self._system_prompt),
             *self._history,
         ]
+        history_len_before = len(self._history)
         is_complex = _is_complex(user_message)
         gen = self._agent_loop(messages, use_full_tools=is_complex)
-        summary = ""
-        final_answer = ""
         try:
             async for event in gen:
-                if isinstance(event, tuple) and len(event) == _EVENT_TUPLE_LEN:
-                    summary, final_answer = event
-                    continue
                 yield typing.cast(AgentEvent, event)
         except Exception as exc:
             logger.exception("agent loop error")
@@ -296,16 +292,13 @@ class VaultAgent:
         finally:
             await gen.aclose()
 
-        if summary:
-            self._history.append(_Message(role="assistant", content=summary))
-        if final_answer:
-            self._history.append(_Message(role="assistant", content=final_answer))
+        new_messages = messages[1 + history_len_before :]
+        self._history.extend(new_messages)
 
-    async def _agent_loop(  # noqa: PLR0912, PLR0914
+    async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
         self, messages: list[_Message], use_full_tools: bool = True
-    ) -> collections.abc.AsyncGenerator[AgentEvent | tuple[str, str]]:
+    ) -> collections.abc.AsyncGenerator[AgentEvent]:
         phase: typing.Literal["search", "edit"] = "search"
-        tool_log: list[tuple[str, dict[str, JsonValue], str]] = []
 
         while True:
             kwargs: dict[str, typing.Any] = {
@@ -343,6 +336,18 @@ class VaultAgent:
 
             response = await litellm.acompletion(**kwargs)
 
+            usage = getattr(response, "usage", None)
+            if usage:
+                pt = getattr(usage, "prompt_tokens", 0) or 0
+                ct = getattr(usage, "completion_tokens", 0) or 0
+                self._total_tokens += pt + ct
+                yield UsageEvent(
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    total_tokens=pt + ct,
+                    session_total=self._total_tokens,
+                )
+
             choice = response.choices[0]
             msg = choice.message
             tool_calls = getattr(msg, "tool_calls", None)
@@ -371,7 +376,6 @@ class VaultAgent:
                 if msg.content:
                     yield TextChunk(text=msg.content)
                 yield DoneEvent()
-                yield _summarize_turn(tool_log), msg.content or ""
                 return
 
             for tc in tool_calls:
@@ -401,7 +405,6 @@ class VaultAgent:
                 )
                 if result.startswith(("Search server error:", "Tool '")):
                     yield ToolErrorEvent(tool=tool_name, error=result)
-                tool_log.append((tool_name, args, result))
 
                 messages.append(
                     _Message(role="tool", tool_call_id=tc.id, content=result)
@@ -422,7 +425,19 @@ class VaultAgent:
                 text = first.text if isinstance(first, TextContent) else "[]"
                 return _truncate_result(text)
             except Exception as exc:
-                logger.exception("search server error calling %r", name)
+                msg = str(exc)
+                logger.warning("search server error calling %r: %s", name, msg)
+                missing = [
+                    line.split()[0]
+                    for line in msg.splitlines()
+                    if "missing_argument" in line or "missing required" in line.lower()
+                ]
+                if missing:
+                    return (
+                        f"Tool '{name}' called with wrong arguments. "
+                        f"Missing required parameter(s): {missing}. "
+                        f"Check the tool schema and use the exact parameter names."
+                    )
                 return f"Search server error: {exc}"
 
         for session in self._stdio_sessions:
