@@ -80,7 +80,15 @@ class UsageEvent:
     session_total: int
 
 
-AgentEvent = StatusEvent | ToolErrorEvent | TextChunk | UsageEvent | DoneEvent
+@dataclasses.dataclass
+class FileAccessEvent:
+    path: str
+    operation: str  # "read" | "write" | "delete"
+
+
+AgentEvent = (
+    StatusEvent | ToolErrorEvent | TextChunk | UsageEvent | DoneEvent | FileAccessEvent
+)
 
 _EVENT_TUPLE_LEN = 2
 _COMPLEX_WORD_THRESHOLD = 15
@@ -161,6 +169,19 @@ _EDIT_TOOLS = frozenset({
     "obsidian_manage_tags",
     "run_command",
 })
+
+_FILE_READ_TOOLS = frozenset({
+    "obsidian_read_note",
+    "obsidian_list_notes",
+    "obsidian_global_search",
+})
+_FILE_WRITE_TOOLS = frozenset({
+    "obsidian_update_note",
+    "obsidian_search_replace",
+    "obsidian_manage_frontmatter",
+    "obsidian_manage_tags",
+})
+_FILE_DELETE_TOOLS = frozenset({"obsidian_delete_note"})
 
 
 _THINKING_SERVER = StdioServerParameters(
@@ -398,6 +419,14 @@ class VaultAgent:
 
                 if tool_name in _EDIT_TOOLS:
                     phase = "edit"
+
+                file_path = str(args.get("filePath") or args.get("dirPath") or "")
+                if file_path and tool_name in _FILE_READ_TOOLS:
+                    yield FileAccessEvent(path=file_path, operation="read")
+                elif file_path and tool_name in _FILE_WRITE_TOOLS:
+                    yield FileAccessEvent(path=file_path, operation="write")
+                elif file_path and tool_name in _FILE_DELETE_TOOLS:
+                    yield FileAccessEvent(path=file_path, operation="delete")
 
                 result = await self._call_tool(tool_name, args)
                 logger.debug(

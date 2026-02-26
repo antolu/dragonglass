@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     llm_model: str = "gemini/gemini-2.5-flash"
     agents_note_path: str = "AGENTS.md"
 
+    auto_allow_edit: bool = True
+    auto_allow_create: bool = True
+    auto_allow_delete: bool = False
+
 
 _settings: list[Settings] = []
 
