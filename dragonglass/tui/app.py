@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import typing
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from dragonglass.agent.agent import (
     DoneEvent,
+    FileAccessEvent,
     StatusEvent,
     TextChunk,
     ToolErrorEvent,
     UsageEvent,
-    VaultAgent,
 )
+from dragonglass.agent.client import AgentClient
 from dragonglass.config import get_settings
 from dragonglass.log import LOG_FILE
 
@@ -39,31 +38,32 @@ Screen {
 
 #main-area {
     height: 1fr;
-    margin: 1 1 0 1;
+    width: 100%;
 }
 
 #log {
-    border: solid $primary-darken-2;
     width: 1fr;
-    padding: 0 1;
-    scrollbar-gutter: stable;
+    height: 100%;
+    border: solid $primary;
+    background: $surface;
 }
 
 #stats {
-    border: solid $primary-darken-3;
     width: 26;
+    height: 100%;
+    border: solid $secondary;
+    padding: 1;
     margin-left: 1;
-    padding: 0 1;
 }
 
 #status {
     height: 1;
-    margin: 0 1;
+    width: 100%;
+    padding: 0 1;
     color: $text-muted;
 }
 
-#input {
-    dock: bottom;
+Input {
     margin: 0 1 1 1;
 }
 """
@@ -71,151 +71,107 @@ Screen {
 
 class DragonglassApp(App[None]):
     TITLE = "dragonglass"
-    CSS = CSS
-    BINDINGS: typing.ClassVar = [
-        Binding("ctrl+c", "quit", "Quit"),
-        Binding("ctrl+l", "clear", "Clear"),
+    BINDINGS: typing.ClassVar[list[Binding]] = [
+        Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("ctrl+l", "clear_log", "Clear Log"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
-        self._query_queue: asyncio.Queue[str | None] | None = None
-        self._agent_task: asyncio.Task[None] | None = None
-        self._session_total: int = 0
-        self._last_prompt: int = 0
-        self._last_completion: int = 0
+        self._settings = get_settings()
+        self._client = AgentClient()
+        self._total_tokens = 0
 
-    @typing.override
-    def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+    def compose(self) -> ComposeResult:  # noqa: PLR6301
+        yield Header()
         with Horizontal(id="main-area"):
-            yield RichLog(id="log", wrap=True, highlight=True, markup=True)
-            yield RichLog(id="stats", wrap=False, highlight=False, markup=True)
-        yield Static("", id="status", markup=True)
-        yield Input(id="input", placeholder="Type a prompt or /help…")
+            yield RichLog(id="log", markup=True, wrap=True)
+            with Vertical(id="stats"):
+                yield Static("Stats", classes="title")
+                yield Static(id="tokens")
+                yield Static(f"Log:\n[blue]{LOG_FILE.name}[/blue]")
+        yield Static(id="status")
+        yield Input(placeholder="Ask me anything...", id="input")
         yield Footer()
 
     async def on_mount(self) -> None:
-        self._query_queue = asyncio.Queue()
-        self._agent_task = asyncio.create_task(self._agent_worker())
-        self._refresh_stats()
-
-    def _refresh_stats(self) -> None:
-        stats = self.query_one("#stats", RichLog)
-        stats.clear()
-        stats.write("[dim bold]tokens[/dim bold]")
-        stats.write("")
-        stats.write("[dim]prompt[/dim]")
-        stats.write(f"  {self._last_prompt:,}")
-        stats.write("[dim]completion[/dim]")
-        stats.write(f"  {self._last_completion:,}")
-        stats.write("")
-        stats.write("[dim]session[/dim]")
-        stats.write(f"  {self._session_total:,}")
-        stats.write("")
-        stats.write("[dim]log[/dim]")
-        stats.write(f"  [dim]{LOG_FILE}[/dim]")
-
-    async def _agent_worker(self) -> None:
-        settings = get_settings()
-        agent = VaultAgent(settings)
-        log = self.query_one("#log", RichLog)
-        log.write("[dim]Connecting to vault…[/dim]")
-        try:
-            await agent.initialise()
-        except Exception as exc:
-            log.write(f"[bold red]Failed to connect: {exc}[/bold red]")
-            return
-
-        if not agent.agents_note_found:
-            log.write(
-                f"[bold yellow]⚠ Agents note not found[/bold yellow] "
-                f"[dim]({settings.agents_note_path})[/dim]\n"
-                "[dim]Create it in your vault to give the agent custom instructions.[/dim]\n"
-            )
-        log.write("[dim]Ready. Type your prompt below.[/dim]\n")
         self.query_one("#input", Input).focus()
-
-        assert self._query_queue is not None
-        try:
-            while True:
-                message = await self._query_queue.get()
-                if message is None:
-                    break
-                await self._process_message(agent, message)
-        finally:
-            await agent.close()
-
-    async def _process_message(self, agent: VaultAgent, message: str) -> None:
-        log = self.query_one("#log", RichLog)
-        status_bar = self.query_one("#status", Static)
-        response_parts: list[str] = []
-        gen = agent.run(message)
-        try:
-            async for event in gen:
-                match event:
-                    case StatusEvent(message=status):
-                        status_bar.update(f"[dim italic]⟳ {status}…[/dim italic]")
-                    case ToolErrorEvent(tool=tool, error=error):
-                        log.write(f"[bold red]✗ {tool}[/bold red]  [dim]{error}[/dim]")
-                    case TextChunk(text=chunk):
-                        response_parts.append(chunk)
-                    case UsageEvent(
-                        prompt_tokens=pt, completion_tokens=ct, session_total=st
-                    ):
-                        self._last_prompt = pt
-                        self._last_completion = ct
-                        self._session_total = st
-                        self._refresh_stats()
-                    case DoneEvent():
-                        break
-        finally:
-            status_bar.update("")
-            await gen.aclose()
-
-        if response_parts:
-            log.write(
-                f"[bold green]Dragonglass[/bold green]  {''.join(response_parts)}"
-            )
-        log.write("")
-
-    async def on_unmount(self) -> None:
-        if self._agent_task is not None:
-            self._agent_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._agent_task
+        self._update_tokens(0, 0, 0, 0)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        message = event.value.strip()
-        if not message:
+        text = event.value.strip()
+        if not text:
             return
 
-        self.query_one("#input", Input).clear()
+        self.query_one("#input", Input).value = ""
 
-        if message.startswith("/"):
-            await self._handle_slash(message)
+        if text.startswith("/"):
+            self._handle_slash_command(text)
             return
 
+        await self._process_chat(text)
+
+    def _handle_slash_command(self, text: str) -> None:
         log = self.query_one("#log", RichLog)
-        log.write(f"[bold cyan]You[/bold cyan]  {message}")
-        log.write("")
-
-        assert self._query_queue is not None
-        await self._query_queue.put(message)
-
-    async def _handle_slash(self, command: str) -> None:
-        cmd = command.split(maxsplit=1)[0].lower()
-        log = self.query_one("#log", RichLog)
-
-        if cmd == "/clear":
+        if text == "/clear":
             log.clear()
-            return
-
-        reply = _SLASH_COMMANDS.get(cmd)
-        if reply is not None:
-            log.write(f"[dim]{reply}[/dim]\n")
         else:
-            log.write(f"[dim]Unknown command: {cmd}. Try /help.[/dim]\n")
+            resp = _SLASH_COMMANDS.get(text, f"Unknown command: {text}")
+            if resp:
+                log.write(f"\n[bold magenta]system[/bold magenta]: {resp}\n")
 
-    def action_clear(self) -> None:
+    async def _process_chat(self, text: str) -> None:
+        log = self.query_one("#log", RichLog)
+        log.write(f"\n[bold green]user[/bold green]: {text}\n")
+        log.write("[bold blue]agent[/bold blue]: ", scroll_end=True)
+
+        status_widget = self.query_one("#status", Static)
+        inp = self.query_one("#input", Input)
+        inp.disabled = True
+
+        try:
+            async for event in self._client.run(text):
+                match event:
+                    case StatusEvent(message=msg):
+                        status_widget.update(f"⟳ {msg}...")
+                    case TextChunk(text=chunk):
+                        log.write(chunk, scroll_end=True)
+                    case ToolErrorEvent(tool=tool, error=err):
+                        log.write(f"\n[bold red]error ({tool})[/bold red]: {err}\n")
+                    case UsageEvent(
+                        prompt_tokens=pt,
+                        completion_tokens=ct,
+                        total_tokens=tt,
+                        session_total=st,
+                    ):
+                        self._update_tokens(pt, ct, tt, st)
+                    case FileAccessEvent():
+                        pass
+                    case DoneEvent():
+                        break
+        except Exception as exc:
+            log.write(f"\n[bold red]system error[/bold red]: {exc}\n")
+        finally:
+            status_widget.update("")
+            inp.disabled = False
+            inp.focus()
+            log.write("\n")
+
+    def _update_tokens(
+        self, prompt: int, completion: int, total: int, session: int
+    ) -> None:
+        self.query_one("#tokens", Static).update(
+            f"Tokens:\n  P: {prompt}\n  C: {completion}\n  T: {total}\n  S: {session}"
+        )
+
+    def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
+
+
+def main() -> None:
+    app = DragonglassApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
