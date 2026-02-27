@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
-            env_settings,
             TomlConfigSettingsSource(settings_cls),
         )
 
@@ -55,15 +54,8 @@ class Settings(BaseSettings):
 
 def re_export_settings(settings: Settings) -> None:
     """Export settings back to environment variables for subprocesses."""
-    for field_name, value in settings.model_dump().items():
-        env_var = field_name.upper()
-        if isinstance(value, bool):
-            os.environ[env_var] = str(value).lower()
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                os.environ[k] = str(v)
-        else:
-            os.environ[env_var] = str(value)
+    for k, v in settings.env_vars.items():
+        os.environ[k] = str(v)
 
 
 _settings: list[Settings] = []
