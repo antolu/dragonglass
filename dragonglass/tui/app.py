@@ -17,7 +17,6 @@ from dragonglass.agent.agent import (
 )
 from dragonglass.agent.client import AgentClient
 from dragonglass.config import get_settings
-from dragonglass.log import LOG_FILE
 
 _SLASH_COMMANDS: dict[str, str | None] = {
     "/autolink": "Auto-linking is coming in phase 2.",
@@ -49,11 +48,15 @@ Screen {
 }
 
 #stats {
+    dock: right;
     width: 26;
+    min-width: 26;
+    max-width: 26;
     height: 100%;
-    border: solid $secondary;
     padding: 1;
     margin-left: 1;
+    border-left: vline $secondary;
+    display: none;
 }
 
 #status {
@@ -66,14 +69,27 @@ Screen {
 Input {
     margin: 0 1 1 1;
 }
+
+.title {
+    text-align: center;
+    color: $secondary;
+    text-style: bold underline;
+    margin-bottom: 2;
+}
+
+#tokens {
+    margin-bottom: 2;
+}
 """
 
 
 class DragonglassApp(App[None]):
     TITLE = "dragonglass"
     BINDINGS: typing.ClassVar[list[Binding]] = [
-        Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+        Binding("ctrl+z", "suspend_process", "Suspend", show=False),
         Binding("ctrl+l", "clear_log", "Clear Log"),
+        Binding("f2", "toggle_stats", "Stats"),
     ]
 
     def __init__(self) -> None:
@@ -87,9 +103,8 @@ class DragonglassApp(App[None]):
         with Horizontal(id="main-area"):
             yield RichLog(id="log", markup=True, wrap=True)
             with Vertical(id="stats"):
-                yield Static("Stats", classes="title")
+                yield Static("📊 STATS", classes="title")
                 yield Static(id="tokens")
-                yield Static(f"Log:\n[blue]{LOG_FILE.name}[/blue]")
         yield Static(id="status")
         yield Input(placeholder="Ask me anything...", id="input")
         yield Footer()
@@ -160,12 +175,21 @@ class DragonglassApp(App[None]):
     def _update_tokens(
         self, prompt: int, completion: int, total: int, session: int
     ) -> None:
-        self.query_one("#tokens", Static).update(
-            f"Tokens:\n  P: {prompt}\n  C: {completion}\n  T: {total}\n  S: {session}"
+        content = (
+            "[bold]Last request:[/bold]\n"
+            f"  Prompt:     [cyan]{prompt:,}[/cyan]\n"
+            f"  Completion: [cyan]{completion:,}[/cyan]\n"
+            f"  Total:      [cyan]{total:,}[/cyan]\n\n"
+            f"[bold]Session total:[/bold]\n[green]{session:,}[/green]"
         )
+        self.query_one("#tokens", Static).update(content)
 
     def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
+
+    def action_toggle_stats(self) -> None:
+        stats = self.query_one("#stats", Vertical)
+        stats.display = not stats.display
 
 
 def main() -> None:
