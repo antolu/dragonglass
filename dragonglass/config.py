@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     vector_search_url: str = "http://localhost:51362"
     llm_model: str = "gemini/gemini-2.5-flash"
+    selected_model: str = ""
     agents_note_path: str = "AGENTS.md"
+
+    env_vars: dict[str, str] = {}
 
     auto_allow_edit: bool = True
     auto_allow_create: bool = True
@@ -52,6 +55,9 @@ def re_export_settings(settings: Settings) -> None:
         env_var = field_name.upper()
         if isinstance(value, bool):
             os.environ[env_var] = str(value).lower()
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                os.environ[k] = str(v)
         else:
             os.environ[env_var] = str(value)
 

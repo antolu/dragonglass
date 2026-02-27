@@ -14,7 +14,7 @@ from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
 
 from dragonglass.agent.prompts import load_system_prompt
-from dragonglass.config import Settings
+from dragonglass.config import Settings, get_settings
 from dragonglass.mcp.search import create_search_server
 
 logger = logging.getLogger(__name__)
@@ -228,23 +228,24 @@ class VaultAgent:
         self._base_tools: list[_Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = contextlib.AsyncExitStack()
-        self._search = create_search_server(settings)
+        self._search = create_search_server(get_settings())
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
 
     async def initialise(self) -> None:
         self._system_prompt, self.agents_note_found = await load_system_prompt(
-            self._settings
+            get_settings()
         )
         await self._connect_mcp_servers()
 
     async def _connect_mcp_servers(self) -> None:
+        settings = get_settings()
         obsidian_params = StdioServerParameters(
             command="npx",
             args=["obsidian-mcp-server"],
             env={
-                "OBSIDIAN_API_KEY": self._settings.obsidian_api_key,
-                "OBSIDIAN_BASE_URL": self._settings.obsidian_api_url,
+                "OBSIDIAN_API_KEY": settings.obsidian_api_key,
+                "OBSIDIAN_BASE_URL": settings.obsidian_api_url,
                 "OBSIDIAN_VERIFY_SSL": "false",
                 "OBSIDIAN_ENABLE_CACHE": "true",
             },
@@ -292,7 +293,7 @@ class VaultAgent:
             self._base_tools.append(lt_tool)
 
     async def run(
-        self, user_message: str
+        self, user_message: str, model_override: str | None = None
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
         self._history.append(_Message(role="user", content=user_message))
@@ -302,7 +303,9 @@ class VaultAgent:
         ]
         history_len_before = len(self._history)
         is_complex = _is_complex(user_message)
-        gen = self._agent_loop(messages, use_full_tools=is_complex)
+        gen = self._agent_loop(
+            messages, use_full_tools=is_complex, model_override=model_override
+        )
         try:
             async for event in gen:
                 yield typing.cast(AgentEvent, event)
@@ -317,13 +320,17 @@ class VaultAgent:
         self._history.extend(new_messages)
 
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
-        self, messages: list[_Message], use_full_tools: bool = True
+        self,
+        messages: list[_Message],
+        use_full_tools: bool = True,
+        model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         phase: typing.Literal["search", "edit"] = "search"
 
         while True:
+            settings = get_settings()
             kwargs: dict[str, typing.Any] = {
-                "model": self._settings.llm_model,
+                "model": model_override or settings.llm_model,
                 "messages": messages,
                 "stream": False,
             }
@@ -336,7 +343,7 @@ class VaultAgent:
 
             logger.debug(
                 "LLM request  model=%s  phase=%s  tools=%s  messages=%d",
-                self._settings.llm_model,
+                settings.llm_model,
                 phase,
                 [t["function"]["name"] for t in tools],
                 len(messages),

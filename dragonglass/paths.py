@@ -21,3 +21,4 @@ for d in (CONFIG_DIR, DATA_DIR, CACHE_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+EXTRA_MODELS_FILE = CONFIG_DIR / "extra_models.json"

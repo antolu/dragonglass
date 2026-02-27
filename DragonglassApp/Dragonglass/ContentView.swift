@@ -5,6 +5,9 @@ struct ContentView: View {
     @EnvironmentObject var client: AgentClient
     @State private var inputText = ""
     @State private var showingSettings = false
+    @State private var showingCustomModel = false
+    @State private var customModelText = ""
+    @State private var lastModelSent: String?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -42,8 +45,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack {
-            Text("Dragonglass")
-                .font(.headline)
+            modelPicker
             Spacer()
             Button(action: { showingSettings = true }) {
                 Image(systemName: "gear")
@@ -53,6 +55,88 @@ struct ContentView: View {
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            if backend.phase == .ready {
+                if !client.isConnected { client.connect() }
+                client.fetchModels()
+            }
+        }
+        .onChange(of: backend.phase) { phase in
+            if phase == .ready {
+                if !client.isConnected { client.connect() }
+                client.fetchModels()
+            }
+        }
+    }
+
+    private var modelPicker: some View {
+        Menu {
+            Button("Default") {
+                client.setSelectedModel("")
+            }
+
+            if !client.availableModels.isEmpty {
+                Divider()
+                Text("Ollama Models")
+                ForEach(client.availableModels, id: \.self) { model in
+                    Button(model) {
+                        client.setSelectedModel(model)
+                    }
+                }
+            }
+
+            if !client.extraModels.isEmpty {
+                Divider()
+                Text("Extra Models")
+                ForEach(client.extraModels, id: \.self) { model in
+                    Button(model) {
+                        client.setSelectedModel(model)
+                    }
+                }
+            }
+
+            Divider()
+            Button("Custom...") {
+                customModelText = client.selectedModel
+                showingCustomModel = true
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(client.selectedModel.isEmpty ? "Default" : client.selectedModel)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.1))
+            .cornerRadius(4)
+        }
+        .fixedSize()
+        .popover(isPresented: $showingCustomModel) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Custom Model Name")
+                    .font(.caption)
+                    .bold()
+                TextField("e.g. gpt-4", text: $customModelText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        if !customModelText.isEmpty {
+                            client.setSelectedModel(customModelText)
+                        }
+                        showingCustomModel = false
+                    }
+                Button("Set Model") {
+                    if !customModelText.isEmpty {
+                        client.setSelectedModel(customModelText)
+                    }
+                    showingCustomModel = false
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .frame(width: 200)
+        }
     }
 
     private var statusView: some View {
@@ -87,12 +171,26 @@ struct ContentView: View {
                     ForEach(0..<client.events.count, id: \.self) { index in
                         EventRow(event: client.events[index])
                     }
+
+                    if client.isThinking {
+                        ThinkingRow()
+                    }
                 }
                 .padding()
             }
             .onChange(of: client.events.count) { _ in
                 if let last = client.events.indices.last {
                     proxy.scrollTo(last)
+
+                    // If last event is .done and we used a custom model, save it
+                    if case .done = client.events[last],
+                       let model = lastModelSent,
+                       !model.isEmpty,
+                       !client.availableModels.contains(model),
+                       !client.extraModels.contains(model) {
+                        client.saveModel(model)
+                        lastModelSent = nil
+                    }
                 }
             }
         }
@@ -116,7 +214,11 @@ struct ContentView: View {
     private func sendMessage() {
         guard !inputText.isEmpty else { return }
         if !client.isConnected { client.connect() }
-        client.sendChat(text: inputText)
+
+        let model = client.selectedModel.isEmpty ? nil : client.selectedModel
+        lastModelSent = model
+
+        client.sendChat(text: inputText, model: model)
         inputText = ""
     }
 }
@@ -153,9 +255,32 @@ struct EventRow: View {
                 .foregroundColor(.green)
         case .done:
             Divider()
+        case .modelsList:
+            EmptyView()
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)
         }
+    }
+}
+
+struct ThinkingRow: View {
+    @State private var opMessage: String = "Thinking"
+
+    var body: some View {
+        HStack {
+            if #available(macOS 14.0, *) {
+                Image(systemName: "sparkles")
+                    .symbolEffect(.pulse)
+            } else {
+                Image(systemName: "sparkles")
+            }
+            Text(opMessage)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(8)
     }
 }

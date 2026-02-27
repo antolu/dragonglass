@@ -9,6 +9,7 @@ enum AgentEvent: Decodable {
     case fileAccess(String, String)
     case config(DragonglassConfig)
     case configAck
+    case modelsList([String])
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -19,6 +20,7 @@ enum AgentEvent: Decodable {
         case error
         case path
         case operation
+        case models
     }
 
     init(from decoder: Decoder) throws {
@@ -40,6 +42,8 @@ enum AgentEvent: Decodable {
             self = .config(try DragonglassConfig(from: decoder))
         case "config_ack":
             self = .configAck
+        case "models_list":
+            self = .modelsList(try container.decode([String].self, forKey: .models))
         default:
             self = .unknown(type)
         }
@@ -50,6 +54,10 @@ enum AgentEvent: Decodable {
 class AgentClient: ObservableObject {
     @Published var events: [AgentEvent] = []
     @Published var isConnected = false
+    @Published var isThinking = false
+    @Published var availableModels: [String] = []
+    @Published var extraModels: [String] = []
+    @Published var selectedModel: String = ""
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
@@ -59,6 +67,7 @@ class AgentClient: ObservableObject {
         webSocketTask?.resume()
         isConnected = true
         receiveMessage()
+        fetchModels()
     }
 
     func disconnect() {
@@ -77,6 +86,17 @@ class AgentClient: ObservableObject {
                             do {
                                 let event = try JSONDecoder().decode(AgentEvent.self, from: data)
                                 self?.events.append(event)
+                                switch event {
+                                case .modelsList(let models):
+                                    self?.availableModels = models
+                                case .config(let config):
+                                    self?.extraModels = config.extraModels ?? []
+                                    self?.selectedModel = config.selectedModel ?? ""
+                                case .done, .error:
+                                    self?.isThinking = false
+                                default:
+                                    break
+                                }
                             } catch {
                                 print("[AgentClient] Failed to decode event: \(error) from message: \(text)")
                             }
@@ -91,11 +111,15 @@ class AgentClient: ObservableObject {
         }
     }
 
-    func sendChat(text: String) {
-        let command: [String: Any] = [
+    func sendChat(text: String, model: String? = nil) {
+        isThinking = true
+        var command: [String: Any] = [
             "command": "chat",
             "text": text
         ]
+        if let model = model {
+            command["model"] = model
+        }
         send(command)
     }
 
@@ -134,6 +158,23 @@ class AgentClient: ObservableObject {
             "config": dict
         ]
         send(command)
+    }
+
+    func fetchModels() {
+        send(["command": "list_models"])
+    }
+
+    func saveModel(_ name: String) {
+        send(["command": "save_model", "name": name])
+    }
+
+    func setSelectedModel(_ model: String) {
+        let command: [String: Any] = [
+            "command": "set_config",
+            "config": ["selected_model": model]
+        ]
+        send(command)
+        self.selectedModel = model
     }
 
     private func send(_ dict: [String: Any]) {

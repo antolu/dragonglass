@@ -6,7 +6,9 @@ import json
 import logging
 import signal
 import tomllib
+from http import HTTPStatus
 
+import httpx
 import tomli_w
 import websockets
 
@@ -70,6 +72,10 @@ class DragonglassServer:
                     await self._handle_get_config(websocket)
                 elif command == "set_config":
                     await self._handle_set_config(websocket, data)
+                elif command == "list_models":
+                    await self._handle_list_models(websocket)
+                elif command == "save_model":
+                    await self._handle_save_model(websocket, data)
                 elif command == "get_version":
                     await self._handle_get_version(websocket)
         except websockets.exceptions.ConnectionClosed:
@@ -83,15 +89,74 @@ class DragonglassServer:
         self, websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
-        logger.info("server: chat message: %r", text)
+        model_override = data.get("model")
+        if not isinstance(model_override, str):
+            model_override = None
+
+        logger.info("server: chat message: %r (model=%s)", text, model_override)
         if self.agent:
-            async for event in self.agent.run(text):
+            async for event in self.agent.run(text, model_override=model_override):
                 await websocket.send(serialize_event(event))
 
     @staticmethod
     async def _handle_get_config(websocket: websockets.WebSocketServerProtocol) -> None:
         settings = get_settings()
-        await websocket.send(json.dumps({"type": "config", **settings.model_dump()}))
+        extra_models = []
+        if paths.EXTRA_MODELS_FILE.exists():
+            try:
+                with open(paths.EXTRA_MODELS_FILE, encoding="utf-8") as f:
+                    extra_models = json.load(f)
+            except Exception:
+                logger.warning("failed to load extra models", exc_info=True)
+
+        await websocket.send(
+            json.dumps({
+                "type": "config",
+                **settings.model_dump(),
+                "extra_models": extra_models,
+            })
+        )
+
+    @staticmethod
+    async def _handle_list_models(
+        websocket: websockets.WebSocketServerProtocol,
+    ) -> None:
+        settings = get_settings()
+        models = []
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{settings.ollama_url}/api/tags", timeout=2.0)
+                if resp.status_code == HTTPStatus.OK:
+                    data = resp.json()
+                    models = [m["name"] for m in data.get("models", [])]
+        except Exception:
+            logger.debug("ollama unreachable", exc_info=True)
+
+        await websocket.send(json.dumps({"type": "models_list", "models": models}))
+
+    @staticmethod
+    async def _handle_save_model(
+        websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+    ) -> None:
+        model_name = data.get("name")
+        if not isinstance(model_name, str) or not model_name:
+            return
+
+        extra_models = []
+        if paths.EXTRA_MODELS_FILE.exists():
+            try:
+                with open(paths.EXTRA_MODELS_FILE, encoding="utf-8") as f:
+                    extra_models = json.load(f)
+            except Exception:
+                pass
+
+        if model_name not in extra_models:
+            extra_models.append(model_name)
+            try:
+                with open(paths.EXTRA_MODELS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(extra_models, f)
+            except Exception:
+                logger.exception("failed to save extra models")
 
     @staticmethod
     async def _handle_set_config(
@@ -99,6 +164,7 @@ class DragonglassServer:
     ) -> None:
         new_config = data.get("config")
         if not isinstance(new_config, dict):
+            logger.warning("server: invalid config update payload")
             return
 
         try:
@@ -107,6 +173,8 @@ class DragonglassServer:
         except FileNotFoundError:
             current_toml = {}
 
+        # Merge new config into current TOML
+        # We assume keys coming from Swift are already snake_case via CodingKeys
         current_toml.update(new_config)
 
         # Ensure the config directory exists before writing
@@ -116,7 +184,10 @@ class DragonglassServer:
             tomli_w.dump(current_toml, f)
 
         invalidate_settings()
-        logger.info("server: config updated: %r", new_config)
+        logger.info(
+            "server: config updated and settings invalidated for file %s",
+            paths.CONFIG_FILE,
+        )
         await websocket.send(json.dumps({"type": "config_ack"}))
 
     @staticmethod

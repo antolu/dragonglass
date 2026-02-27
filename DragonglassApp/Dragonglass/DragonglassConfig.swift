@@ -6,6 +6,9 @@ struct DragonglassConfig: Codable {
     var ollamaUrl: String
     var vectorSearchUrl: String
     var llmModel: String
+    var extraModels: [String]?
+    var envVars: [String: String]?
+    var selectedModel: String?
     var agentsNotePath: String
     var autoAllowEdit: Bool
     var autoAllowCreate: Bool
@@ -17,9 +20,12 @@ struct DragonglassConfig: Codable {
         case ollamaUrl = "ollama_url"
         case vectorSearchUrl = "vector_search_url"
         case llmModel = "llm_model"
+        case selectedModel = "selected_model"
         case agentsNotePath = "agents_note_path"
         case autoAllowEdit = "auto_allow_edit"
         case autoAllowCreate = "auto_allow_create"
         case autoAllowDelete = "auto_allow_delete"
+        case extraModels = "extra_models"
+        case envVars = "env_vars"
     }
 }
