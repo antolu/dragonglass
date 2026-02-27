@@ -13,6 +13,14 @@ from dragonglass.search.session import get_current_session, new_session
 logger = logging.getLogger(__name__)
 
 
+class PatchLinesArgs(typing.TypedDict):
+    path: str
+    start_line: int
+    end_line: int
+    replacement: str
+    expected_hash: str | None
+
+
 async def _keyword_search_task(
     client: httpx.AsyncClient,
     query: str,
@@ -113,6 +121,80 @@ async def _do_vector_search(
         return [{"error": f"Vector search error: {e}"}]
 
 
+async def do_read_note_with_hash(
+    settings: Settings, path: str
+) -> dict[str, typing.Any]:
+    session = get_current_session()
+    if not session:
+        return {"error": "No active search session. Call new_search_session first."}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.vector_search_url}/notes/read",
+                json={"path": path},
+            )
+            data = resp.json()
+            if resp.status_code == httpx.codes.OK:
+                content_hash = data.get("content_hash")
+                if isinstance(content_hash, str):
+                    session.set_last_read_hash(path, content_hash)
+                return data
+            return {
+                "error": f"HTTP {resp.status_code}",
+                "details": data,
+            }
+    except Exception as exc:
+        logger.exception("read_note_with_hash failed for path %r", path)
+        return {"error": str(exc)}
+
+
+async def do_patch_note_lines(
+    settings: Settings,
+    args: PatchLinesArgs,
+) -> dict[str, typing.Any]:
+    session = get_current_session()
+    if not session:
+        return {"error": "No active search session. Call new_search_session first."}
+
+    path = args["path"]
+    resolved_expected_hash = args["expected_hash"] or session.get_last_read_hash(path)
+    if not resolved_expected_hash:
+        return {
+            "error": (
+                "No stored hash for this file. Call read_note_with_hash(path) before "
+                "patch_note_lines(path, ...)."
+            )
+        }
+
+    payload = {
+        "path": path,
+        "start_line": args["start_line"],
+        "end_line": args["end_line"],
+        "replacement": args["replacement"],
+        "expected_hash": resolved_expected_hash,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.vector_search_url}/notes/patch-lines",
+                json=payload,
+            )
+            data = resp.json()
+            if resp.status_code == httpx.codes.OK:
+                new_hash = data.get("new_hash")
+                if isinstance(new_hash, str):
+                    session.set_last_read_hash(path, new_hash)
+                return data
+            return {
+                "error": f"HTTP {resp.status_code}",
+                "details": data,
+            }
+    except Exception as exc:
+        logger.exception("patch_note_lines failed for path %r", path)
+        return {"error": str(exc)}
+
+
 def create_search_server(settings: Settings) -> fastmcp.FastMCP:
     m = fastmcp.FastMCP("search")
 
@@ -179,5 +261,37 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         except Exception as exc:
             logger.exception("run_command failed for %r", command_id)
             return {"error": str(exc)}
+
+    @m.tool()
+    async def read_note_with_hash(path: str) -> dict[str, typing.Any]:
+        """Read a markdown note and store its content hash in session state.
+
+        Must be called before patch_note_lines unless expected_hash is provided.
+        """
+        return await do_read_note_with_hash(settings, path)
+
+    @m.tool()
+    async def patch_note_lines(
+        path: str,
+        start_line: int,
+        end_line: int,
+        replacement: str,
+        expected_hash: str | None = None,
+    ) -> dict[str, typing.Any]:
+        """Replace a 1-based inclusive line range in a markdown note.
+
+        If expected_hash is omitted, the tool uses the hash captured by
+        read_note_with_hash(path) from the current search session.
+        """
+        return await do_patch_note_lines(
+            settings,
+            {
+                "path": path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "replacement": replacement,
+                "expected_hash": expected_hash,
+            },
+        )
 
     return m

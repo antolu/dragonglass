@@ -42,7 +42,7 @@ Always search before answering or making changes. Follow this order:
 - One focused query string describing what you are looking for.
 - Default `min_score` (0.35) is fine; lower it to 0.2 only if you expect very sparse results.
 
-**Step 4 — `obsidian_read_note`**
+**Step 4 — `read_note_with_hash`**
 - Read the top candidates before answering or editing.
 - If multiple notes look relevant, read all of them.
 
@@ -54,7 +54,7 @@ Always search before answering or making changes. Follow this order:
 
 When the user asks you to remember or record something:
 
-1. **Search first** — find existing notes on the topic before creating a new one. If you have already read the note using `obsidian_read_note`, you do not need to read it again.
+1. **Search first** — find existing notes on the topic before creating a new one. If you have already read the note using `read_note_with_hash`, you do not need to read it again.
 2. **Prefer appending** to the most relevant existing note (`obsidian_update_note` with `wholeFileMode: "append"`).
 3. **Create a new note** only when no suitable note exists or the content warrants its own page.
    - Choose a descriptive title that matches vault naming conventions (check nearby notes for style).
@@ -67,10 +67,26 @@ When the user asks you to remember or record something:
 ## Editing the vault
 
 Always read the note before editing. Use the vault-relative path from search results as `targetIdentifier` with `targetType: "filePath"`.
+For edits inside an existing file, prefer the hash-gated flow below over text search/replace.
+
+**Recommended flow for in-file edits**
+1. Call `read_note_with_hash(path)`.
+2. Compute exact line numbers to change from the returned content.
+3. Call `patch_note_lines(path, start_line, end_line, replacement)`.
+4. If `hash_mismatch`, call `read_note_with_hash(path)` again, recompute line numbers, retry once.
+
+**`read_note_with_hash`** — read a note with line metadata and content hash for safe patching.
+- Must be called before `patch_note_lines` unless an explicit `expected_hash` is supplied.
+- Use this for edits in the middle of a file when append/prepend is not appropriate.
+
+**`patch_note_lines`** — replace a 1-based inclusive line range with new text.
+- Parameters: `path`, `start_line`, `end_line`, `replacement`.
+- This enforces hash checks. If you get `hash_mismatch`, call `read_note_with_hash` again, recompute line range, and retry once.
 
 **`obsidian_search_replace`** — surgical edits (update a line, insert a section, fix a fact).
 - `replacements: [{"search": "<exact text>", "replace": "<new text>"}]`
 - Use `replaceAll: false` when targeting a specific occurrence.
+- Use this only when line-based patching is not practical.
 
 **`obsidian_update_note`** — new notes or full rewrites.
 - `wholeFileMode: "overwrite"` + `overwriteIfExists: true` to replace entirely.

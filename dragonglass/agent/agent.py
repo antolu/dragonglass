@@ -119,6 +119,8 @@ _TOOL_STATUS: dict[str, str] = {
     "sequentialthinking": "thinking",
     "open_note": "opening",
     "run_command": "running command",
+    "read_note_with_hash": "reading note with hash",
+    "patch_note_lines": "patching note",
 }
 
 
@@ -155,9 +157,9 @@ _SEARCH_TOOLS = frozenset({
     "keyword_search",
     "vector_search",
     "open_note",
-    "obsidian_read_note",
     "obsidian_list_notes",
     "obsidian_global_search",
+    "read_note_with_hash",
     "fetch",
     "sequentialthinking",
 })
@@ -168,18 +170,21 @@ _EDIT_TOOLS = frozenset({
     "obsidian_manage_frontmatter",
     "obsidian_manage_tags",
     "run_command",
+    "read_note_with_hash",
+    "patch_note_lines",
 })
 
 _FILE_READ_TOOLS = frozenset({
-    "obsidian_read_note",
     "obsidian_list_notes",
     "obsidian_global_search",
+    "read_note_with_hash",
 })
 _FILE_WRITE_TOOLS = frozenset({
     "obsidian_update_note",
     "obsidian_search_replace",
     "obsidian_manage_frontmatter",
     "obsidian_manage_tags",
+    "patch_note_lines",
 })
 _FILE_DELETE_TOOLS = frozenset({"obsidian_delete_note"})
 
@@ -205,6 +210,7 @@ def _status_for_tool(name: str, args: dict[str, JsonValue]) -> str:
     detail = (
         args.get("filePath")
         or args.get("dirPath")
+        or args.get("path")
         or (
             ", ".join(str(q) for q in queries)
             if isinstance(queries, list) and queries
@@ -433,7 +439,12 @@ class VaultAgent:
                 if tool_name in _EDIT_TOOLS:
                     phase = "edit"
 
-                file_path = str(args.get("filePath") or args.get("dirPath") or "")
+                file_path = str(
+                    args.get("filePath")
+                    or args.get("dirPath")
+                    or args.get("path")
+                    or ""
+                )
                 if file_path and tool_name in _FILE_READ_TOOLS:
                     yield FileAccessEvent(path=file_path, operation="read")
                 elif file_path and tool_name in _FILE_WRITE_TOOLS:
@@ -459,6 +470,8 @@ class VaultAgent:
             "vector_search",
             "open_note",
             "run_command",
+            "read_note_with_hash",
+            "patch_note_lines",
         }
         if name in search_tools:
             try:
