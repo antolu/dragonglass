@@ -67,7 +67,7 @@ class AgentClient: ObservableObject {
         webSocketTask?.resume()
         isConnected = true
         receiveMessage()
-        fetchModels()
+        refreshState()
     }
 
     func disconnect() {
@@ -164,17 +164,23 @@ class AgentClient: ObservableObject {
         send(["command": "list_models"])
     }
 
+    func refreshState() {
+        send(["command": "get_config"])
+        fetchModels()
+    }
+
     func saveModel(_ name: String) {
         send(["command": "save_model", "name": name])
     }
 
     func setSelectedModel(_ model: String) {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let command: [String: Any] = [
             "command": "set_config",
-            "config": ["selected_model": model]
+            "config": ["selected_model": trimmedModel]
         ]
         send(command)
-        self.selectedModel = model
+        self.selectedModel = trimmedModel
     }
 
     private func send(_ dict: [String: Any]) {

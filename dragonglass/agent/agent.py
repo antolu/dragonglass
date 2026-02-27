@@ -152,6 +152,22 @@ def _is_complex(text: str) -> bool:
     )
 
 
+def resolve_model_name(model_override: str | None, default_model: str) -> str:
+    if model_override is None:
+        return default_model
+
+    override = model_override.strip()
+    if not override:
+        return default_model
+    if "/" in override:
+        return override
+
+    if "/" in default_model:
+        provider, _ = default_model.split("/", 1)
+        return f"{provider}/{override}"
+    return override
+
+
 _SEARCH_TOOLS = frozenset({
     "new_search_session",
     "keyword_search",
@@ -336,8 +352,9 @@ class VaultAgent:
         while True:
             settings = get_settings()
             litellm.drop_params = True
+            model_name = resolve_model_name(model_override, settings.llm_model)
             kwargs: dict[str, typing.Any] = {
-                "model": model_override or settings.llm_model,
+                "model": model_name,
                 "messages": messages,
                 "stream": False,
                 "temperature": settings.llm_temperature,
@@ -355,7 +372,7 @@ class VaultAgent:
 
             logger.debug(
                 "LLM request  model=%s  phase=%s  tools=%s  messages=%d",
-                settings.llm_model,
+                model_name,
                 phase,
                 [t["function"]["name"] for t in tools],
                 len(messages),

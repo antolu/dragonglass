@@ -58,13 +58,13 @@ struct ContentView: View {
         .onAppear {
             if backend.phase == .ready {
                 if !client.isConnected { client.connect() }
-                client.fetchModels()
+                client.refreshState()
             }
         }
         .onChange(of: backend.phase) { phase in
             if phase == .ready {
                 if !client.isConnected { client.connect() }
-                client.fetchModels()
+                client.refreshState()
             }
         }
     }
@@ -121,14 +121,16 @@ struct ContentView: View {
                 TextField("e.g. gpt-4", text: $customModelText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
-                        if !customModelText.isEmpty {
-                            client.setSelectedModel(customModelText)
+                        let trimmedModel = customModelText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedModel.isEmpty {
+                            client.setSelectedModel(trimmedModel)
                         }
                         showingCustomModel = false
                     }
                 Button("Set Model") {
-                    if !customModelText.isEmpty {
-                        client.setSelectedModel(customModelText)
+                    let trimmedModel = customModelText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedModel.isEmpty {
+                        client.setSelectedModel(trimmedModel)
                     }
                     showingCustomModel = false
                 }

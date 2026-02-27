@@ -26,6 +26,20 @@ def serialize_event(event: AgentEvent) -> str:
     return json.dumps(data)
 
 
+def resolve_chat_model(raw_model_override: object, selected_model: str) -> str | None:
+    model_override: str | None = None
+    if isinstance(raw_model_override, str):
+        stripped = raw_model_override.strip()
+        if stripped:
+            model_override = stripped
+    if model_override is not None:
+        return model_override
+    selected = selected_model.strip()
+    if selected:
+        return selected
+    return None
+
+
 class DragonglassServer:
     def __init__(self, host: str = "localhost", port: int = 51363) -> None:
         self.host = host
@@ -89,9 +103,8 @@ class DragonglassServer:
         self, websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
-        model_override = data.get("model")
-        if not isinstance(model_override, str):
-            model_override = None
+        settings = get_settings()
+        model_override = resolve_chat_model(data.get("model"), settings.selected_model)
 
         logger.info("server: chat message: %r (model=%s)", text, model_override)
         if self.agent:
@@ -213,6 +226,7 @@ class DragonglassServer:
             paths.CONFIG_FILE,
         )
         await websocket.send(json.dumps({"type": "config_ack"}))
+        await DragonglassServer._handle_get_config(websocket)
 
     @staticmethod
     async def _handle_get_version(
