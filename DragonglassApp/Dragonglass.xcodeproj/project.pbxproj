@@ -8,9 +8,9 @@
 
 /* Begin PBXFileReference section */
 		292A4A562F51C89500E0A96B /* Dragonglass.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dragonglass.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		292A4A652F51C89500E0A96B /* wheels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = wheels; path = Dragonglass/Resources/wheels; sourceTree = "<group>"; };
-		292A4A672F51C89500E0A96B /* version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = version.txt; path = Dragonglass/Resources/version.txt; sourceTree = "<group>"; };
-		292A4A692F51C89500E0A96B /* python_version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = python_version.txt; path = Dragonglass/Resources/python_version.txt; sourceTree = "<group>"; };
+		292A4A652F51C89500E0A96B /* wheels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = wheels; path = Resources/wheels; sourceTree = "<group>"; };
+		292A4A672F51C89500E0A96B /* version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = version.txt; path = Resources/version.txt; sourceTree = "<group>"; };
+		292A4A692F51C89500E0A96B /* python_version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = python_version.txt; path = Resources/python_version.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -116,6 +116,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				292A4A662F51C89500E0A96B /* wheels in Resources */,
+				292A4A682F51C89500E0A96B /* version.txt in Resources */,
+				292A4A6A2F51C89500E0A96B /* python_version.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,7 +141,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# Try to find a modern python3\nFORCED_PYTHON=\"\"\nfor p in \"$HOME/.conda/bin/python3\" \"/opt/homebrew/bin/python3\" \"/usr/local/bin/python3\" \"python3\"; do\n  if command -v \"$p\" >/dev/null 2>&1; then\n    V=$(\"$p\" -c \"import sys; print(sys.version_info >= (3,11))\")\n    if [ \"$V\" = \"True\" ]; then\n      FORCED_PYTHON=\"$p\"\n      break\n    fi\n  fi\ndone\n\nif [ -z \"$FORCED_PYTHON\" ]; then\n  echo \"Error: Could not find Python 3.11+\" >&2\n  exit 1\nfi\n\n_PY=\"$FORCED_PYTHON\"\nWHEELS_DIR=\"$SRCROOT/Dragonglass/Resources/wheels\"\nCACHE_DIR=\"$SRCROOT/../build/python_wheels\"\nmkdir -p \"$CACHE_DIR\"\n\n# 1. Populate/Update the persistent cache\n# Uses internet if available; proceeds with cached wheels if offline\n# We download the project's dependencies AND its build-system requirements\n\"$_PY\" -m pip download \"$SRCROOT/../\" \"setuptools>=61\" \"setuptools-scm[toml]~=6.0\" \"wheel\" \\\n  --dest \"$CACHE_DIR\" \\\n  --exists-action i || echo \"Offline or download failed, using cached wheels\"\n\n# 2. Build the app wheel and collect all dependencies into the bundle\nrm -rf \"$WHEELS_DIR\" && mkdir -p \"$WHEELS_DIR\"\n\"$_PY\" -m pip wheel \"$SRCROOT/../\" \\\n  --wheel-dir \"$WHEELS_DIR\" \\\n  --no-index \\\n  --find-links \"$CACHE_DIR\"\n\n# Export version\nVERSION=$(\"$_PY\" -c \"import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)\")\necho \"$VERSION\" > \"$SRCROOT/Dragonglass/Resources/version.txt\"\n\n# Export python version\n\"$_PY\" -c \"import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')\" > \"$SRCROOT/Dragonglass/Resources/python_version.txt\"\n";
+			shellScript = "set -e\n\n# Try to find a modern python3\nFORCED_PYTHON=\"\"\nfor p in \"$HOME/.conda/bin/python3\" \"/opt/homebrew/bin/python3\" \"/usr/local/bin/python3\" \"python3\"; do\n  if command -v \"$p\" >/dev/null 2>&1; then\n    V=$(\"$p\" -c \"import sys; print(sys.version_info >= (3,11))\")\n    if [ \"$V\" = \"True\" ]; then\n      FORCED_PYTHON=\"$p\"\n      break\n    fi\n  fi\ndone\n\nif [ -z \"$FORCED_PYTHON\" ]; then\n  echo \"Error: Could not find Python 3.11+\" >&2\n  exit 1\nfi\n\n_PY=\"$FORCED_PYTHON\"\nWHEELS_DIR=\"$SRCROOT/Resources/wheels\"\nCACHE_DIR=\"$SRCROOT/../build/python_wheels\"\nmkdir -p \"$CACHE_DIR\"\n\n# 1. Populate/Update the persistent cache\n# Uses internet if available; proceeds with cached wheels if offline\n# We download the project's dependencies AND its build-system requirements\n\"$_PY\" -m pip download \"$SRCROOT/../\" \"setuptools>=61\" \"setuptools-scm[toml]~=6.0\" \"wheel\" \\\n  --dest \"$CACHE_DIR\" \\\n  --exists-action i || echo \"Offline or download failed, using cached wheels\"\n\n# 2. Build the app wheel and collect all dependencies into the bundle\nrm -rf \"$WHEELS_DIR\" && mkdir -p \"$WHEELS_DIR\"\n\"$_PY\" -m pip wheel \"$SRCROOT/../\" \\\n  --wheel-dir \"$WHEELS_DIR\" \\\n  --no-index \\\n  --find-links \"$CACHE_DIR\"\n\n# Export version\nVERSION=$(\"$_PY\" -c \"import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)\")\necho \"$VERSION\" > \"$SRCROOT/Resources/version.txt\"\n\n# Export python version\n\"$_PY\" -c \"import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')\" > \"$SRCROOT/Resources/python_version.txt\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

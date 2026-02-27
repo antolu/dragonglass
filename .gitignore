@@ -45,7 +45,7 @@ node_modules/
 DerivedData/
 *.xcworkspace
 *.xcuserstate
-DragonglassApp/Dragonglass/Resources/wheels/
-DragonglassApp/Dragonglass/Resources/version.txt
-DragonglassApp/Dragonglass/Resources/python_version.txt
+DragonglassApp/Resources/wheels/
+DragonglassApp/Resources/version.txt
+DragonglassApp/Resources/python_version.txt
 DragonglassApp/build/
