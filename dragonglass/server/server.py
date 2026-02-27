@@ -5,11 +5,14 @@ import dataclasses
 import json
 import logging
 import signal
+import tomllib
 
+import tomli_w
 import websockets
 
+from dragonglass import paths
 from dragonglass.agent.agent import AgentEvent, VaultAgent
-from dragonglass.config import get_settings
+from dragonglass.config import get_settings, invalidate_settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,20 +60,57 @@ class DragonglassServer:
         try:
             async for message in websocket:
                 data = json.loads(message)
-                if data.get("command") == "chat":
-                    text = data.get("text", "")
-                    logger.info("server: chat message: %r", text)
-                    if self.agent:
-                        async for event in self.agent.run(text):
-                            await websocket.send(serialize_event(event))
-                elif data.get("command") == "ping":
+                command = data.get("command")
+                if command == "chat":
+                    await self._handle_chat(websocket, data)
+                elif command == "ping":
                     await websocket.send(json.dumps({"type": "pong"}))
+                elif command == "get_config":
+                    await self._handle_get_config(websocket)
+                elif command == "set_config":
+                    await self._handle_set_config(websocket, data)
         except websockets.exceptions.ConnectionClosed:
             logger.info("server: client disconnected")
         except Exception:
             logger.exception("server: error handling client")
         finally:
             logger.info("server: request done")
+
+    async def _handle_chat(
+        self, websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+    ) -> None:
+        text = str(data.get("text", ""))
+        logger.info("server: chat message: %r", text)
+        if self.agent:
+            async for event in self.agent.run(text):
+                await websocket.send(serialize_event(event))
+
+    @staticmethod
+    async def _handle_get_config(websocket: websockets.WebSocketServerProtocol) -> None:
+        settings = get_settings()
+        await websocket.send(json.dumps({"type": "config", **settings.model_dump()}))
+
+    @staticmethod
+    async def _handle_set_config(
+        websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+    ) -> None:
+        new_config = data.get("config")
+        if not isinstance(new_config, dict):
+            return
+
+        try:
+            with open(paths.CONFIG_FILE, "rb") as f:
+                current_toml = tomllib.load(f)
+        except FileNotFoundError:
+            current_toml = {}
+
+        current_toml.update(new_config)
+        with open(paths.CONFIG_FILE, "wb") as f:
+            tomli_w.dump(current_toml, f)
+
+        invalidate_settings()
+        logger.info("server: config updated: %r", new_config)
+        await websocket.send(json.dumps({"type": "config_ack"}))
 
 
 async def main() -> None:

@@ -3,35 +3,30 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import subprocess
-import sys
+import socket
+import time
 
 import click
 import dotenv
 
-from dragonglass.log import LOG_FILE, redirect_stderr, setup_logging
+from dragonglass import paths
+from dragonglass.agent.headless import run_headless
+from dragonglass.log import LOG_FILE, setup_logging
+from dragonglass.server.main import DEFAULT_PORT, run, start_server_daemon
 
-_PID_FILE = os.path.expanduser("~/.local/share/dragonglass/dragonglass.pid")
+_PID_FILE = paths.DATA_DIR / "dragonglass.pid"
 _LOG_FILE = str(LOG_FILE)
 
 
-@click.group(invoke_without_command=True)
+@click.group()
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    if ctx.invoked_subcommand is None:
-        dotenv.load_dotenv()
-        setup_logging()
-        redirect_stderr()
-        from dragonglass.tui.app import DragonglassApp  # noqa: PLC0415
-
-        DragonglassApp().run()
+    pass
 
 
 @cli.command()
 def serve() -> None:
     """Run the dragonglass server (WebSocket)."""
-    from dragonglass.server.main import run  # noqa: PLC0415
-
     run()
 
 
@@ -40,7 +35,14 @@ def chat() -> None:
     """Run a headless chat REPL (client mode)."""
     dotenv.load_dotenv()
     setup_logging()
-    from dragonglass.agent.headless import run_headless  # noqa: PLC0415
+
+    # Check if server is running
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("localhost", DEFAULT_PORT)) != 0:
+            click.echo("server not running, starting it...")
+            start_server_daemon()
+            # Brief wait for it to bind
+            time.sleep(1.0)
 
     asyncio.run(run_headless())
 
@@ -56,17 +58,8 @@ def menubar() -> None:
 @cli.command()
 def start() -> None:
     """Start the agent server as a background daemon."""
-    os.makedirs(os.path.dirname(_PID_FILE), exist_ok=True)
-    with open(_LOG_FILE, "a", encoding="utf-8") as log_fd:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "dragonglass.server.main"],
-            stdout=log_fd,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    with open(_PID_FILE, "w", encoding="utf-8") as f:
-        f.write(str(proc.pid))
-    click.echo(f"started dragonglass server daemon (pid {proc.pid})")
+    pid = start_server_daemon()
+    click.echo(f"started dragonglass server daemon (pid {pid})")
 
 
 @cli.command()

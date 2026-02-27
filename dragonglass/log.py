@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-import pathlib
 import sys
 
-_LOG_DIR = pathlib.Path.home() / ".local" / "share" / "dragonglass"
-LOG_FILE = _LOG_DIR / "dragonglass.log"
+from dragonglass import paths
+
+LOG_FILE = paths.DATA_DIR / "dragonglass.log"
 
 _STRIP_HANDLERS_ONLY = [
     "LiteLLM",
@@ -26,7 +26,7 @@ _NOISY_LOGGERS = [
 
 
 def setup_logging() -> None:
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    paths.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     handler = logging.handlers.RotatingFileHandler(
         LOG_FILE,
@@ -34,6 +34,9 @@ def setup_logging() -> None:
         backupCount=3,
         encoding="utf-8",
     )
+    # Rollover on startup to start a fresh log for each session
+    if LOG_FILE.exists() and LOG_FILE.stat().st_size > 0:
+        handler.doRollover()
     handler.setFormatter(
         logging.Formatter(
             fmt="%(asctime)s %(levelname)-8s %(name)s  %(message)s",

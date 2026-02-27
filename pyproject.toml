@@ -17,6 +17,7 @@ dependencies = [
   "rumps >= 0.4.0",
   "pyobjc-framework-Cocoa >= 10.0",
   "websockets >= 12.0",
+  "tomli-w >= 1.0.0",
 ]
 
 [[project.authors]]
