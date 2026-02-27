@@ -122,15 +122,39 @@ class DragonglassServer:
         websocket: websockets.WebSocketServerProtocol,
     ) -> None:
         settings = get_settings()
-        models = []
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{settings.ollama_url}/api/tags", timeout=2.0)
-                if resp.status_code == HTTPStatus.OK:
+        models: list[str] = []
+        base_urls = [
+            settings.ollama_url.rstrip("/"),
+            "http://127.0.0.1:11434",
+            "http://[::1]:11434",
+            "http://localhost:11434",
+        ]
+
+        for base_url in dict.fromkeys(base_urls):
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(f"{base_url}/api/tags", timeout=5.0)
+                    if resp.status_code != HTTPStatus.OK:
+                        continue
                     data = resp.json()
-                    models = [m["name"] for m in data.get("models", [])]
-        except Exception:
-            logger.debug("ollama unreachable", exc_info=True)
+                    raw_models = data.get("models", [])
+                    if not isinstance(raw_models, list):
+                        continue
+                    parsed_models: list[str] = []
+                    for model in raw_models:
+                        if isinstance(model, str):
+                            parsed_models.append(model)
+                            continue
+                        if not isinstance(model, dict):
+                            continue
+                        value = model.get("name") or model.get("model")
+                        if isinstance(value, str) and value:
+                            parsed_models.append(value)
+                    if parsed_models:
+                        models = parsed_models
+                        break
+            except Exception:
+                logger.debug("ollama unreachable at %s", base_url, exc_info=True)
 
         await websocket.send(json.dumps({"type": "models_list", "models": models}))
 
