@@ -17,7 +17,7 @@ def load() -> dict[str, object]:
     try:
         with open(_STATE_FILE, encoding="utf-8") as f:
             data = json.load(f)
-    except FileNotFoundError, json.JSONDecodeError:
+    except (FileNotFoundError, json.JSONDecodeError) as _:
         return dict(_DEFAULTS)
     else:
         return {**_DEFAULTS, **data}
