@@ -31,10 +31,22 @@ class BackendManager: ObservableObject {
     func startBackend() async {
         await findAndKillExistingBackend()
 
-        let bundledVersion = getBundledVersion()
+        guard let bundledVersion = getBundledVersion() else {
+            phase = .failed("Missing bundled backend version metadata (version.txt). Rebuild app.")
+            return
+        }
+        guard getBundledPythonVersion() != nil else {
+            phase = .failed("Missing bundled python metadata (python_version.txt). Rebuild app.")
+            return
+        }
+        guard Bundle.main.url(forResource: "wheels", withExtension: nil) != nil else {
+            phase = .failed("Missing bundled wheels directory. Rebuild app.")
+            return
+        }
         let installedVersion = getInstalledVersion()
 
-        let needsInstall = !FileManager.default.fileExists(atPath: dragonglassPath.path) || (bundledVersion != nil && bundledVersion != installedVersion)
+        let needsInstall = !FileManager.default.fileExists(atPath: dragonglassPath.path)
+            || bundledVersion != installedVersion
 
         if needsInstall {
             phase = .installing
@@ -43,9 +55,7 @@ class BackendManager: ObservableObject {
                     try? FileManager.default.removeItem(at: venvDir)
                 }
                 try await installVenv()
-                if let version = bundledVersion {
-                    try? version.write(to: appSupportDir.appendingPathComponent("installed_version.txt"), atomically: true, encoding: .utf8)
-                }
+                try? bundledVersion.write(to: appSupportDir.appendingPathComponent("installed_version.txt"), atomically: true, encoding: .utf8)
             } catch {
                 phase = .failed("Installation failed: \(error.localizedDescription)")
                 return
