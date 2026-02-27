@@ -98,7 +98,7 @@ class BackendManager: ObservableObject {
             stopProcess.waitUntilExit()
 
             // Brief pause to allow graceful shutdown
-            Thread.sleep(forTimeInterval: 0.5)
+            try? await Task.sleep(nanoseconds: 500_000_000)
 
             // 2. Fallback to hard kill for any stragglers
             let process = Process()
@@ -278,9 +278,10 @@ class BackendManager: ObservableObject {
         }
 
         p.terminationHandler = { [weak self] process in
-            Task { @MainActor in
-                if self?.process == process {
-                    self?.phase = .failed("Backend exited with code \(process.terminationStatus)")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.process == process {
+                    self.phase = .failed("Backend exited with code \(process.terminationStatus)")
                 }
             }
         }

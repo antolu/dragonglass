@@ -77,6 +77,7 @@ class AgentClient: ObservableObject {
 
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
+            guard let self else { return }
             Task { @MainActor in
                 switch result {
                 case .success(let message):
@@ -85,15 +86,15 @@ class AgentClient: ObservableObject {
                         if let data = text.data(using: .utf8) {
                             do {
                                 let event = try JSONDecoder().decode(AgentEvent.self, from: data)
-                                self?.events.append(event)
+                                self.events.append(event)
                                 switch event {
                                 case .modelsList(let models):
-                                    self?.availableModels = models
+                                    self.availableModels = models
                                 case .config(let config):
-                                    self?.extraModels = config.extraModels ?? []
-                                    self?.selectedModel = config.selectedModel ?? ""
+                                    self.extraModels = config.extraModels ?? []
+                                    self.selectedModel = config.selectedModel ?? ""
                                 case .done, .error:
-                                    self?.isThinking = false
+                                    self.isThinking = false
                                 default:
                                     break
                                 }
@@ -103,9 +104,9 @@ class AgentClient: ObservableObject {
                         }
                     default: break
                     }
-                    self?.receiveMessage()
+                    self.receiveMessage()
                 case .failure:
-                    self?.isConnected = false
+                    self.isConnected = false
                 }
             }
         }
