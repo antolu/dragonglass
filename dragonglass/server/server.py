@@ -11,6 +11,7 @@ import tomli_w
 import websockets
 
 from dragonglass import paths
+from dragonglass._version import version
 from dragonglass.agent.agent import AgentEvent, VaultAgent
 from dragonglass.config import get_settings, invalidate_settings
 
@@ -69,6 +70,8 @@ class DragonglassServer:
                     await self._handle_get_config(websocket)
                 elif command == "set_config":
                     await self._handle_set_config(websocket, data)
+                elif command == "get_version":
+                    await self._handle_get_version(websocket)
         except websockets.exceptions.ConnectionClosed:
             logger.info("server: client disconnected")
         except Exception:
@@ -105,12 +108,22 @@ class DragonglassServer:
             current_toml = {}
 
         current_toml.update(new_config)
+
+        # Ensure the config directory exists before writing
+        paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
         with open(paths.CONFIG_FILE, "wb") as f:
             tomli_w.dump(current_toml, f)
 
         invalidate_settings()
         logger.info("server: config updated: %r", new_config)
         await websocket.send(json.dumps({"type": "config_ack"}))
+
+    @staticmethod
+    async def _handle_get_version(
+        websocket: websockets.WebSocketServerProtocol,
+    ) -> None:
+        await websocket.send(json.dumps({"type": "version", "version": version}))
 
 
 async def main() -> None:

@@ -48,14 +48,6 @@ def chat() -> None:
 
 
 @cli.command()
-def menubar() -> None:
-    """Launch the macOS menubar application."""
-    from dragonglass.menubar.app import main  # noqa: PLC0415
-
-    main()
-
-
-@cli.command()
 def start() -> None:
     """Start the agent server as a background daemon."""
     pid = start_server_daemon()

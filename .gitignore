@@ -40,3 +40,12 @@ dmypy.json
 Thumbs.db
 
 node_modules/
+
+# Swift / Xcode
+DerivedData/
+*.xcworkspace
+*.xcuserstate
+DragonglassApp/Dragonglass/Resources/wheels/
+DragonglassApp/Dragonglass/Resources/version.txt
+DragonglassApp/Dragonglass/Resources/python_version.txt
+DragonglassApp/build/
