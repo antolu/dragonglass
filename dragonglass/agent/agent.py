@@ -329,10 +329,16 @@ class VaultAgent:
 
         while True:
             settings = get_settings()
+            litellm.drop_params = True
             kwargs: dict[str, typing.Any] = {
                 "model": model_override or settings.llm_model,
                 "messages": messages,
                 "stream": False,
+                "temperature": settings.llm_temperature,
+                "top_p": settings.llm_top_p,
+                "top_k": settings.llm_top_k,
+                "topK": settings.llm_top_k,  # Gemini mapping
+                "min_p": settings.llm_min_p,
             }
             raw_tools = self._litellm_tools if use_full_tools else self._base_tools
             allowed = _SEARCH_TOOLS if phase == "search" else _EDIT_TOOLS

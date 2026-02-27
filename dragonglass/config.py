@@ -36,9 +36,13 @@ class Settings(BaseSettings):
 
     obsidian_api_url: str = "http://localhost:27123"
     obsidian_api_key: str = ""
+    llm_model: str = "ollama/llama3.2"
+    llm_temperature: float | None = None
+    llm_top_p: float | None = None
+    llm_top_k: int | None = None
+    llm_min_p: float | None = None
     ollama_url: str = "http://localhost:11434"
     vector_search_url: str = "http://localhost:51362"
-    llm_model: str = "gemini/gemini-2.5-flash"
     selected_model: str = ""
     agents_note_path: str = "AGENTS.md"
 
