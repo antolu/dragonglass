@@ -60,8 +60,8 @@
 			buildPhases = (
 				292A4A522F51C89500E0A96B /* Sources */,
 				292A4A532F51C89500E0A96B /* Frameworks */,
-				292A4A642F51C89500E0A96B /* Bundle Wheels */,
 				292A4A542F51C89500E0A96B /* Resources */,
+				292A4A642F51C89500E0A96B /* Bundle Wheels */,
 			);
 			buildRules = (
 			);
@@ -127,6 +127,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		292A4A642F51C89500E0A96B /* Bundle Wheels */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
