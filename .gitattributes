@@ -1,0 +1,2 @@
+DragonglassApp/Resources/app-icon-1024.png filter=lfs diff=lfs merge=lfs -text
+DragonglassApp/Dragonglass/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png filter=lfs diff=lfs merge=lfs -text

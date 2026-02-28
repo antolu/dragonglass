@@ -18,13 +18,9 @@ struct DragonglassApp: App {
                 .environmentObject(backend)
                 .environmentObject(client)
         } label: {
-            if #available(macOS 14.0, *) {
-                Image(systemName: "sparkles")
-                    .symbolEffect(.pulse, isActive: client.isThinking)
-            } else {
-                Image(systemName: "sparkles")
-                    .opacity(client.isThinking ? 0.5 : 1.0)
-            }
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .opacity(client.isThinking ? 0.5 : 1.0)
         }
         .menuBarExtraStyle(.window)
     }
