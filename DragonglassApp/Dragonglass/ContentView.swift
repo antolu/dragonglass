@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var showingCustomModel = false
     @State private var customModelText = ""
     @State private var lastModelSent: String?
+    @State private var lastRequestStartIndex: Int?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -189,10 +190,12 @@ struct ContentView: View {
                        let model = lastModelSent,
                        !model.isEmpty,
                        !client.availableModels.contains(model),
-                       !client.extraModels.contains(model) {
+                       !client.extraModels.contains(model),
+                       shouldPersistCustomModel(completedEventIndex: last) {
                         client.saveModel(model)
-                        lastModelSent = nil
                     }
+                    lastModelSent = nil
+                    lastRequestStartIndex = nil
                 }
             }
         }
@@ -219,9 +222,39 @@ struct ContentView: View {
 
         let model = client.selectedModel.isEmpty ? nil : client.selectedModel
         lastModelSent = model
+        lastRequestStartIndex = client.events.count
 
         client.sendChat(text: inputText, model: model)
         inputText = ""
+    }
+
+    private func shouldPersistCustomModel(completedEventIndex: Int) -> Bool {
+        guard let startIndex = lastRequestStartIndex,
+              startIndex <= completedEventIndex,
+              startIndex >= 0,
+              completedEventIndex < client.events.count else {
+            return false
+        }
+
+        var hasText = false
+        for event in client.events[startIndex...completedEventIndex] {
+            switch event {
+            case .text(let chunk):
+                if !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    hasText = true
+                }
+            case .error:
+                return false
+            case .status(let message):
+                if message.lowercased().hasPrefix("error:") {
+                    return false
+                }
+            default:
+                break
+            }
+        }
+
+        return hasText
     }
 }
 

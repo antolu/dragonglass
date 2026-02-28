@@ -49,6 +49,34 @@ def format_ollama_chat_model_name(model_name: str) -> str:
     return f"ollama_chat/{stripped}"
 
 
+def is_embedding_model(model_name: str) -> bool:
+    lowered = model_name.lower()
+    return "embed" in lowered or "embedding" in lowered
+
+
+def parse_ollama_models(raw_models: object) -> list[str]:
+    if not isinstance(raw_models, list):
+        return []
+
+    parsed_models: list[str] = []
+    for model in raw_models:
+        name: str | None = None
+        if isinstance(model, str):
+            name = model
+        elif isinstance(model, dict):
+            value = model.get("name") or model.get("model")
+            if isinstance(value, str):
+                name = value
+        if not name:
+            continue
+
+        formatted_name = format_ollama_chat_model_name(name)
+        if not is_embedding_model(formatted_name):
+            parsed_models.append(formatted_name)
+
+    return parsed_models
+
+
 class DragonglassServer:
     def __init__(self, host: str = "localhost", port: int = 51363) -> None:
         self.host = host
@@ -159,19 +187,7 @@ class DragonglassServer:
                     if resp.status_code != HTTPStatus.OK:
                         continue
                     data = resp.json()
-                    raw_models = data.get("models", [])
-                    if not isinstance(raw_models, list):
-                        continue
-                    parsed_models: list[str] = []
-                    for model in raw_models:
-                        if isinstance(model, str):
-                            parsed_models.append(format_ollama_chat_model_name(model))
-                            continue
-                        if not isinstance(model, dict):
-                            continue
-                        value = model.get("name") or model.get("model")
-                        if isinstance(value, str) and value:
-                            parsed_models.append(format_ollama_chat_model_name(value))
+                    parsed_models = parse_ollama_models(data.get("models"))
                     if parsed_models:
                         models = parsed_models
                         break
