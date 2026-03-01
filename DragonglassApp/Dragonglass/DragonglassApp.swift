@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 @main
 struct DragonglassApp: App {
@@ -18,8 +19,14 @@ struct DragonglassApp: App {
                 .environmentObject(backend)
                 .environmentObject(client)
         } label: {
-            Image("MenuBarIcon")
-                .renderingMode(.template)
+            Group {
+                if NSImage(named: NSImage.Name("MenuBarIcon")) != nil {
+                    Label("Dragonglass", image: "MenuBarIcon")
+                } else {
+                    Label("Dragonglass", systemImage: "sparkles")
+                }
+            }
+            .labelStyle(.iconOnly)
                 .opacity(client.isThinking ? 0.5 : 1.0)
         }
         .menuBarExtraStyle(.window)
