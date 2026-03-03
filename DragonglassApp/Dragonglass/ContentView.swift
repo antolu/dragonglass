@@ -282,7 +282,11 @@ struct EventRow: View {
                 .foregroundColor(.red)
         case .fileAccess(let path, let op):
             HStack {
-                Image(systemName: "filemenu.and.cursorarrow")
+                if op == "search" {
+                    Image(systemName: "magnifyingglass")
+                } else {
+                    Image(systemName: "filemenu.and.cursorarrow")
+                }
                 Text("\(op): \(path)")
             }
             .font(.caption)

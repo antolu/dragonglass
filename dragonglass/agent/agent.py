@@ -115,22 +115,10 @@ def _is_error_result(result: str) -> bool:
 
 
 _TOOL_STATUS: dict[str, str] = {
-    "keyword_search": "keyword searching vault",
-    "vector_search": "semantic searching vault for",
-    "obsidian_global_search": "searching vault for",
-    "obsidian_read_note": "reading note",
-    "obsidian_update_note": "updating note",
-    "obsidian_search_replace": "editing note",
-    "obsidian_list_notes": "listing",
-    "obsidian_delete_note": "deleting note",
-    "obsidian_manage_frontmatter": "updating frontmatter of",
-    "obsidian_manage_tags": "updating tags of",
     "fetch": "fetching",
     "sequentialthinking": "thinking",
     "open_note": "opening",
     "run_command": "running command",
-    "read_note_with_hash": "reading note with hash",
-    "patch_note_lines": "patching note",
 }
 
 
@@ -290,6 +278,8 @@ class VaultAgent:
                 result = await session.list_tools()
                 self._stdio_sessions.append(session)
                 for tool in result.tools:
+                    if tool.name == "obsidian_read_note":
+                        continue
                     lt_tool = _mcp_tool_to_litellm(tool)
                     self._litellm_tools.append(lt_tool)
                     self._base_tools.append(lt_tool)
@@ -466,6 +456,16 @@ class VaultAgent:
                 status = _status_for_tool(tool_name, args)
                 if status:
                     yield StatusEvent(message=status)
+
+                if tool_name in {"keyword_search", "vector_search"}:
+                    queries = args.get("queries")
+                    detail = (
+                        ", ".join(str(q) for q in queries)
+                        if isinstance(queries, list) and queries
+                        else args.get("query")
+                    )
+                    if detail:
+                        yield FileAccessEvent(path=str(detail), operation="search")
 
                 if tool_name in _EDIT_TOOLS:
                     phase = "edit"
