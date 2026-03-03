@@ -117,7 +117,7 @@ class AgentClient: ObservableObject {
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
-                                case .done, .error:
+                                case .done:
                                     self.isThinking = false
                                 default:
                                     break

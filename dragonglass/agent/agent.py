@@ -350,10 +350,12 @@ class VaultAgent:
         use_full_tools: bool = True,
         model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
-        phase: typing.Literal["search", "edit"] = "search"
         seen_calls: dict[tuple[str, str], str] = {}
+        max_iterations = 20
+        iterations = 0
 
-        while True:
+        while iterations < max_iterations:
+            iterations += 1
             settings = get_settings()
             litellm.drop_params = True
             model_name = resolve_model_name(model_override, settings.llm_model)
@@ -368,18 +370,17 @@ class VaultAgent:
                 "min_p": settings.llm_min_p,
             }
             raw_tools = self._litellm_tools if use_full_tools else self._base_tools
-            allowed = _SEARCH_TOOLS if phase == "search" else _EDIT_TOOLS
-            tools = [t for t in raw_tools if t["function"]["name"] in allowed]
+            tools = raw_tools
 
             if tools:
                 kwargs["tools"] = tools
 
             logger.debug(
-                "LLM request  model=%s  phase=%s  tools=%s  messages=%d",
+                "LLM request  model=%s  tools=%s  messages=%d  iter=%d",
                 model_name,
-                phase,
                 [t["function"]["name"] for t in tools],
                 len(messages),
+                iterations,
             )
             for i, m in enumerate(messages):
                 role = m.get("role", "?")
@@ -466,9 +467,6 @@ class VaultAgent:
                     )
                     if detail:
                         yield FileAccessEvent(path=str(detail), operation="search")
-
-                if tool_name in _EDIT_TOOLS:
-                    phase = "edit"
 
                 file_path = str(
                     args.get("filePath")
