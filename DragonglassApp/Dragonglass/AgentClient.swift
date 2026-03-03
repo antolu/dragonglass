@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-enum AgentEvent: Decodable {
+enum AgentEvent: Codable {
     case status(String)
     case assistantMessage(String)
     case error(String, String)
@@ -12,6 +12,8 @@ enum AgentEvent: Decodable {
     case modelsList([String])
     case usage(Int, Int, Int, Int)
     case userMessage(String)
+    case conversationsList([ConversationMetadata])
+    case conversationLoaded(String, [AgentEvent])
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -27,6 +29,9 @@ enum AgentEvent: Decodable {
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
         case sessionTotal = "session_total"
+        case conversations
+        case id
+        case history
     }
 
     init(from decoder: Decoder) throws {
@@ -34,32 +39,96 @@ enum AgentEvent: Decodable {
         let type = try container.decode(String.self, forKey: .type)
 
         switch type {
-        case "StatusEvent":
+        case "StatusEvent", "statusevent":
             self = .status(try container.decode(String.self, forKey: .message))
-        case "TextChunk":
+        case "TextChunk", "textchunk":
             self = .assistantMessage(try container.decode(String.self, forKey: .text))
-        case "ToolErrorEvent":
+        case "ToolErrorEvent", "toolerrorevent":
             self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
-        case "DoneEvent":
+        case "DoneEvent", "doneevent":
             self = .done
-        case "FileAccessEvent":
+        case "FileAccessEvent", "fileaccessevent":
             self = .fileAccess(try container.decode(String.self, forKey: .path), try container.decode(String.self, forKey: .operation))
         case "config":
             self = .config(try DragonglassConfig(from: decoder))
         case "config_ack":
             self = .configAck
-        case "models_list":
+        case "models_list", "ModelsListEvent":
             self = .modelsList(try container.decode([String].self, forKey: .models))
-        case "UsageEvent":
+        case "UsageEvent", "usageevent":
             self = .usage(
                 try container.decode(Int.self, forKey: .promptTokens),
                 try container.decode(Int.self, forKey: .completionTokens),
                 try container.decode(Int.self, forKey: .totalTokens),
                 try container.decode(Int.self, forKey: .sessionTotal)
             )
+        case "ConversationsListEvent", "conversations_list":
+            self = .conversationsList(try container.decode([ConversationMetadata].self, forKey: .conversations))
+        case "ConversationLoadedEvent", "conversation_loaded":
+            self = .conversationLoaded(try container.decode(String.self, forKey: .id), try container.decode([AgentEvent].self, forKey: .history))
         default:
             self = .unknown(type)
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = try encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .status(let msg):
+            try container.encode("StatusEvent", forKey: .type)
+            try container.encode(msg, forKey: .message)
+        case .assistantMessage(let msg):
+            try container.encode("TextChunk", forKey: .type)
+            try container.encode(msg, forKey: .text)
+        case .error(let tool, let err):
+            try container.encode("ToolErrorEvent", forKey: .type)
+            try container.encode(tool, forKey: .tool)
+            try container.encode(err, forKey: .error)
+        case .done:
+            try container.encode("DoneEvent", forKey: .type)
+        case .fileAccess(let path, let op):
+            try container.encode("FileAccessEvent", forKey: .type)
+            try container.encode(path, forKey: .path)
+            try container.encode(op, forKey: .operation)
+        case .config(let config):
+            try container.encode("config", forKey: .type)
+            try config.encode(to: encoder)
+        case .configAck:
+            try container.encode("config_ack", forKey: .type)
+        case .modelsList(let models):
+            try container.encode("models_list", forKey: .type)
+            try container.encode(models, forKey: .models)
+        case .usage(let pt, let ct, let tt, let st):
+            try container.encode("UsageEvent", forKey: .type)
+            try container.encode(pt, forKey: .promptTokens)
+            try container.encode(ct, forKey: .completionTokens)
+            try container.encode(tt, forKey: .totalTokens)
+            try container.encode(st, forKey: .sessionTotal)
+        case .userMessage(let msg):
+            try container.encode("user_message", forKey: .type)
+            try container.encode(msg, forKey: .message)
+        case .conversationsList(let list):
+            try container.encode("conversations_list", forKey: .type)
+            try container.encode(list, forKey: .conversations)
+        case .conversationLoaded(let id, let history):
+            try container.encode("conversation_loaded", forKey: .type)
+            try container.encode(id, forKey: .id)
+            try container.encode(history, forKey: .history)
+        case .unknown(let type):
+            try container.encode(type, forKey: .type)
+        }
+    }
+}
+
+struct ConversationMetadata: Codable, Identifiable {
+    let id: String
+    let title: String
+    let updatedAt: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case updatedAt = "updated_at"
     }
 }
 
@@ -71,6 +140,8 @@ class AgentClient: ObservableObject {
     @Published var availableModels: [String] = []
     @Published var extraModels: [String] = []
     @Published var selectedModel: String = ""
+    @Published var conversations: [ConversationMetadata] = []
+    @Published var activeConversationId: String?
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
@@ -107,19 +178,23 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                default:
+                                case .status, .error, .done, .fileAccess:
                                     self.events.append(event)
-                                }
-
-                                switch event {
+                                case .conversationsList(let list):
+                                    self.conversations = list
+                                case .conversationLoaded(let id, let history):
+                                    self.activeConversationId = id
+                                    self.events = history
+                                    self.isThinking = false
                                 case .modelsList(let models):
                                     self.availableModels = models
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
-                                case .done:
-                                    self.isThinking = false
-                                default:
+                                case .userMessage:
+                                    self.events.append(event)
+                                case .unknown, .usage, .configAck:
+                                    // These are system events or unknown, don't show in chat
                                     break
                                 }
                             } catch {
@@ -211,6 +286,24 @@ class AgentClient: ObservableObject {
         ]
         send(command)
         self.selectedModel = trimmedModel
+    }
+
+    func startNewChat() {
+        send(["command": "new_chat"])
+        events = []
+        activeConversationId = nil
+    }
+
+    func fetchConversations() {
+        send(["command": "list_conversations"])
+    }
+
+    func loadConversation(id: String) {
+        send(["command": "load_conversation", "id": id])
+    }
+
+    func deleteConversation(id: String) {
+        send(["command": "delete_conversation", "id": id])
     }
 
     private func send(_ dict: [String: Any]) {

@@ -16,8 +16,10 @@ CONFIG_DIR = get_xdg_dir("XDG_CONFIG_HOME", pathlib.Path.home() / ".config")
 DATA_DIR = get_xdg_dir("XDG_DATA_HOME", pathlib.Path.home() / ".local" / "share")
 CACHE_DIR = get_xdg_dir("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
 
+CONVERSATIONS_DIR = DATA_DIR / "conversations"
+
 # Ensure directories exist
-for d in (CONFIG_DIR, DATA_DIR, CACHE_DIR):
+for d in (CONFIG_DIR, DATA_DIR, CACHE_DIR, CONVERSATIONS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = CONFIG_DIR / "config.toml"

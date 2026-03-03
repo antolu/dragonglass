@@ -5,8 +5,12 @@ import contextlib
 import dataclasses
 import json
 import logging
+import pathlib
 import signal
+import time
 import tomllib
+import typing
+import uuid
 from http import HTTPStatus
 
 import httpx
@@ -15,10 +19,18 @@ import websockets
 
 from dragonglass import paths
 from dragonglass._version import version
-from dragonglass.agent.agent import AgentEvent, DoneEvent, VaultAgent
+from dragonglass.agent.agent import (
+    AgentEvent,
+    ConversationLoadedEvent,
+    ConversationsListEvent,
+    DoneEvent,
+    VaultAgent,
+)
 from dragonglass.config import get_settings, invalidate_settings
 
 logger = logging.getLogger(__name__)
+
+MAX_TITLE_LENGTH = 40
 
 
 def serialize_event(event: AgentEvent) -> str:
@@ -85,6 +97,34 @@ class DragonglassServer:
         self.agent: VaultAgent | None = None
         self._stop_event = asyncio.Event()
         self._chat_task: asyncio.Task[None] | None = None
+        self._current_conversation_id: str | None = None
+
+    @staticmethod
+    def _get_conversation_path(conversation_id: str) -> pathlib.Path:
+        return paths.CONVERSATIONS_DIR / f"{conversation_id}.json"
+
+    def _save_conversation(
+        self, conversation_id: str, history: list[typing.Any]
+    ) -> None:
+        path = self._get_conversation_path(conversation_id)
+        # Simple title extraction: first user message
+        title = "New Chat"
+        for msg in history:
+            if msg.get("role") == "user" and msg.get("content"):
+                content = str(msg["content"])
+                title = content[:MAX_TITLE_LENGTH] + (
+                    "..." if len(content) > MAX_TITLE_LENGTH else ""
+                )
+                break
+
+        data = {
+            "id": conversation_id,
+            "title": title,
+            "updated_at": time.time(),
+            "history": history,
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
     async def run(self) -> None:
         settings = get_settings()
@@ -110,7 +150,7 @@ class DragonglassServer:
         await self.agent.close()
 
     async def _handle_client(  # noqa: PLR0912
-        self, websocket: websockets.WebSocketServerProtocol
+        self, websocket: typing.Any
     ) -> None:
         logger.info("server: client connected")
         try:
@@ -138,6 +178,14 @@ class DragonglassServer:
                     await self._handle_save_model(websocket, data)
                 elif command == "get_version":
                     await self._handle_get_version(websocket)
+                elif command == "new_chat":
+                    await self._handle_new_chat(websocket)
+                elif command == "list_conversations":
+                    await self._handle_list_conversations(websocket)
+                elif command == "load_conversation":
+                    await self._handle_load_conversation(websocket, data)
+                elif command == "delete_conversation":
+                    await self._handle_delete_conversation(websocket, data)
         except websockets.exceptions.ConnectionClosed:
             logger.info("server: client disconnected")
         except Exception:
@@ -146,7 +194,7 @@ class DragonglassServer:
             logger.info("server: request done")
 
     async def _run_chat_task(
-        self, websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+        self, websocket: typing.Any, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
         settings = get_settings()
@@ -155,15 +203,23 @@ class DragonglassServer:
         logger.info("server: chat message: %r (model=%s)", text, model_override)
         try:
             if self.agent:
+                if not self._current_conversation_id:
+                    self._current_conversation_id = str(uuid.uuid4())
+
                 async for event in self.agent.run(text, model_override=model_override):
                     await websocket.send(serialize_event(event))
+
+                # Auto-save after response
+                self._save_conversation(
+                    self._current_conversation_id, self.agent.get_history()
+                )  # type: ignore
         except asyncio.CancelledError:
             logger.info("server: chat task cancelled")
             with contextlib.suppress(Exception):
                 await websocket.send(serialize_event(DoneEvent()))
 
     @staticmethod
-    async def _handle_get_config(websocket: websockets.WebSocketServerProtocol) -> None:
+    async def _handle_get_config(websocket: typing.Any) -> None:
         settings = get_settings()
         extra_models = []
         if paths.EXTRA_MODELS_FILE.exists():
@@ -183,7 +239,7 @@ class DragonglassServer:
 
     @staticmethod
     async def _handle_list_models(
-        websocket: websockets.WebSocketServerProtocol,
+        websocket: typing.Any,
     ) -> None:
         settings = get_settings()
         models: list[str] = []
@@ -212,7 +268,7 @@ class DragonglassServer:
 
     @staticmethod
     async def _handle_save_model(
-        websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+        websocket: typing.Any, data: dict[str, object]
     ) -> None:
         model_name = data.get("name")
         if not isinstance(model_name, str) or not model_name:
@@ -236,7 +292,7 @@ class DragonglassServer:
 
     @staticmethod
     async def _handle_set_config(
-        websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
+        websocket: typing.Any, data: dict[str, object]
     ) -> None:
         new_config = data.get("config")
         if not isinstance(new_config, dict):
@@ -269,9 +325,90 @@ class DragonglassServer:
 
     @staticmethod
     async def _handle_get_version(
-        websocket: websockets.WebSocketServerProtocol,
+        websocket: typing.Any,
     ) -> None:
         await websocket.send(json.dumps({"type": "version", "version": version}))
+
+    async def _handle_new_chat(self, websocket: typing.Any) -> None:
+        if self.agent:
+            self.agent.clear_history()
+        self._current_conversation_id = None
+        await websocket.send(
+            json.dumps({"type": "status", "message": "Started new chat"})
+        )
+
+    @staticmethod
+    async def _handle_list_conversations(websocket: typing.Any) -> None:
+        conversations = []
+        for path in paths.CONVERSATIONS_DIR.glob("*.json"):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                    conversations.append({
+                        "id": data["id"],
+                        "title": data["title"],
+                        "updated_at": data.get("updated_at", 0),
+                    })
+            except Exception:
+                logger.warning("failed to load conversation metadata from %s", path)
+
+        # Sort by updated_at descending
+        conversations.sort(key=lambda x: x["updated_at"], reverse=True)
+        await websocket.send(
+            serialize_event(ConversationsListEvent(conversations=conversations))
+        )
+
+    async def _handle_load_conversation(
+        self, websocket: typing.Any, data: dict[str, object]
+    ) -> None:
+        conv_id = data.get("id")
+        if not isinstance(conv_id, str):
+            return
+
+        path = self._get_conversation_path(conv_id)
+        if not path.exists():
+            await websocket.send(
+                json.dumps({"type": "error", "error": "Conversation not found"})
+            )
+            return
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                conv_data = json.load(f)
+                if self.agent:
+                    self.agent.set_history(conv_data["history"])
+                self._current_conversation_id = conv_id
+
+                # Send history back to client
+                await websocket.send(
+                    serialize_event(
+                        ConversationLoadedEvent(
+                            id=conv_id,
+                            history=conv_data["history"],
+                        )
+                    )
+                )
+        except Exception as e:
+            logger.exception("failed to load conversation %s", conv_id)
+            await websocket.send(json.dumps({"type": "error", "error": str(e)}))
+
+    async def _handle_delete_conversation(
+        self, websocket: typing.Any, data: dict[str, object]
+    ) -> None:
+        conv_id = data.get("id")
+        if not isinstance(conv_id, str):
+            return
+
+        path = self._get_conversation_path(conv_id)
+        if path.exists():
+            path.unlink()
+
+        if self._current_conversation_id == conv_id:
+            self._current_conversation_id = None
+            if self.agent:
+                self.agent.clear_history()
+
+        await self._handle_list_conversations(websocket)
 
 
 async def main() -> None:

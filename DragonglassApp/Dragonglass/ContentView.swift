@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var customModelText = ""
     @State private var lastModelSent: String?
     @State private var lastRequestStartIndex: Int?
+    @State private var showingConversations = false
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -48,6 +49,17 @@ struct ContentView: View {
         HStack {
             modelPicker
             Spacer()
+
+            Button(action: { showingConversations = true }) {
+                Image(systemName: "bubble.left.and.bubble.right")
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .popover(isPresented: $showingConversations, arrowEdge: .top) {
+                ConversationManagerView(isPresented: $showingConversations)
+                    .environmentObject(client)
+            }
+
             Button(action: { showingSettings = true }) {
                 Image(systemName: "gear")
             }

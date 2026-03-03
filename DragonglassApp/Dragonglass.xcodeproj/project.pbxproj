@@ -116,9 +116,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				292A4A662F51C89500E0A96B /* wheels in Resources */,
-				292A4A682F51C89500E0A96B /* version.txt in Resources */,
-				292A4A6A2F51C89500E0A96B /* python_version.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

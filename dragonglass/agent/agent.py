@@ -86,8 +86,26 @@ class FileAccessEvent:
     operation: str  # "read" | "write" | "delete"
 
 
+@dataclasses.dataclass
+class ConversationsListEvent:
+    conversations: list[dict[str, typing.Any]]
+
+
+@dataclasses.dataclass
+class ConversationLoadedEvent:
+    id: str
+    history: list[dict[str, typing.Any]]
+
+
 AgentEvent = (
-    StatusEvent | ToolErrorEvent | TextChunk | UsageEvent | DoneEvent | FileAccessEvent
+    StatusEvent
+    | ToolErrorEvent
+    | TextChunk
+    | UsageEvent
+    | DoneEvent
+    | FileAccessEvent
+    | ConversationsListEvent
+    | ConversationLoadedEvent
 )
 
 _EVENT_TUPLE_LEN = 2
@@ -257,6 +275,19 @@ class VaultAgent:
             get_settings()
         )
         await self._connect_mcp_servers()
+
+    def clear_history(self) -> None:
+        self._history = []
+        self._total_tokens = 0
+
+    def get_history(self) -> list[_Message]:
+        return list(self._history)
+
+    def set_history(self, history: list[_Message]) -> None:
+        self._history = list(history)
+        # We don't necessarily know the total tokens from loaded history,
+        # but we can reset or approximate if we had it. For now just reset.
+        self._total_tokens = 0
 
     async def _connect_mcp_servers(self) -> None:
         settings = get_settings()
