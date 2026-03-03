@@ -40,6 +40,7 @@ struct ConversationManagerView: View {
                 .foregroundColor(.accentColor)
             }
             .buttonStyle(.plain)
+            .focusable(false)
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))

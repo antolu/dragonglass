@@ -27,6 +27,7 @@ struct SettingsView: View {
                     .foregroundColor(.accentColor)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
