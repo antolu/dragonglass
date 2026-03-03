@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -14,7 +15,7 @@ import websockets
 
 from dragonglass import paths
 from dragonglass._version import version
-from dragonglass.agent.agent import AgentEvent, VaultAgent
+from dragonglass.agent.agent import AgentEvent, DoneEvent, VaultAgent
 from dragonglass.config import get_settings, invalidate_settings
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class DragonglassServer:
         self.port = port
         self.agent: VaultAgent | None = None
         self._stop_event = asyncio.Event()
+        self._chat_task: asyncio.Task[None] | None = None
 
     async def run(self) -> None:
         settings = get_settings()
@@ -107,7 +109,7 @@ class DragonglassServer:
         logger.info("server: shutting down")
         await self.agent.close()
 
-    async def _handle_client(
+    async def _handle_client(  # noqa: PLR0912
         self, websocket: websockets.WebSocketServerProtocol
     ) -> None:
         logger.info("server: client connected")
@@ -116,7 +118,14 @@ class DragonglassServer:
                 data = json.loads(message)
                 command = data.get("command")
                 if command == "chat":
-                    await self._handle_chat(websocket, data)
+                    if self._chat_task and not self._chat_task.done():
+                        self._chat_task.cancel()
+                    self._chat_task = asyncio.create_task(
+                        self._run_chat_task(websocket, data)
+                    )
+                elif command == "stop":
+                    if self._chat_task and not self._chat_task.done():
+                        self._chat_task.cancel()
                 elif command == "ping":
                     await websocket.send(json.dumps({"type": "pong"}))
                 elif command == "get_config":
@@ -136,7 +145,7 @@ class DragonglassServer:
         finally:
             logger.info("server: request done")
 
-    async def _handle_chat(
+    async def _run_chat_task(
         self, websocket: websockets.WebSocketServerProtocol, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
@@ -144,9 +153,14 @@ class DragonglassServer:
         model_override = resolve_chat_model(data.get("model"), settings.selected_model)
 
         logger.info("server: chat message: %r (model=%s)", text, model_override)
-        if self.agent:
-            async for event in self.agent.run(text, model_override=model_override):
-                await websocket.send(serialize_event(event))
+        try:
+            if self.agent:
+                async for event in self.agent.run(text, model_override=model_override):
+                    await websocket.send(serialize_event(event))
+        except asyncio.CancelledError:
+            logger.info("server: chat task cancelled")
+            with contextlib.suppress(Exception):
+                await websocket.send(serialize_event(DoneEvent()))
 
     @staticmethod
     async def _handle_get_config(websocket: websockets.WebSocketServerProtocol) -> None:

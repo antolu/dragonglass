@@ -90,6 +90,7 @@ class DragonglassApp(App[None]):
         Binding("ctrl+z", "suspend_process", "Suspend", show=False),
         Binding("ctrl+l", "clear_log", "Clear Log"),
         Binding("f2", "toggle_stats", "Stats"),
+        Binding("escape", "stop_chat", "Stop", show=False),
     ]
 
     def __init__(self) -> None:
@@ -97,6 +98,7 @@ class DragonglassApp(App[None]):
         self._settings = get_settings()
         self._client = AgentClient()
         self._total_tokens = 0
+        self._is_thinking = False
 
     def compose(self) -> ComposeResult:  # noqa: PLR6301
         yield Header()
@@ -112,6 +114,10 @@ class DragonglassApp(App[None]):
     async def on_mount(self) -> None:
         self.query_one("#input", Input).focus()
         self._update_tokens(0, 0, 0, 0)
+        await self._client.connect()
+
+    async def on_unmount(self) -> None:
+        await self._client.close()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -143,6 +149,7 @@ class DragonglassApp(App[None]):
         status_widget = self.query_one("#status", Static)
         inp = self.query_one("#input", Input)
         inp.disabled = True
+        self._is_thinking = True
 
         try:
             async for event in self._client.run(text):
@@ -167,10 +174,15 @@ class DragonglassApp(App[None]):
         except Exception as exc:
             log.write(f"\n[bold red]system error[/bold red]: {exc}\n")
         finally:
+            self._is_thinking = False
             status_widget.update("")
             inp.disabled = False
             inp.focus()
             log.write("\n")
+
+    async def action_stop_chat(self) -> None:
+        if self._is_thinking:
+            await self._client.stop()
 
     def _update_tokens(
         self, prompt: int, completion: int, total: int, session: int

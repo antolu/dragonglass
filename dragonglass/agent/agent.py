@@ -318,12 +318,12 @@ class VaultAgent:
         self, user_message: str, model_override: str | None = None
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
+        history_len_before = len(self._history)
         self._history.append(_Message(role="user", content=user_message))
         messages: list[_Message] = [
             _Message(role="system", content=self._system_prompt),
             *self._history,
         ]
-        history_len_before = len(self._history)
         is_complex = _is_complex(user_message)
         gen = self._agent_loop(
             messages, use_full_tools=is_complex, model_override=model_override
@@ -335,6 +335,9 @@ class VaultAgent:
             logger.exception("agent loop error")
             yield StatusEvent(message=f"Error: {exc}")
             yield DoneEvent()
+        except BaseException:
+            del self._history[history_len_before:]
+            raise
         finally:
             await gen.aclose()
 
