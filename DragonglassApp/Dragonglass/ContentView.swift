@@ -292,6 +292,8 @@ struct EventRow: View {
             Divider()
         case .modelsList:
             EmptyView()
+        case .usage:
+            EmptyView()
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)

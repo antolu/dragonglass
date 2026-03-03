@@ -10,6 +10,7 @@ enum AgentEvent: Decodable {
     case config(DragonglassConfig)
     case configAck
     case modelsList([String])
+    case usage(Int, Int, Int, Int)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -21,6 +22,10 @@ enum AgentEvent: Decodable {
         case path
         case operation
         case models
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+        case sessionTotal = "session_total"
     }
 
     init(from decoder: Decoder) throws {
@@ -44,6 +49,13 @@ enum AgentEvent: Decodable {
             self = .configAck
         case "models_list":
             self = .modelsList(try container.decode([String].self, forKey: .models))
+        case "UsageEvent":
+            self = .usage(
+                try container.decode(Int.self, forKey: .promptTokens),
+                try container.decode(Int.self, forKey: .completionTokens),
+                try container.decode(Int.self, forKey: .totalTokens),
+                try container.decode(Int.self, forKey: .sessionTotal)
+            )
         default:
             self = .unknown(type)
         }
