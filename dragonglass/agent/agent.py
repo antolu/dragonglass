@@ -348,6 +348,7 @@ class VaultAgent:
         model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         phase: typing.Literal["search", "edit"] = "search"
+        seen_calls: dict[tuple[str, str], str] = {}
 
         while True:
             settings = get_settings()
@@ -469,10 +470,18 @@ class VaultAgent:
                 elif file_path and tool_name in _FILE_DELETE_TOOLS:
                     yield FileAccessEvent(path=file_path, operation="delete")
 
-                result = await self._call_tool(tool_name, args)
-                logger.debug(
-                    "tool %r  args=%s  result=%s", tool_name, args, result[:300]
-                )
+                call_key = (tool_name, json.dumps(args, sort_keys=True))
+                if call_key in seen_calls:
+                    result = seen_calls[call_key]
+                    logger.debug(
+                        "tool %r  deduplicated — returning cached result", tool_name
+                    )
+                else:
+                    result = await self._call_tool(tool_name, args)
+                    seen_calls[call_key] = result
+                    logger.debug(
+                        "tool %r  args=%s  result=%s", tool_name, args, result[:300]
+                    )
                 if result.startswith(("Search server error:", "Tool '")):
                     yield ToolErrorEvent(tool=tool_name, error=result)
 
