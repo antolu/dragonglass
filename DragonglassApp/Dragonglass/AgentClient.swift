@@ -3,7 +3,7 @@ import Combine
 
 enum AgentEvent: Decodable {
     case status(String)
-    case text(String)
+    case assistantMessage(String)
     case error(String, String)
     case done
     case fileAccess(String, String)
@@ -11,6 +11,7 @@ enum AgentEvent: Decodable {
     case configAck
     case modelsList([String])
     case usage(Int, Int, Int, Int)
+    case userMessage(String)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -36,7 +37,7 @@ enum AgentEvent: Decodable {
         case "StatusEvent":
             self = .status(try container.decode(String.self, forKey: .message))
         case "TextChunk":
-            self = .text(try container.decode(String.self, forKey: .text))
+            self = .assistantMessage(try container.decode(String.self, forKey: .text))
         case "ToolErrorEvent":
             self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
         case "DoneEvent":
@@ -98,7 +99,18 @@ class AgentClient: ObservableObject {
                         if let data = text.data(using: .utf8) {
                             do {
                                 let event = try JSONDecoder().decode(AgentEvent.self, from: data)
-                                self.events.append(event)
+
+                                switch event {
+                                case .assistantMessage(let chunk):
+                                    if case .assistantMessage(let existing) = self.events.last {
+                                        self.events[self.events.count - 1] = .assistantMessage(existing + chunk)
+                                    } else {
+                                        self.events.append(event)
+                                    }
+                                default:
+                                    self.events.append(event)
+                                }
+
                                 switch event {
                                 case .modelsList(let models):
                                     self.availableModels = models
@@ -126,6 +138,7 @@ class AgentClient: ObservableObject {
 
     func sendChat(text: String, model: String? = nil) {
         isThinking = true
+        events.append(.userMessage(text))
         var command: [String: Any] = [
             "command": "chat",
             "text": text

@@ -246,8 +246,8 @@ struct ContentView: View {
         var hasText = false
         for event in client.events[startIndex...completedEventIndex] {
             switch event {
-            case .text(let chunk):
-                if !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            case .assistantMessage(let msg):
+                if !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     hasText = true
                 }
             case .error:
@@ -275,8 +275,8 @@ struct EventRow: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .italic()
-        case .text(let chunk):
-            Text(chunk)
+        case .assistantMessage(let msg):
+            Text(LocalizedStringKey(msg))
         case .error(let tool, let err):
             Text("\(tool): \(err)")
                 .foregroundColor(.red)
@@ -305,6 +305,14 @@ struct EventRow: View {
             EmptyView()
         case .usage:
             EmptyView()
+        case .userMessage(let msg):
+            HStack {
+                Spacer()
+                Text(msg)
+                    .padding(8)
+                    .background(Color.accentColor.opacity(0.1))
+                    .cornerRadius(8)
+            }
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)
