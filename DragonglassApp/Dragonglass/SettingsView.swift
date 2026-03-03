@@ -24,9 +24,7 @@ struct SettingsView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
+                    .foregroundColor(.accentColor)
                 }
                 .buttonStyle(.plain)
             }
