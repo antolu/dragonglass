@@ -121,7 +121,31 @@ async def _do_vector_search(
         return [{"error": f"Vector search error: {e}"}]
 
 
-async def do_read_note_with_hash(
+_NOTE_ERROR_MESSAGES: dict[str, str] = {
+    "note_not_found": "Note not found in vault. The file may have been deleted or the path is wrong.",
+    "invalid_path": "Path must end with .md.",
+    "invalid_body": "Malformed request body.",
+}
+
+_PATCH_ERROR_MESSAGES: dict[str, str] = {
+    "note_not_found": "Note not found in vault. The file may have been deleted or the path is wrong.",
+    "hash_mismatch": "Note was modified since it was last read. Call read_note_with_hash again before patching.",
+    "line_range_out_of_bounds": "Line range exceeds the number of lines in the note.",
+    "invalid_line_range": "Invalid line range: start_line must be >= 1 and <= end_line.",
+}
+
+
+def _parse_response_json(resp: httpx.Response) -> dict[str, typing.Any] | None:
+    try:
+        result = resp.json()
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    return None
+
+
+async def do_read_note_with_hash(  # noqa: PLR0911
     settings: Settings, path: str
 ) -> dict[str, typing.Any]:
     session = get_current_session()
@@ -134,22 +158,41 @@ async def do_read_note_with_hash(
                 f"{settings.vector_search_url}/notes/read",
                 json={"path": path},
             )
-            data = resp.json()
             if resp.status_code == httpx.codes.OK:
+                data = _parse_response_json(resp)
+                if data is None:
+                    return {"error": "Vector search server returned empty response."}
                 content_hash = data.get("content_hash")
                 if isinstance(content_hash, str):
                     session.set_last_read_hash(path, content_hash)
                 return data
+
+            data = _parse_response_json(resp)
+            error_code = data.get("error", "") if data else ""
+            message = _NOTE_ERROR_MESSAGES.get(error_code)
+            if message:
+                return {"error": message}
+            if data:
+                return {"error": f"HTTP {resp.status_code}", "details": data}
             return {
-                "error": f"HTTP {resp.status_code}",
-                "details": data,
+                "error": (
+                    f"Vector search server returned HTTP {resp.status_code} with no body. "
+                    "The Obsidian plugin may not be running or may need to be reloaded."
+                )
             }
+    except httpx.ConnectError:
+        return {
+            "error": (
+                f"Cannot connect to vector search server at {settings.vector_search_url}. "
+                "The Obsidian plugin is likely not running."
+            )
+        }
     except Exception as exc:
         logger.exception("read_note_with_hash failed for path %r", path)
         return {"error": str(exc)}
 
 
-async def do_patch_note_lines(
+async def do_patch_note_lines(  # noqa: PLR0911
     settings: Settings,
     args: PatchLinesArgs,
 ) -> dict[str, typing.Any]:
@@ -174,22 +217,42 @@ async def do_patch_note_lines(
         "replacement": args["replacement"],
         "expected_hash": resolved_expected_hash,
     }
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{settings.vector_search_url}/notes/patch-lines",
                 json=payload,
             )
-            data = resp.json()
             if resp.status_code == httpx.codes.OK:
+                data = _parse_response_json(resp)
+                if data is None:
+                    return {"error": "Vector search server returned empty response."}
                 new_hash = data.get("new_hash")
                 if isinstance(new_hash, str):
                     session.set_last_read_hash(path, new_hash)
                 return data
+
+            data = _parse_response_json(resp)
+            error_code = data.get("error", "") if data else ""
+            message = _PATCH_ERROR_MESSAGES.get(error_code)
+            if message:
+                return {"error": message}
+            if data:
+                return {"error": f"HTTP {resp.status_code}", "details": data}
             return {
-                "error": f"HTTP {resp.status_code}",
-                "details": data,
+                "error": (
+                    f"Vector search server returned HTTP {resp.status_code} with no body. "
+                    "The Obsidian plugin may not be running or may need to be reloaded."
+                )
             }
+    except httpx.ConnectError:
+        return {
+            "error": (
+                f"Cannot connect to vector search server at {settings.vector_search_url}. "
+                "The Obsidian plugin is likely not running."
+            )
+        }
     except Exception as exc:
         logger.exception("patch_note_lines failed for path %r", path)
         return {"error": str(exc)}

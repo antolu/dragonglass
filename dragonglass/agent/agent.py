@@ -104,6 +104,16 @@ def _truncate_result(text: str) -> str:
     )
 
 
+def _is_error_result(result: str) -> bool:
+    if result.startswith(("Search server error:", "Tool '")):
+        return True
+    try:
+        data = json.loads(result)
+        return isinstance(data, dict) and "error" in data
+    except json.JSONDecodeError:
+        return False
+
+
 _TOOL_STATUS: dict[str, str] = {
     "keyword_search": "keyword searching vault",
     "vector_search": "semantic searching vault for",
@@ -481,7 +491,8 @@ class VaultAgent:
                     )
                 else:
                     result = await self._call_tool(tool_name, args)
-                    seen_calls[call_key] = result
+                    if not _is_error_result(result):
+                        seen_calls[call_key] = result
                     logger.debug(
                         "tool %r  args=%s  result=%s", tool_name, args, result[:300]
                     )

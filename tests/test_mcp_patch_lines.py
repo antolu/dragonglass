@@ -192,9 +192,7 @@ def test_patch_note_lines_propagates_hash_mismatch(
         )
     )
 
-    assert result["error"] == "HTTP 409"
-    assert isinstance(result["details"], dict)
-    assert result["details"]["error"] == "hash_mismatch"
+    assert "modified since it was last read" in result["error"]
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:stalehash"
 
 
