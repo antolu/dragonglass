@@ -397,6 +397,7 @@ class VaultAgent:
                     logger.debug("  msg[%d] %s  %s", i, role, str(content)[:200])
 
             response = await litellm.acompletion(**kwargs)
+            logger.debug("LLM raw response: %s", response.model_dump_json(indent=2))
 
             usage = getattr(response, "usage", None)
             if usage:
@@ -416,7 +417,7 @@ class VaultAgent:
             logger.debug(
                 "LLM response  tool_calls=%s  content=%s",
                 [tc.function.name for tc in tool_calls] if tool_calls else None,
-                str(msg.content or "")[:200],
+                msg.content,
             )
 
             assistant_msg = _Message(role="assistant", content=msg.content or "")
