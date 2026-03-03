@@ -17,13 +17,22 @@ struct SettingsView: View {
                 Text("Settings")
                     .font(.headline)
                 Spacer()
-                Button(action: { isPresented = false }) {
-                    Image(systemName: "xmark")
+                Button(action: saveConfig) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                        Text("Save")
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
-                .focusable(false)
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor))
 
             if isLoading {
                 Spacer()
@@ -89,31 +98,22 @@ struct SettingsView: View {
                             .disabled(newEnvKey.isEmpty)
                         }
                     }
+
+                    Section {
+                        Button("Quit Dragonglass") {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .foregroundColor(.red)
+                    }
                 }
-                .padding()
+                .padding(.horizontal)
             } else {
                 Spacer()
             }
 
-            Divider()
-
-            HStack {
-                Button("Cancel") { isPresented = false }
-                Button("Save") {
-                    saveConfig()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Spacer()
-
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .foregroundColor(.red)
-            }
-            .padding()
+            Spacer(minLength: 0)
         }
-        .frame(width: 300, height: 500)
+        .frame(width: 320, height: 400)
         .alert("Error", isPresented: $showError, presenting: errorMessage) { _ in
             Button("OK") { showError = false }
         } message: { message in

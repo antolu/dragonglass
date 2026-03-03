@@ -180,6 +180,10 @@ class AgentClient: ObservableObject {
                                     }
                                 case .status, .error, .done, .fileAccess:
                                     self.events.append(event)
+                                case .config(let config):
+                                    self.extraModels = config.extraModels ?? []
+                                    self.selectedModel = config.selectedModel ?? ""
+                                    self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list
                                 case .conversationLoaded(let id, let history):
@@ -188,9 +192,6 @@ class AgentClient: ObservableObject {
                                     self.isThinking = false
                                 case .modelsList(let models):
                                     self.availableModels = models
-                                case .config(let config):
-                                    self.extraModels = config.extraModels ?? []
-                                    self.selectedModel = config.selectedModel ?? ""
                                 case .userMessage:
                                     self.events.append(event)
                                 case .unknown, .usage, .configAck:
