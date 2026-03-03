@@ -12,37 +12,18 @@ struct ContentView: View {
     @State private var showingConversations = false
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Main Chat UI
-            VStack(spacing: 0) {
-                header
+        VStack(spacing: 0) {
+            header
 
-                if backend.phase != .ready {
-                    statusView
-                } else {
-                    chatView
-                }
-
-                inputArea
+            if backend.phase != .ready {
+                statusView
+            } else {
+                chatView
             }
-            .frame(width: 400, height: 500)
 
-            // Overlay and Settings Pane
-            if showingSettings {
-                Color.black.opacity(0.1)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        showingSettings = false
-                    }
-
-                SettingsView(isPresented: $showingSettings)
-                    .environmentObject(client)
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .transition(.move(edge: .trailing))
-            }
+            inputArea
         }
         .frame(width: 400, height: 500)
-        .animation(.easeInOut(duration: 0.2), value: showingSettings)
     }
 
     private var header: some View {
@@ -50,7 +31,10 @@ struct ContentView: View {
             modelPicker
             Spacer()
 
-            Button(action: { showingConversations = true }) {
+            Button(action: {
+                showingSettings = false
+                showingConversations = true
+            }) {
                 Image(systemName: "bubble.left.and.bubble.right")
             }
             .buttonStyle(.plain)
@@ -60,11 +44,18 @@ struct ContentView: View {
                     .environmentObject(client)
             }
 
-            Button(action: { showingSettings = true }) {
+            Button(action: {
+                showingConversations = false
+                showingSettings = true
+            }) {
                 Image(systemName: "gear")
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .popover(isPresented: $showingSettings, arrowEdge: .top) {
+                SettingsView(isPresented: $showingSettings)
+                    .environmentObject(client)
+            }
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))
@@ -322,6 +313,10 @@ struct EventRow: View {
         case .modelsList:
             EmptyView()
         case .usage:
+            EmptyView()
+        case .conversationsList:
+            EmptyView()
+        case .conversationLoaded:
             EmptyView()
         case .userMessage(let msg):
             HStack {
