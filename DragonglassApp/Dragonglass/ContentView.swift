@@ -211,7 +211,13 @@ struct ContentView: View {
             if client.isThinking {
                 Button(action: { client.stopChat() }) {
                     Image(systemName: "stop.fill")
+                        .font(.body)
+                        .foregroundColor(.red)
+                        .frame(width: 30, height: 30)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(4)
                 }
+                .buttonStyle(.plain)
             } else {
                 Button(action: sendMessage) {
                     Image(systemName: "paperplane.fill")
