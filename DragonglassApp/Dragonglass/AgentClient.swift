@@ -173,6 +173,11 @@ class AgentClient: ObservableObject {
         send(command)
     }
 
+    func stopChat() {
+        isThinking = false
+        send(["command": "stop"])
+    }
+
     func fetchModels() {
         send(["command": "list_models"])
     }

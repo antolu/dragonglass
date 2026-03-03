@@ -206,11 +206,18 @@ struct ContentView: View {
             TextField("Ask anything...", text: $inputText)
                 .textFieldStyle(.plain)
                 .onSubmit(sendMessage)
+                .disabled(client.isThinking)
 
-            Button(action: sendMessage) {
-                Image(systemName: "paperplane.fill")
+            if client.isThinking {
+                Button(action: { client.stopChat() }) {
+                    Image(systemName: "stop.fill")
+                }
+            } else {
+                Button(action: sendMessage) {
+                    Image(systemName: "paperplane.fill")
+                }
+                .disabled(inputText.isEmpty || backend.phase != .ready)
             }
-            .disabled(inputText.isEmpty || backend.phase != .ready)
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
