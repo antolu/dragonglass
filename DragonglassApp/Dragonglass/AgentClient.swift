@@ -174,7 +174,6 @@ class AgentClient: ObservableObject {
     }
 
     func stopChat() {
-        isThinking = false
         send(["command": "stop"])
     }
 
