@@ -101,8 +101,48 @@ def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert result["content_hash"] == "sha256:oldhash"
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:oldhash"
+    assert result["content_with_line_numbers"] == "L1: hello"
+    assert result["total_lines"] == 1
     assert len(calls) == 1
     assert calls[0][2] == "GET"
+
+
+def test_read_note_with_hash_line_numbers_and_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = new_session()
+    calls: list[tuple[str, dict[str, object], str]] = []
+
+    def response_for_url(
+        url: str, params: dict[str, object], method: str
+    ) -> FakeResponse:
+        return FakeResponse(
+            200,
+            {
+                "path": "Notes/Range.md",
+                "content": "line1\nline2\nline3\nline4",
+                "line_count": 4,
+                "content_hash": "sha256:fullhash",
+                "mtime": 1,
+            },
+        )
+
+    install_fake_client(monkeypatch, response_for_url, calls)
+    settings = Settings(vector_search_url="http://vector.local")
+
+    # Read specific range: lines 2 to 3
+    result = asyncio.run(
+        mcp_search.do_read_note_with_hash(
+            settings, "Notes/Range.md", start_line=2, end_line=3
+        )
+    )
+
+    assert result["content_hash"] == "sha256:fullhash"
+    assert session.get_last_read_hash("Notes/Range.md") == "sha256:fullhash"
+    # Should only show L2 and L3
+    assert result["content_with_line_numbers"] == "L2: line2\nL3: line3"
+    expected_total_lines = 4
+    assert result["total_lines"] == expected_total_lines
 
 
 def test_patch_note_lines_requires_previous_hash() -> None:

@@ -72,13 +72,16 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 
 **Recommended flow for in-file edits**
 1. Call `read_note_with_hash(path)`.
-2. Compute exact line numbers to change from the returned content.
+2. Compute exact line numbers to change from the returned content (prefixed with `LX:`).
 3. Call `patch_note_lines(path, start_line, end_line, replacement)`.
-4. If `hash_mismatch`, call `read_note_with_hash(path)` again, recompute line numbers, retry once.
+4. **Verify your edit**: Immediately call `read_note_with_hash(path, start_line, end_line)` where the range covers your new content. This confirms the write was successful and provides the new hash for subsequent edits.
+5. If `hash_mismatch`, call `read_note_with_hash(path)` again, recompute line numbers, retry once.
 
 **`read_note_with_hash`** — read a note with line metadata and content hash for safe patching.
+- Returns content with line numbers (e.g., `L10: content`) to make identifying ranges easy.
+- Use optional `start_line` and `end_line` to read only a specific segment (good for verification or large files).
 - Must be called before `patch_note_lines` unless an explicit `expected_hash` is supplied.
-- Use this for edits in the middle of a file when append/prepend is not appropriate.
+- Always captures the hash of the ENTIRE file, even when reading a sub-range.
 
 **`patch_note_lines`** — replace a 1-based inclusive line range with new text.
 - Parameters: `path`, `start_line`, `end_line`, `replacement`.

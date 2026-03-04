@@ -146,7 +146,10 @@ def _parse_response_json(resp: httpx.Response) -> dict[str, typing.Any] | None:
 
 
 async def do_read_note_with_hash(  # noqa: PLR0911
-    settings: Settings, path: str
+    settings: Settings,
+    path: str,
+    start_line: int | None = None,
+    end_line: int | None = None,
 ) -> dict[str, typing.Any]:
     session = get_current_session()
     if not session:
@@ -165,6 +168,27 @@ async def do_read_note_with_hash(  # noqa: PLR0911
                 content_hash = data.get("content_hash")
                 if isinstance(content_hash, str):
                     session.set_last_read_hash(path, content_hash)
+
+                content = data.get("content", "")
+                lines = content.splitlines()
+                total_lines = len(lines)
+
+                # Format content with line numbers
+                # We use L{n}: format to be clear for the LLM
+                formatted_lines = [f"L{i + 1}: {line}" for i, line in enumerate(lines)]
+
+                if start_line is not None or end_line is not None:
+                    s = (start_line if start_line is not None else 1) - 1
+                    e = end_line if end_line is not None else total_lines
+                    # Clamp values
+                    s = max(0, min(s, total_lines))
+                    e = max(s, min(e, total_lines))
+                    display_lines = formatted_lines[s:e]
+                else:
+                    display_lines = formatted_lines
+
+                data["content_with_line_numbers"] = "\n".join(display_lines)
+                data["total_lines"] = total_lines
                 return data
 
             data = _parse_response_json(resp)
@@ -326,12 +350,21 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
             return {"error": str(exc)}
 
     @m.tool()
-    async def read_note_with_hash(path: str) -> dict[str, typing.Any]:
+    async def read_note_with_hash(
+        path: str,
+        start_line: int | None = None,
+        end_line: int | None = None,
+    ) -> dict[str, typing.Any]:
         """Read a markdown note and store its content hash in session state.
+
+        Returns content with line numbers (L1: ..., L2: ...) to make it easy to
+        identify ranges for `patch_note_lines`. Use `start_line` and `end_line`
+        to request only a portion of the note; the full content hash will still
+        be captured for atomic patching.
 
         Must be called before patch_note_lines unless expected_hash is provided.
         """
-        return await do_read_note_with_hash(settings, path)
+        return await do_read_note_with_hash(settings, path, start_line, end_line)
 
     @m.tool()
     async def patch_note_lines(
@@ -345,6 +378,9 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
 
         If expected_hash is omitted, the tool uses the hash captured by
         read_note_with_hash(path) from the current search session.
+        Note that read_note_with_hash captures the hash of the ENTIRE file,
+        which is required for this tool to ensure atomicity even if only
+        a subset of lines was read.
         """
         return await do_patch_note_lines(
             settings,
