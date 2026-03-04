@@ -145,7 +145,6 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
 
 
 _EVENT_TUPLE_LEN = 2
-_COMPLEX_WORD_THRESHOLD = 15
 _MAX_TOOL_RESULT_CHARS = 4000
 
 
@@ -262,18 +261,6 @@ def _summarize_turn(
     return "Actions taken:\n" + "\n".join(lines)
 
 
-_COMPLEX_SIGNALS = re.compile(
-    r"\b(compare|summarize|analyse|analyze|relate|find all|list all|how many|across|between|both)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_complex(text: str) -> bool:
-    return len(text.split()) > _COMPLEX_WORD_THRESHOLD or bool(
-        _COMPLEX_SIGNALS.search(text)
-    )
-
-
 def resolve_model_name(model_override: str | None, default_model: str) -> str:
     if model_override is None:
         return default_model
@@ -290,26 +277,10 @@ def resolve_model_name(model_override: str | None, default_model: str) -> str:
     return override
 
 
-_SEARCH_TOOLS = frozenset({
-    "new_search_session",
-    "keyword_search",
-    "vector_search",
-    "open_note",
-    "obsidian_list_notes",
+_EXCLUDED_MCP_TOOLS = frozenset({
+    "obsidian_read_note",
     "obsidian_global_search",
-    "read_note_with_hash",
-    "fetch",
-    "sequentialthinking",
-})
-_EDIT_TOOLS = frozenset({
-    "obsidian_update_note",
     "obsidian_search_replace",
-    "obsidian_delete_note",
-    "obsidian_manage_frontmatter",
-    "obsidian_manage_tags",
-    "run_command",
-    "read_note_with_hash",
-    "patch_note_lines",
 })
 
 _FILE_READ_TOOLS = frozenset({
@@ -438,7 +409,6 @@ class VaultAgent:
         self._history: list[_Message] = []
         self._system_prompt: str | None = None
         self._litellm_tools: list[_Tool] = []
-        self._base_tools: list[_Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = contextlib.AsyncExitStack()
         self._search = create_search_server(get_settings())
@@ -485,11 +455,10 @@ class VaultAgent:
                 result = await session.list_tools()
                 self._stdio_sessions.append(session)
                 for tool in result.tools:
-                    if tool.name == "obsidian_read_note":
+                    if tool.name in _EXCLUDED_MCP_TOOLS:
                         continue
                     lt_tool = _mcp_tool_to_litellm(tool)
                     self._litellm_tools.append(lt_tool)
-                    self._base_tools.append(lt_tool)
             except Exception:
                 logger.warning(
                     "failed to connect MCP server %s %s",
@@ -517,7 +486,6 @@ class VaultAgent:
                 ),
             )
             self._litellm_tools.append(lt_tool)
-            self._base_tools.append(lt_tool)
 
     async def run(
         self, user_message: str, model_override: str | None = None
@@ -529,10 +497,7 @@ class VaultAgent:
             _Message(role="system", content=self._system_prompt),
             *self._history,
         ]
-        is_complex = _is_complex(user_message)
-        gen = self._agent_loop(
-            messages, use_full_tools=is_complex, model_override=model_override
-        )
+        gen = self._agent_loop(messages, model_override=model_override)
         try:
             async for event in gen:
                 yield typing.cast(AgentEvent, event)
@@ -552,7 +517,6 @@ class VaultAgent:
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
         self,
         messages: list[_Message],
-        use_full_tools: bool = True,
         model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         seen_calls: dict[tuple[str, str], str] = {}
@@ -577,8 +541,7 @@ class VaultAgent:
                 "repetition_penalty": settings.llm_repetition_penalty,
                 "api_base": settings.ollama_url,
             }
-            raw_tools = self._litellm_tools if use_full_tools else self._base_tools
-            tools = raw_tools
+            tools = self._litellm_tools
 
             if tools:
                 kwargs["tools"] = tools
