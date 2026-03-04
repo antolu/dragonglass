@@ -292,6 +292,16 @@ def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "/opt/homebrew/sbin",
         os.path.expanduser("~/.local/bin"),
     ]
+    # Allow a packaged app to ship preinstalled node/npm binaries (or a
+    # node_modules/.bin directory) and point the app at it via
+    # DRAGONGLASS_NODE_MODULES_BIN. When set, this directory is preferred so
+    # the app won't call out to `npx` to fetch packages at runtime.
+    node_bin_dir = env.get("DRAGONGLASS_NODE_MODULES_BIN")
+    if node_bin_dir:
+        node_bin_dir = os.path.expanduser(node_bin_dir)
+        if os.path.isdir(node_bin_dir):
+            # Insert at front so bundled tools are used first
+            new_paths.insert(0, node_bin_dir)
     # Add existing paths, avoiding duplicates
     for p in paths:
         if p and p not in new_paths:
@@ -301,11 +311,15 @@ def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-_THINKING_SERVER = StdioServerParameters(
-    command="npx",
-    args=["@modelcontextprotocol/server-sequential-thinking"],
-    env=_get_mcp_env(),
-)
+# Sequential thinking MCP server disabled: the module is complex and
+# caused runtime issues when launched from the macOS app. Keep the
+# config here for reference; to re-enable, restore the block below and
+# the connection attempt in _connect_mcp_servers().
+# _THINKING_SERVER = StdioServerParameters(
+#     command="npx",
+#     args=["@modelcontextprotocol/server-sequential-thinking"],
+#     env=_get_mcp_env(),
+# )
 
 _EXTRA_MCP_SERVERS = [
     StdioServerParameters(
@@ -404,16 +418,11 @@ class VaultAgent:
                     exc_info=True,
                 )
 
-        try:
-            think_session = await self._exit_stack.enter_async_context(
-                _StdioSessionContext(_THINKING_SERVER)
-            )
-            result = await think_session.list_tools()
-            self._stdio_sessions.append(think_session)
-            for tool in result.tools:
-                self._litellm_tools.append(_mcp_tool_to_litellm(tool))
-        except Exception:
-            logger.warning("failed to connect thinking MCP server", exc_info=True)
+        # Sequential thinking MCP server currently disabled to avoid
+        # launching complex external dependencies at runtime. If you need
+        # it later, re-enable the _THINKING_SERVER definition above and
+        # restore the connection logic here.
+        logger.debug("sequential thinking MCP server disabled")
 
         for tool in await self._search.list_tools():
             lt_tool = _Tool(
