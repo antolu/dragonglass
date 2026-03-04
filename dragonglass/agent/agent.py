@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import typing
 
 import litellm
@@ -285,12 +286,14 @@ def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         env.update(extra)
 
     # Augment PATH to include common locations for npx, uvx, etc.
+    # Homebrew paths come before /usr/local/bin to prefer newer binaries
+    # (e.g. /usr/local/bin/node may be an old legacy install on Apple Silicon macs).
     paths = env.get("PATH", "").split(os.pathsep)
     new_paths = [
-        "/usr/local/bin",
         "/opt/homebrew/bin",
         "/opt/homebrew/sbin",
         os.path.expanduser("~/.local/bin"),
+        "/usr/local/bin",
     ]
     # Add existing paths, avoiding duplicates
     for p in paths:
@@ -299,6 +302,45 @@ def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
 
     env["PATH"] = os.pathsep.join(new_paths)
     return env
+
+
+# @hono/node-server (a dependency of obsidian-mcp-server) requires Node >= 18.14.1.
+_MIN_NODE_MAJOR = 18
+
+
+def _check_node_version(env: dict[str, str]) -> None:
+    """Raise RuntimeError if node is missing or below _MIN_NODE_MAJOR."""
+    try:
+        result = subprocess.run(
+            ["node", "--version"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"node not found in PATH; install Node.js >= {_MIN_NODE_MAJOR}"
+        ) from exc
+
+    raw = result.stdout.strip()
+    if not raw.startswith("v"):
+        raise RuntimeError(f"unexpected output from node --version: {raw!r}")
+
+    try:
+        major = int(raw[1:].split(".")[0])
+    except (ValueError, IndexError) as exc:
+        raise RuntimeError(f"could not parse node version: {raw!r}") from exc
+
+    if major < _MIN_NODE_MAJOR:
+        raise RuntimeError(
+            f"node {raw[1:]} is too old; "
+            f"dragonglass requires node >= {_MIN_NODE_MAJOR} "
+            f"(obsidian-mcp-server dependency @hono/node-server requires >= 18.14.1)"
+        )
+
+    logger.debug("node %s OK (>= %d required)", raw, _MIN_NODE_MAJOR)
 
 
 # Sequential thinking MCP server disabled: the module is complex and
@@ -376,6 +418,7 @@ class VaultAgent:
         self._total_tokens = 0
 
     async def _connect_mcp_servers(self) -> None:
+        _check_node_version(_get_mcp_env())
         settings = get_settings()
         obsidian_params = StdioServerParameters(
             command="npx",
