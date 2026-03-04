@@ -451,6 +451,9 @@ class VaultAgent:
                     exc_info=True,
                 )
 
+        if not self._stdio_sessions:
+            logger.warning("no MCP servers connected; agent will run without tools")
+
         # Sequential thinking MCP server currently disabled to avoid
         # launching complex external dependencies at runtime. If you need
         # it later, re-enable the _THINKING_SERVER definition above and
@@ -555,7 +558,10 @@ class VaultAgent:
                     logger.debug("  msg[%d] %s  %s", i, role, str(content)[:2000])
 
             response = await litellm.acompletion(**kwargs)
-            logger.debug("LLM raw response: %s", response.model_dump_json(indent=2))
+            logger.debug(
+                "LLM raw response: %s",
+                json.dumps(response.model_dump(), indent=2, default=str),
+            )
 
             # Log the full assistant response to make it easier to follow the chain
             choice = response.choices[0]
@@ -694,10 +700,12 @@ class VaultAgent:
                     )
                 return f"Search server error: {exc}"
 
+        exhausted = True
         for session in self._stdio_sessions:
             try:
                 tools = await session.list_tools()
                 if any(t.name == name for t in tools.tools):
+                    exhausted = False
                     call_result = await session.call_tool(name, args)
                     first = call_result.content[0] if call_result.content else None
                     text = first.text if isinstance(first, TextContent) else ""
@@ -708,7 +716,9 @@ class VaultAgent:
                 )
                 continue
 
-        return f"Tool '{name}' not found"
+        if exhausted:
+            return f"Tool '{name}' not found"
+        return f"Tool '{name}' failed on all available sessions"
 
     async def close(self) -> None:
         await self._exit_stack.aclose()

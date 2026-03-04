@@ -169,7 +169,14 @@ class DragonglassServer:
         logger.info("server: client connected")
         try:
             async for message in websocket:
-                data = json.loads(message)
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.warning("server: received malformed JSON: %r", message[:200])
+                    await websocket.send(
+                        json.dumps({"type": "error", "error": "malformed JSON"})
+                    )
+                    continue
                 command = data.get("command")
                 if command == "chat":
                     if self._chat_task and not self._chat_task.done():
@@ -294,7 +301,7 @@ class DragonglassServer:
                 with open(paths.EXTRA_MODELS_FILE, encoding="utf-8") as f:
                     extra_models = json.load(f)
             except Exception:
-                pass
+                logger.warning("failed to read extra models file", exc_info=True)
 
         if model_name not in extra_models:
             extra_models.append(model_name)
@@ -318,6 +325,12 @@ class DragonglassServer:
                 current_toml = tomllib.load(f)
         except FileNotFoundError:
             current_toml = {}
+        except Exception:
+            logger.exception("server: failed to read config file %s", paths.CONFIG_FILE)
+            await websocket.send(
+                json.dumps({"type": "error", "error": "failed to read config file"})
+            )
+            return
 
         # Merge new config into current TOML
         # We assume keys coming from Swift are already snake_case via CodingKeys
@@ -364,7 +377,9 @@ class DragonglassServer:
                         "updated_at": data.get("updated_at", 0),
                     })
             except Exception:
-                logger.warning("failed to load conversation metadata from %s", path)
+                logger.warning(
+                    "failed to load conversation metadata from %s", path, exc_info=True
+                )
 
         # Sort by updated_at descending
         conversations.sort(key=lambda x: x["updated_at"], reverse=True)
