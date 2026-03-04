@@ -32,8 +32,8 @@ class FakeResponse:
 class FakeAsyncClient:
     def __init__(
         self,
-        response_for_url: Callable[[str, dict[str, object]], FakeResponse],
-        calls: list[tuple[str, dict[str, object]]],
+        response_for_url: Callable[[str, dict[str, object], str], FakeResponse],
+        calls: list[tuple[str, dict[str, object], str]],
     ) -> None:
         self._response_for_url = response_for_url
         self._calls = calls
@@ -49,15 +49,23 @@ class FakeAsyncClient:
     ) -> None:
         return None
 
+    async def get(self, url: str, params: dict[str, object]) -> FakeResponse:
+        self._calls.append((url, params, "GET"))
+        return self._response_for_url(url, params, "GET")
+
     async def post(self, url: str, json: dict[str, object]) -> FakeResponse:
-        self._calls.append((url, json))
-        return self._response_for_url(url, json)
+        self._calls.append((url, json, "POST"))
+        return self._response_for_url(url, json, "POST")
+
+    async def patch(self, url: str, json: dict[str, object]) -> FakeResponse:
+        self._calls.append((url, json, "PATCH"))
+        return self._response_for_url(url, json, "PATCH")
 
 
 def install_fake_client(
     monkeypatch: pytest.MonkeyPatch,
-    response_for_url: Callable[[str, dict[str, object]], FakeResponse],
-    calls: list[tuple[str, dict[str, object]]],
+    response_for_url: Callable[[str, dict[str, object], str], FakeResponse],
+    calls: list[tuple[str, dict[str, object], str]],
 ) -> None:
     def factory(*args: object, **kwargs: object) -> FakeAsyncClient:
         return FakeAsyncClient(response_for_url=response_for_url, calls=calls)
@@ -67,11 +75,14 @@ def install_fake_client(
 
 def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> None:
     session = new_session()
-    calls: list[tuple[str, dict[str, object]]] = []
+    calls: list[tuple[str, dict[str, object], str]] = []
 
-    def response_for_url(url: str, payload: dict[str, object]) -> FakeResponse:
+    def response_for_url(
+        url: str, params: dict[str, object], method: str
+    ) -> FakeResponse:
+        assert method == "GET"
         assert url.endswith("/notes/read")
-        assert payload == {"path": "Notes/Test.md"}
+        assert params == {"path": "Notes/Test.md"}
         return FakeResponse(
             200,
             {
@@ -91,6 +102,7 @@ def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result["content_hash"] == "sha256:oldhash"
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:oldhash"
     assert len(calls) == 1
+    assert calls[0][2] == "GET"
 
 
 def test_patch_note_lines_requires_previous_hash() -> None:
@@ -118,9 +130,12 @@ def test_patch_note_lines_uses_stored_hash_when_expected_omitted(
 ) -> None:
     session = new_session()
     session.set_last_read_hash("Notes/Test.md", "sha256:storedhash")
-    calls: list[tuple[str, dict[str, object]]] = []
+    calls: list[tuple[str, dict[str, object], str]] = []
 
-    def response_for_url(url: str, payload: dict[str, object]) -> FakeResponse:
+    def response_for_url(
+        url: str, payload: dict[str, object], method: str
+    ) -> FakeResponse:
+        assert method == "PATCH"
         assert url.endswith("/notes/patch-lines")
         assert payload["expected_hash"] == "sha256:storedhash"
         return FakeResponse(
@@ -154,6 +169,7 @@ def test_patch_note_lines_uses_stored_hash_when_expected_omitted(
     assert result["new_hash"] == "sha256:newhash"
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:newhash"
     assert len(calls) == 1
+    assert calls[0][2] == "PATCH"
 
 
 def test_patch_note_lines_propagates_hash_mismatch(
@@ -161,9 +177,12 @@ def test_patch_note_lines_propagates_hash_mismatch(
 ) -> None:
     session = new_session()
     session.set_last_read_hash("Notes/Test.md", "sha256:stalehash")
-    calls: list[tuple[str, dict[str, object]]] = []
+    calls: list[tuple[str, dict[str, object], str]] = []
 
-    def response_for_url(url: str, payload: dict[str, object]) -> FakeResponse:
+    def response_for_url(
+        url: str, payload: dict[str, object], method: str
+    ) -> FakeResponse:
+        assert method == "PATCH"
         assert url.endswith("/notes/patch-lines")
         return FakeResponse(
             409,
@@ -201,9 +220,12 @@ def test_patch_note_lines_explicit_expected_hash_overrides_stored(
 ) -> None:
     session = new_session()
     session.set_last_read_hash("Notes/Test.md", "sha256:storedhash")
-    calls: list[tuple[str, dict[str, object]]] = []
+    calls: list[tuple[str, dict[str, object], str]] = []
 
-    def response_for_url(url: str, payload: dict[str, object]) -> FakeResponse:
+    def response_for_url(
+        url: str, payload: dict[str, object], method: str
+    ) -> FakeResponse:
+        assert method == "PATCH"
         assert url.endswith("/notes/patch-lines")
         assert payload["expected_hash"] == "sha256:explicit"
         return FakeResponse(

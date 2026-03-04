@@ -154,9 +154,9 @@ async def do_read_note_with_hash(  # noqa: PLR0911
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
+            resp = await client.get(
                 f"{settings.vector_search_url}/notes/read",
-                json={"path": path},
+                params={"path": path},
             )
             if resp.status_code == httpx.codes.OK:
                 data = _parse_response_json(resp)
@@ -220,7 +220,7 @@ async def do_patch_note_lines(  # noqa: PLR0911
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
+            resp = await client.patch(
                 f"{settings.vector_search_url}/notes/patch-lines",
                 json=payload,
             )
