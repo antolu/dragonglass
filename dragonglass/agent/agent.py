@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import typing
+import uuid
 
 import litellm
 from mcp import ClientSession, StdioServerParameters
@@ -38,6 +39,18 @@ class _Tool(typing.TypedDict):
 class _FunctionCall(typing.TypedDict):
     name: str
     arguments: str
+
+
+@dataclasses.dataclass
+class _FallbackFunction:
+    name: str
+    arguments: str
+
+
+@dataclasses.dataclass
+class _FallbackToolCall:
+    id: str
+    function: _FallbackFunction
 
 
 class _ToolCallMsg(typing.TypedDict):
@@ -201,6 +214,40 @@ def _extract_tool_errors(msg: str) -> str | None:
             return f"Parameter '{param}' is invalid: {line.strip()}"
 
     return None
+
+
+def parse_tool_calls_from_text(
+    text: str,
+) -> list[tuple[str, dict[str, JsonValue]]]:
+    """Parse Qwen3-style XML tool calls from free text.
+
+    Handles the case where the model emits tool calls inside its <think> block
+    (reasoning_content) rather than as structured tool_calls. Format:
+
+        <tool_call>
+        <function=name>
+        <parameter=key>value</parameter>
+        </function>
+        </tool_call>
+    """
+    results: list[tuple[str, dict[str, JsonValue]]] = []
+    for block in re.findall(r"<tool_call>(.*?)</tool_call>", text, re.DOTALL):
+        fn_match = re.search(r"<function=([^>]+)>", block)
+        if not fn_match:
+            continue
+        name = fn_match.group(1).strip()
+        params: dict[str, JsonValue] = {}
+        for pm in re.finditer(
+            r"<parameter=([^>]+)>(.*?)</parameter>", block, re.DOTALL
+        ):
+            key = pm.group(1).strip()
+            val_raw = pm.group(2).strip()
+            try:
+                params[key] = json.loads(val_raw)
+            except json.JSONDecodeError:
+                params[key] = val_raw
+        results.append((name, params))
+    return results
 
 
 def _summarize_turn(
@@ -584,6 +631,27 @@ class VaultAgent:
             choice = response.choices[0]
             msg = choice.message
             tool_calls = getattr(msg, "tool_calls", None)
+
+            if not tool_calls:
+                reasoning = getattr(msg, "reasoning_content", None) or ""
+                fallback = parse_tool_calls_from_text(reasoning)
+                if fallback:
+                    logger.warning(
+                        "tool calls found in reasoning_content, not in tool_calls — "
+                        "model emitted tool call inside <think> block; extracting %d call(s)",
+                        len(fallback),
+                    )
+                    tool_calls = [
+                        _FallbackToolCall(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            function=_FallbackFunction(
+                                name=name,
+                                arguments=json.dumps(args),
+                            ),
+                        )
+                        for name, args in fallback
+                    ]
+
             logger.debug(
                 "LLM response  tool_calls=%s  content=%s",
                 [tc.function.name for tc in tool_calls] if tool_calls else None,
