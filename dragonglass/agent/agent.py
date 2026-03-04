@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import json
 import logging
+import os
 import re
 import typing
 
@@ -144,6 +145,42 @@ def _fmt_args(args: dict[str, JsonValue]) -> str:
     return ", ".join(f"{k}={json.dumps(v)}" for k, v in args.items())
 
 
+def _extract_tool_errors(msg: str) -> str | None:
+    """Extract descriptive error messages from FastMCP/Pydantic validation errors."""
+    lines = msg.splitlines()
+    for i, line in enumerate(lines):
+        lowered = line.lower()
+        # 1. Handle "missing required argument: 'path'" (same line)
+        # 2. "['path'] argument is required" (same line)
+        rx_same_line = re.compile(
+            r"(?:missing|required) (?:argument|parameter)[:\s]+['\"]?([a-zA-Z0-9_]+)['\"]?|"
+            r"['\"]?([a-zA-Z0-9_]+)['\"]? (?:argument|parameter)?\s*(?:is|missing) required",
+            re.IGNORECASE,
+        )
+        matches = [m for group in rx_same_line.findall(line) for m in group if m]
+        if matches:
+            return f"Missing required parameter(s): {', '.join(matches)}"
+
+        # 3. Handle Pydantic multi-line errors:
+        # queries
+        #   Input should be a valid list [type=list_type, input_value='...', input_type=str]
+        if (
+            any(
+                kw in lowered
+                for kw in ("input should be", "missing required", "field required")
+            )
+            and i > 0
+            and (param := lines[i - 1].strip())
+            and " " not in param
+            and not param.endswith("]")
+        ):
+            if "missing" in lowered or ("required" in lowered and "field" in lowered):
+                return f"Missing required parameter: '{param}'"
+            return f"Parameter '{param}' is invalid: {line.strip()}"
+
+    return None
+
+
 def _summarize_turn(
     tool_calls_made: list[tuple[str, dict[str, JsonValue], str]],
 ) -> str:
@@ -221,15 +258,39 @@ _FILE_WRITE_TOOLS = frozenset({
 _FILE_DELETE_TOOLS = frozenset({"obsidian_delete_note"})
 
 
+def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ)
+    if extra:
+        env.update(extra)
+
+    # Augment PATH to include common locations for npx, uvx, etc.
+    paths = env.get("PATH", "").split(os.pathsep)
+    new_paths = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        os.path.expanduser("~/.local/bin"),
+    ]
+    # Add existing paths, avoiding duplicates
+    for p in paths:
+        if p and p not in new_paths:
+            new_paths.append(p)
+
+    env["PATH"] = os.pathsep.join(new_paths)
+    return env
+
+
 _THINKING_SERVER = StdioServerParameters(
     command="npx",
     args=["@modelcontextprotocol/server-sequential-thinking"],
+    env=_get_mcp_env(),
 )
 
 _EXTRA_MCP_SERVERS = [
     StdioServerParameters(
         command="uvx",
         args=["mcp-server-fetch"],
+        env=_get_mcp_env(),
     ),
 ]
 
@@ -294,12 +355,12 @@ class VaultAgent:
         obsidian_params = StdioServerParameters(
             command="npx",
             args=["obsidian-mcp-server"],
-            env={
+            env=_get_mcp_env({
                 "OBSIDIAN_API_KEY": settings.obsidian_api_key,
                 "OBSIDIAN_BASE_URL": settings.obsidian_api_url,
                 "OBSIDIAN_VERIFY_SSL": "false",
                 "OBSIDIAN_ENABLE_CACHE": "true",
-            },
+            }),
         )
         for params in [obsidian_params, *_EXTRA_MCP_SERVERS]:
             try:
@@ -399,6 +460,7 @@ class VaultAgent:
                 "top_k": settings.llm_top_k,
                 "topK": settings.llm_top_k,  # Gemini mapping
                 "min_p": settings.llm_min_p,
+                "api_base": settings.ollama_url,
             }
             raw_tools = self._litellm_tools if use_full_tools else self._base_tools
             tools = raw_tools
@@ -425,10 +487,16 @@ class VaultAgent:
                         [tc["function"]["name"] for tc in tcs],
                     )
                 else:
-                    logger.debug("  msg[%d] %s  %s", i, role, str(content)[:200])
+                    logger.debug("  msg[%d] %s  %s", i, role, str(content)[:2000])
 
             response = await litellm.acompletion(**kwargs)
             logger.debug("LLM raw response: %s", response.model_dump_json(indent=2))
+
+            # Log the full assistant response to make it easier to follow the chain
+            choice = response.choices[0]
+            msg = choice.message
+            if msg.content:
+                logger.debug("Assistant response content: %s", msg.content)
 
             usage = getattr(response, "usage", None)
             if usage:
@@ -552,16 +620,12 @@ class VaultAgent:
             except Exception as exc:
                 msg = str(exc)
                 logger.warning("search server error calling %r: %s", name, msg)
-                missing = [
-                    line.split()[0]
-                    for line in msg.splitlines()
-                    if "missing_argument" in line or "missing required" in line.lower()
-                ]
-                if missing:
+
+                error_hint = _extract_tool_errors(msg)
+                if error_hint:
                     return (
-                        f"Tool '{name}' called with wrong arguments. "
-                        f"Missing required parameter(s): {missing}. "
-                        f"Check the tool schema and use the exact parameter names."
+                        f"Tool '{name}' called with wrong arguments. {error_hint}. "
+                        "Check the tool schema and use the exact parameter names and types."
                     )
                 return f"Search server error: {exc}"
 

@@ -58,7 +58,7 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 
 ### YAML Frontmatter
 
-- Only edit frontmatter when the user requests it, or the field already exists in the frontmatter. Otherwise do not create new frontmatter fields.
+- Only edit frontmatter when the user requests it, or the field already exists in the frontmatter. **Otherwise do not create new frontmatter fields.**
 - You must use `obsidian_manage_frontmatter` to edit frontmatter.
 
 ## Tool Reference
