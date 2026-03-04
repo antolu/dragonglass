@@ -25,6 +25,7 @@ from dragonglass.agent.agent import (
     ConversationsListEvent,
     DoneEvent,
     VaultAgent,
+    history_to_events,
 )
 from dragonglass.config import get_settings, invalidate_settings
 
@@ -34,9 +35,22 @@ MAX_TITLE_LENGTH = 40
 
 
 def serialize_event(event: AgentEvent) -> str:
-    data = dataclasses.asdict(event)
-    data["type"] = event.__class__.__name__
-    return json.dumps(data)
+    def _encode(obj: typing.Any) -> typing.Any:
+        if dataclasses.is_dataclass(obj):
+            # We don't use asdict() here because it's recursive and
+            # doesn't allow us to inject the 'type' field into nested objects easily.
+            result = {"type": obj.__class__.__name__}
+            for field in dataclasses.fields(obj):
+                value = getattr(obj, field.name)
+                result[field.name] = _encode(value)
+            return result
+        if isinstance(obj, list):
+            return [_encode(item) for item in obj]
+        if isinstance(obj, dict):
+            return {k: _encode(v) for k, v in obj.items()}
+        return obj
+
+    return json.dumps(_encode(event))
 
 
 def resolve_chat_model(raw_model_override: object, selected_model: str) -> str | None:
@@ -379,12 +393,13 @@ class DragonglassServer:
                     self.agent.set_history(conv_data["history"])
                 self._current_conversation_id = conv_id
 
-                # Send history back to client
+                # Send history back to client as events
+                events = history_to_events(conv_data["history"])
                 await websocket.send(
                     serialize_event(
                         ConversationLoadedEvent(
                             id=conv_id,
-                            history=conv_data["history"],
+                            history=events,
                         )
                     )
                 )

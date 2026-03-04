@@ -66,6 +66,8 @@ enum AgentEvent: Codable {
             self = .conversationsList(try container.decode([ConversationMetadata].self, forKey: .conversations))
         case "ConversationLoadedEvent", "conversation_loaded":
             self = .conversationLoaded(try container.decode(String.self, forKey: .id), try container.decode([AgentEvent].self, forKey: .history))
+        case "UserMessageEvent", "user_message":
+            self = .userMessage(try container.decode(String.self, forKey: .message))
         default:
             self = .unknown(type)
         }
@@ -105,7 +107,7 @@ enum AgentEvent: Codable {
             try container.encode(tt, forKey: .totalTokens)
             try container.encode(st, forKey: .sessionTotal)
         case .userMessage(let msg):
-            try container.encode("user_message", forKey: .type)
+            try container.encode("UserMessageEvent", forKey: .type)
             try container.encode(msg, forKey: .message)
         case .conversationsList(let list):
             try container.encode("conversations_list", forKey: .type)

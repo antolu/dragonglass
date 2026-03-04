@@ -88,6 +88,11 @@ class FileAccessEvent:
 
 
 @dataclasses.dataclass
+class UserMessageEvent:
+    message: str
+
+
+@dataclasses.dataclass
 class ConversationsListEvent:
     conversations: list[dict[str, typing.Any]]
 
@@ -95,7 +100,7 @@ class ConversationsListEvent:
 @dataclasses.dataclass
 class ConversationLoadedEvent:
     id: str
-    history: list[dict[str, typing.Any]]
+    history: list[AgentEvent]
 
 
 AgentEvent = (
@@ -107,7 +112,23 @@ AgentEvent = (
     | FileAccessEvent
     | ConversationsListEvent
     | ConversationLoadedEvent
+    | UserMessageEvent
 )
+
+
+def history_to_events(history: list[_Message]) -> list[AgentEvent]:
+    events: list[AgentEvent] = []
+    for msg in history:
+        role = msg.get("role")
+        content = str(msg.get("content") or "")
+        if role == "user":
+            events.append(UserMessageEvent(message=content))
+        elif role == "assistant" and content:
+            events.append(TextChunk(text=content))
+        # Tool messages and tool_calls are currently omitted from UI history
+        # as they are intermediate steps.
+    return events
+
 
 _EVENT_TUPLE_LEN = 2
 _COMPLEX_WORD_THRESHOLD = 15
