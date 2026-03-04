@@ -5,6 +5,7 @@ Welcome to the internal developer documentation for Dragonglass. This documentat
 ## Documentation Modules
 
 - [Architecture & Data Flow](architecture.md): High-level system design and component interactions.
+- [macOS Application](macos-app.md): Build requirements and backend bundling process.
 - [Custom Obsidian API](rest-api.md): Reference for the obsidian-vector-search-server plugin.
 - [MCP Tool Catalog](mcp-tools.md): Exhaustive list of all tools available to the AI agent.
 - [Agent Logic & Prompts](agent-loop.md): Details on the thinking loop, system instructions, and litellm integration.
