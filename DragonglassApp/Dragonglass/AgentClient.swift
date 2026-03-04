@@ -178,8 +178,11 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                case .status, .error, .done, .fileAccess:
+                                case .status, .error, .fileAccess:
                                     self.events.append(event)
+                                case .done:
+                                    self.events.append(event)
+                                    self.isThinking = false
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
@@ -264,6 +267,7 @@ class AgentClient: ObservableObject {
 
     func stopChat() {
         send(["command": "stop"])
+        isThinking = false
     }
 
     func fetchModels() {
