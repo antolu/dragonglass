@@ -9,8 +9,6 @@
 /* Begin PBXFileReference section */
 		292A4A562F51C89500E0A96B /* Dragonglass.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dragonglass.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		292A4A652F51C89500E0A96B /* wheels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = wheels; path = Resources/wheels; sourceTree = "<group>"; };
-		292A4A672F51C89500E0A96B /* version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = version.txt; path = Resources/version.txt; sourceTree = "<group>"; };
-		292A4A692F51C89500E0A96B /* python_version.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = python_version.txt; path = Resources/python_version.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -37,8 +35,6 @@
 			children = (
 				292A4A582F51C89500E0A96B /* Dragonglass */,
 				292A4A652F51C89500E0A96B /* wheels */,
-				292A4A672F51C89500E0A96B /* version.txt */,
-				292A4A692F51C89500E0A96B /* python_version.txt */,
 				292A4A572F51C89500E0A96B /* Products */,
 			);
 			sourceTree = "<group>";

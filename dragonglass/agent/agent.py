@@ -292,16 +292,6 @@ def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "/opt/homebrew/sbin",
         os.path.expanduser("~/.local/bin"),
     ]
-    # Allow a packaged app to ship preinstalled node/npm binaries (or a
-    # node_modules/.bin directory) and point the app at it via
-    # DRAGONGLASS_NODE_MODULES_BIN. When set, this directory is preferred so
-    # the app won't call out to `npx` to fetch packages at runtime.
-    node_bin_dir = env.get("DRAGONGLASS_NODE_MODULES_BIN")
-    if node_bin_dir:
-        node_bin_dir = os.path.expanduser(node_bin_dir)
-        if os.path.isdir(node_bin_dir):
-            # Insert at front so bundled tools are used first
-            new_paths.insert(0, node_bin_dir)
     # Add existing paths, avoiding duplicates
     for p in paths:
         if p and p not in new_paths:
