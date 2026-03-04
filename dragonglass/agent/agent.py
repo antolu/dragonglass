@@ -460,6 +460,8 @@ class VaultAgent:
                 "top_k": settings.llm_top_k,
                 "topK": settings.llm_top_k,  # Gemini mapping
                 "min_p": settings.llm_min_p,
+                "presence_penalty": settings.llm_presence_penalty,
+                "repetition_penalty": settings.llm_repetition_penalty,
                 "api_base": settings.ollama_url,
             }
             raw_tools = self._litellm_tools if use_full_tools else self._base_tools

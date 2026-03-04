@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     llm_top_p: float | None = None
     llm_top_k: int | None = None
     llm_min_p: float | None = None
+    llm_presence_penalty: float | None = None
+    llm_repetition_penalty: float | None = None
     ollama_url: str = "http://localhost:11434"
     vector_search_url: str = "http://localhost:51362"
     selected_model: str = ""
