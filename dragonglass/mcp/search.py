@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+import json
 import logging
 import typing
 import urllib.parse
 
 import fastmcp
 import httpx
+import pydantic
 
 from dragonglass.config import Settings
 from dragonglass.search.session import get_current_session, new_session
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_json_string_to_list(v: typing.Any) -> typing.Any:
+    if isinstance(v, str):
+        return json.loads(v)
+    return v
+
+
+_StringList = typing.Annotated[
+    list[str], pydantic.BeforeValidator(_coerce_json_string_to_list)
+]
 
 
 class PatchLinesArgs(typing.TypedDict):
@@ -294,11 +307,10 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         return {"session_id": session.id, "status": "created"}
 
     @m.tool()
-    async def keyword_search(queries: list[str]) -> dict[str, typing.Any]:
+    async def keyword_search(queries: _StringList) -> dict[str, typing.Any]:
         """Search the vault for files matching one or more text queries.
 
-        IMPORTANT: the parameter is named `queries` (not queryStrings or query_strings).
-        Pass a JSON array of strings, e.g. {"queries": ["Milano Ancona", "tag:#travel"]}.
+        queries: list of search strings, e.g. ["Milano Ancona", "tag:#travel"].
         Supports prefixes: file:, tag:, section:, property:.
         Results from all queries are merged into the session allowlist.
         """
