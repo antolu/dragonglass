@@ -496,7 +496,7 @@ class VaultAgent:
         finally:
             await gen.aclose()
 
-        new_messages = messages[1 + history_len_before :]
+        new_messages = messages[2 + history_len_before :]
         self._history.extend(new_messages)
 
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
