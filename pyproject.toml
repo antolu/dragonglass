@@ -32,7 +32,7 @@ dev = ["pre-commit", "ruff", "mypy"]
 dragonglass = "dragonglass.cli:cli"
 
 [build-system]
-requires = ["setuptools >= 61", "setuptools-scm[toml] ~= 6.0", "wheel"]
+requires = ["setuptools >= 61", "setuptools-scm[toml] ~= 9.2", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
