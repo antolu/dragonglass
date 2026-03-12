@@ -61,5 +61,6 @@ jobs:
           xcodebuild -project DragonglassApp/Dragonglass.xcodeproj \
                      -scheme Dragonglass \
                      -configuration Release \
-                     -derivedDataPath build/derivedData \
-                     clean build
+                     -derivedDataPath /tmp/dragonglass-derivedData \
+                     CODE_SIGNING_ALLOWED=NO \
+                     build
