@@ -5,6 +5,7 @@ enum BackendPhase: Equatable {
     case installing
     case starting
     case ready
+    case needsPluginReload(String)
     case failed(String)
 }
 
@@ -64,8 +65,13 @@ class BackendManager: ObservableObject {
 
         phase = .starting
         do {
+            if let reloadMessage = await deployObsidianPlugin() {
+                phase = .needsPluginReload(reloadMessage)
+            }
             try launchProcess()
-            phase = .ready
+            if case .needsPluginReload = phase { } else {
+                phase = .ready
+            }
         } catch {
             phase = .failed("Launch failed: \(error.localizedDescription)")
         }
@@ -86,6 +92,67 @@ class BackendManager: ObservableObject {
         }
         return version.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    // MARK: - Obsidian plugin deployment
+
+    private func obsidianPluginDir() -> URL? {
+        guard let vaultPath = UserDefaults.standard.string(forKey: "obsidianDir"),
+              !vaultPath.isEmpty else { return nil }
+        return URL(fileURLWithPath: vaultPath)
+            .appendingPathComponent(".obsidian/plugins/obsidian-vector-search")
+    }
+
+    private func readManifestVersion(at url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String else { return nil }
+        return version
+    }
+
+    /// Returns a non-nil reload message if the plugin was updated and Obsidian needs to reload it.
+    private func deployObsidianPlugin() async -> String? {
+        guard let pluginDir = obsidianPluginDir() else { return nil }
+        guard let bundledManifestUrl = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: "ObsidianPlugin"),
+              let mainJsUrl = Bundle.main.url(forResource: "main", withExtension: "js", subdirectory: "ObsidianPlugin") else {
+            return nil
+        }
+
+        let bundledVersion = readManifestVersion(at: bundledManifestUrl)
+        let installedManifestUrl = pluginDir.appendingPathComponent("manifest.json")
+        let installedVersion = readManifestVersion(at: installedManifestUrl)
+        let alreadyInstalled = FileManager.default.fileExists(atPath: installedManifestUrl.path)
+
+        guard bundledVersion != installedVersion else { return nil }
+
+        do {
+            try FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+            let destMain = pluginDir.appendingPathComponent("main.js")
+            let destManifest = pluginDir.appendingPathComponent("manifest.json")
+            if FileManager.default.fileExists(atPath: destMain.path) { try FileManager.default.removeItem(at: destMain) }
+            if FileManager.default.fileExists(atPath: destManifest.path) { try FileManager.default.removeItem(at: destManifest) }
+            try FileManager.default.copyItem(at: mainJsUrl, to: destMain)
+            try FileManager.default.copyItem(at: bundledManifestUrl, to: destManifest)
+
+            writeDragonglassConfig(to: pluginDir)
+
+            if alreadyInstalled {
+                return "The Vector Search plugin was updated (\(installedVersion ?? "?") → \(bundledVersion ?? "?")). Please toggle it off and on in Obsidian → Settings → Community plugins."
+            }
+        } catch {
+            print("[BackendManager] Plugin deploy failed: \(error)")
+        }
+        return nil
+    }
+
+    private func writeDragonglassConfig(to pluginDir: URL) {
+        let configPath = pluginDir.appendingPathComponent("dragonglass.json")
+        let config: [String: Any] = ["port": 51362]
+        if let data = try? JSONSerialization.data(withJSONObject: config) {
+            try? data.write(to: configPath)
+        }
+    }
+
+    // MARK: - Kill existing backend
 
     private func findAndKillExistingBackend() async {
         let pathUrl = dragonglassPath

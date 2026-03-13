@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var showError = false
     @State private var newEnvKey = ""
     @State private var newEnvValue = ""
+    @State private var showingSetupWizard = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,9 +40,19 @@ struct SettingsView: View {
                 Spacer()
             } else if let config = Binding($config) {
                 Form {
-                    Section("Obsidian Connection") {
-                        TextField("API URL", text: config.obsidianApiUrl)
-                        SecureField("API Key", text: config.obsidianApiKey)
+                    Section("Obsidian Vault") {
+                        HStack {
+                            Text(config.obsidianDir.wrappedValue.isEmpty ? "Not configured" : config.obsidianDir.wrappedValue)
+                                .foregroundColor(config.obsidianDir.wrappedValue.isEmpty ? .secondary : .primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Button("Change…") {
+                                showingSetupWizard = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                        }
                     }
 
                     Section("Model & Search") {
@@ -118,11 +129,13 @@ struct SettingsView: View {
         } message: { message in
             Text(message)
         }
+        .sheet(isPresented: $showingSetupWizard) {
+            ObsidianSetupView(isPresented: $showingSetupWizard)
+        }
         .onAppear {
             loadConfig()
         }
     }
-
 
     private func loadConfig() {
         Task {
