@@ -1,8 +1,7 @@
 import Foundation
 
 struct DragonglassConfig: Codable {
-    var obsidianApiUrl: String
-    var obsidianApiKey: String
+    var obsidianDir: String
     var ollamaUrl: String
     var vectorSearchUrl: String
     var llmModel: String
@@ -19,8 +18,7 @@ struct DragonglassConfig: Codable {
     var autoAllowDelete: Bool
 
     enum CodingKeys: String, CodingKey {
-        case obsidianApiUrl = "obsidian_api_url"
-        case obsidianApiKey = "obsidian_api_key"
+        case obsidianDir = "obsidian_dir"
         case ollamaUrl = "ollama_url"
         case vectorSearchUrl = "vector_search_url"
         case llmModel = "llm_model"
