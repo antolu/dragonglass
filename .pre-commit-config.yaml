@@ -1,3 +1,10 @@
+ci:
+  autofix_commit_msg: "chore(deps): [pre-commit.ci] auto fixes from pre-commit.com hooks"
+  autofix_prs: true
+  autoupdate_commit_msg: "chore(deps): [pre-commit.ci] pre-commit autoupdate"
+  autoupdate_schedule: weekly
+  submodules: true
+
 exclude: ^(.idea/|.vscode)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
