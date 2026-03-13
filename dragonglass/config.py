@@ -33,8 +33,7 @@ class Settings(BaseSettings):
             TomlConfigSettingsSource(settings_cls),
         )
 
-    obsidian_api_url: str = "http://localhost:27123"
-    obsidian_api_key: str = ""
+    obsidian_dir: str = ""
     llm_model: str = "ollama/llama3.2"
     llm_temperature: float | None = None
     llm_top_p: float | None = None
