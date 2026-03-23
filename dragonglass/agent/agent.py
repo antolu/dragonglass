@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import collections.abc
 import contextlib
-import dataclasses
 import json
 import logging
 import os
@@ -15,119 +14,32 @@ import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
+from opencode_ai import AsyncOpencode
 
+from dragonglass.agent.opencode import run_opencode_turn
 from dragonglass.agent.prompts import load_system_prompt
+from dragonglass.agent.types import (
+    AgentEvent,
+    DoneEvent,
+    FileAccessEvent,
+    JsonValue,
+    StatusEvent,
+    TextChunk,
+    ToolErrorEvent,
+    UsageEvent,
+    UserMessageEvent,
+    _FallbackFunction,
+    _FallbackToolCall,
+    _FunctionCall,
+    _Message,
+    _Tool,
+    _ToolCallMsg,
+    _ToolFunction,
+)
 from dragonglass.config import Settings, get_settings
 from dragonglass.mcp.search import create_search_server
 
 logger = logging.getLogger(__name__)
-
-JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
-
-
-class _ToolFunction(typing.TypedDict):
-    name: str
-    description: str
-    parameters: dict[str, JsonValue]
-
-
-class _Tool(typing.TypedDict):
-    type: str
-    function: _ToolFunction
-
-
-class _FunctionCall(typing.TypedDict):
-    name: str
-    arguments: str
-
-
-@dataclasses.dataclass
-class _FallbackFunction:
-    name: str
-    arguments: str
-
-
-@dataclasses.dataclass
-class _FallbackToolCall:
-    id: str
-    function: _FallbackFunction
-
-
-class _ToolCallMsg(typing.TypedDict):
-    id: str
-    type: str
-    function: _FunctionCall
-
-
-class _Message(typing.TypedDict, total=False):
-    role: str
-    content: str
-    tool_calls: list[_ToolCallMsg]
-    tool_call_id: str
-
-
-@dataclasses.dataclass
-class StatusEvent:
-    message: str
-
-
-@dataclasses.dataclass
-class ToolErrorEvent:
-    tool: str
-    error: str
-
-
-@dataclasses.dataclass
-class TextChunk:
-    text: str
-
-
-@dataclasses.dataclass
-class DoneEvent:
-    pass
-
-
-@dataclasses.dataclass
-class UsageEvent:
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    session_total: int
-
-
-@dataclasses.dataclass
-class FileAccessEvent:
-    path: str
-    operation: str  # "read" | "write" | "delete"
-
-
-@dataclasses.dataclass
-class UserMessageEvent:
-    message: str
-
-
-@dataclasses.dataclass
-class ConversationsListEvent:
-    conversations: list[dict[str, typing.Any]]
-
-
-@dataclasses.dataclass
-class ConversationLoadedEvent:
-    id: str
-    history: list[AgentEvent]
-
-
-AgentEvent = (
-    StatusEvent
-    | ToolErrorEvent
-    | TextChunk
-    | UsageEvent
-    | DoneEvent
-    | FileAccessEvent
-    | ConversationsListEvent
-    | ConversationLoadedEvent
-    | UserMessageEvent
-)
 
 
 def history_to_events(history: list[_Message]) -> list[AgentEvent]:
@@ -170,8 +82,8 @@ def _is_error_result(result: str) -> bool:
 _TOOL_STATUS: dict[str, str] = {
     "fetch": "fetching",
     "sequentialthinking": "thinking",
-    "open_note": "opening",
-    "run_command": "running command",
+    "dragonglass_open_note": "opening",
+    "dragonglass_run_command": "running command",
 }
 
 
@@ -284,10 +196,17 @@ _EXCLUDED_MCP_TOOLS = frozenset({
 })
 
 _FILE_READ_TOOLS = frozenset({
-    "read_note_with_hash",
+    "dragonglass_read_note_with_hash",
+    "obsidian_list_notes",
+    "obsidian_global_search",
 })
+
 _FILE_WRITE_TOOLS = frozenset({
-    "patch_note_lines",
+    "obsidian_update_note",
+    "obsidian_search_replace",
+    "obsidian_manage_frontmatter",
+    "obsidian_manage_tags",
+    "dragonglass_patch_note_lines",
 })
 _FILE_DELETE_TOOLS: frozenset[str] = frozenset()
 
@@ -408,6 +327,7 @@ class VaultAgent:
         self._search = create_search_server(get_settings())
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
+        self._opencode_session_id: str | None = None
 
     async def initialise(self) -> None:
         self._system_prompt, self.agents_note_found = await load_system_prompt(
@@ -418,6 +338,7 @@ class VaultAgent:
     def clear_history(self) -> None:
         self._history = []
         self._total_tokens = 0
+        self._opencode_session_id = None
 
     def get_history(self) -> list[_Message]:
         return list(self._history)
@@ -511,6 +432,43 @@ class VaultAgent:
             settings = get_settings()
             litellm.drop_params = True
             model_name = resolve_model_name(model_override, settings.llm_model)
+
+            if settings.llm_backend == "opencode":
+                if not self._opencode_session_id:
+                    # We create session lazily on first turn
+                    client = AsyncOpencode(base_url=settings.opencode_url)
+                    try:
+                        session = await client.session.create(extra_body={})
+                        self._opencode_session_id = session.id
+                    except Exception:
+                        logger.exception("failed to create OpenCode session")
+                        yield StatusEvent(message="Failed to connect to OpenCode")
+                        yield DoneEvent()
+                        return
+
+                provider_id = "copilot"
+                model_id = model_name
+                if "/" in model_name:
+                    provider_id, model_id = model_name.split("/", 1)
+
+                logger.debug(
+                    "Switching to OpenCode backend  session=%s  provider=%s  model=%s",
+                    self._opencode_session_id,
+                    provider_id,
+                    model_id,
+                )
+                async for event in run_opencode_turn(
+                    self._opencode_session_id,
+                    messages[-1]["content"],  # Raw user message
+                    model_id,
+                    provider_id,
+                    settings,
+                    system_prompt=self._system_prompt,
+                    agent="dragonglass",
+                ):
+                    yield event
+                return
+
             kwargs: dict[str, typing.Any] = {
                 "model": model_name,
                 "messages": messages,
@@ -643,7 +601,10 @@ class VaultAgent:
                 if status:
                     yield StatusEvent(message=status)
 
-                if tool_name in {"keyword_search", "vector_search"}:
+                if tool_name in {
+                    "dragonglass_keyword_search",
+                    "dragonglass_vector_search",
+                }:
                     queries = args.get("queries")
                     detail = (
                         ", ".join(str(q) for q in queries)
@@ -688,13 +649,13 @@ class VaultAgent:
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
         search_tools = {
-            "new_search_session",
-            "keyword_search",
-            "vector_search",
-            "open_note",
-            "run_command",
-            "read_note_with_hash",
-            "patch_note_lines",
+            "dragonglass_new_search_session",
+            "dragonglass_keyword_search",
+            "dragonglass_vector_search",
+            "dragonglass_open_note",
+            "dragonglass_run_command",
+            "dragonglass_read_note_with_hash",
+            "dragonglass_patch_note_lines",
         }
         if name in search_tools:
             try:
