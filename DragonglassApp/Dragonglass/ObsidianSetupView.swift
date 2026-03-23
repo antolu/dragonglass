@@ -149,6 +149,7 @@ class ObsidianSetupViewModel: ObservableObject {
 
 struct ObsidianSetupView: View {
     @Binding var isPresented: Bool
+    var onComplete: ((String) -> Void)? = nil
     @StateObject private var vm = ObsidianSetupViewModel()
 
     var body: some View {
@@ -247,6 +248,8 @@ struct ObsidianSetupView: View {
                 Spacer()
                 Button("Continue") {
                     vm.finish()
+                    onComplete?(vm.vaultPath)
+                    isPresented = false
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!vm.isHealthy)

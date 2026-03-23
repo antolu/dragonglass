@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @Binding var isPresented: Bool
@@ -10,7 +11,6 @@ struct SettingsView: View {
     @State private var showError = false
     @State private var newEnvKey = ""
     @State private var newEnvValue = ""
-    @State private var showingSetupWizard = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +48,12 @@ struct SettingsView: View {
                                 .truncationMode(.middle)
                             Spacer()
                             Button("Change…") {
-                                showingSetupWizard = true
+                                SetupWindowController.shared.show { vaultPath in
+                                    if var current = self.config {
+                                        current.obsidianDir = vaultPath
+                                        self.config = current
+                                    }
+                                }
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
@@ -57,7 +62,6 @@ struct SettingsView: View {
 
                     Section("Model & Search") {
                         TextField("Default Model", text: config.llmModel)
-                        TextField("Vector Search URL", text: config.vectorSearchUrl)
                     }
 
                     Section("Permissions") {
@@ -129,9 +133,6 @@ struct SettingsView: View {
         } message: { message in
             Text(message)
         }
-        .sheet(isPresented: $showingSetupWizard) {
-            ObsidianSetupView(isPresented: $showingSetupWizard)
-        }
         .onAppear {
             loadConfig()
         }
@@ -159,5 +160,64 @@ struct SettingsView: View {
                 print("Failed to save config: \(error)")
             }
         }
+    }
+}
+
+@MainActor
+final class SetupWindowController: NSObject, NSWindowDelegate {
+    static let shared = SetupWindowController()
+
+    private var window: NSWindow?
+    private var onComplete: ((String) -> Void)?
+
+    func show(onComplete: ((String) -> Void)? = nil) {
+        self.onComplete = onComplete
+
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let isPresented = Binding<Bool>(
+            get: { self.window != nil },
+            set: { visible in
+                if !visible {
+                    self.closeWindow()
+                }
+            }
+        )
+
+        let rootView = ObsidianSetupView(
+            isPresented: isPresented,
+            onComplete: { [weak self] vaultPath in
+                self?.onComplete?(vaultPath)
+            }
+        )
+        let host = NSHostingController(rootView: rootView)
+        let setupWindow = NSWindow(contentViewController: host)
+        setupWindow.title = "Obsidian Setup"
+        setupWindow.styleMask = [.titled, .closable]
+        setupWindow.isReleasedWhenClosed = false
+        setupWindow.delegate = self
+        setupWindow.center()
+
+        window = setupWindow
+
+        NSApp.activate(ignoringOtherApps: true)
+        setupWindow.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let closedWindow = notification.object as? NSWindow, closedWindow == window {
+            window = nil
+            onComplete = nil
+        }
+    }
+
+    private func closeWindow() {
+        guard let window else { return }
+        self.window = nil
+        window.close()
     }
 }
