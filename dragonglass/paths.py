@@ -22,7 +22,6 @@ CACHE_DIR = get_xdg_dir("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
 
 TEMP_DIR = pathlib.Path(tempfile.gettempdir()) / "dragonglass"
 DATA_DIR = TEMP_DIR / "data"
-LOG_DIR = TEMP_DIR / "logs"
 OPENCODE_CONFIG_DIR = TEMP_DIR / "config"
 _opencode_config_path = os.environ.get("OPENCODE_CONFIG")
 if _opencode_config_path:
