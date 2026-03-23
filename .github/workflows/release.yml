@@ -18,6 +18,7 @@ jobs:
         with:
           fetch-depth: 0 # Required for setuptools-scm to find tags
           lfs: true
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v6
