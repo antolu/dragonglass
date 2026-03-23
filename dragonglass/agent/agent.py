@@ -438,7 +438,31 @@ class VaultAgent:
                     # We create session lazily on first turn
                     client = AsyncOpencode(base_url=settings.opencode_url)
                     try:
-                        session = await client.session.create(extra_body={})
+                        model_name_for_session = resolve_model_name(
+                            model_override, settings.llm_model
+                        )
+                        session_provider_id = "copilot"
+                        session_model_id = model_name_for_session
+                        if "/" in model_name_for_session:
+                            session_provider_id, session_model_id = (
+                                model_name_for_session.split("/", 1)
+                            )
+
+                        session = await client.session.create(
+                            extra_body={
+                                "agent": "dragonglass",
+                                "model": {
+                                    "providerID": session_provider_id,
+                                    "modelID": session_model_id,
+                                },
+                            }
+                        )
+                        logger.info(
+                            "created OpenCode session id=%s provider=%s model=%s",
+                            session.id,
+                            session_provider_id,
+                            session_model_id,
+                        )
                         self._opencode_session_id = session.id
                     except Exception:
                         logger.exception("failed to create OpenCode session")

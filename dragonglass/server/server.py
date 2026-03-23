@@ -41,6 +41,24 @@ logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 40
 
+_OPENCODE_CONFIG_TEMPLATE: dict[str, typing.Any] = {
+    "$schema": "https://opencode.ai/config.json",
+    "mcp": {
+        "dragonglass": {
+            "type": "remote",
+            "enabled": True,
+        }
+    },
+    "agent": {
+        "dragonglass": {
+            "mode": "primary",
+            "tools": {
+                "dragonglass_*": True,
+            },
+        }
+    },
+}
+
 
 def serialize_event(event: AgentEvent) -> str:
     def _encode(obj: typing.Any) -> typing.Any:
@@ -234,40 +252,7 @@ class DragonglassServer:
 
         # Start OpenCode server
         if settings.llm_backend == "opencode" and settings.spawn_opencode:
-            if not OPENCODE_CONFIG_FILE.exists():
-                logger.info(
-                    "server: creating custom OpenCode config at %s",
-                    OPENCODE_CONFIG_FILE,
-                )
-                mcp_config = {
-                    "$schema": "https://opencode.ai/config.json",
-                    "mcp": {
-                        "dragonglass": {
-                            "type": "remote",
-                            "url": f"http://127.0.0.1:{settings.mcp_http_port}/mcp",
-                            "enabled": True,
-                        }
-                    },
-                    "agent": {
-                        "dragonglass": {
-                            "mode": "primary",
-                            "tools": {
-                                "dragonglass_*": True,
-                            },
-                        }
-                    },
-                }
-                with open(OPENCODE_CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(mcp_config, f, indent=2)
-
-            port = 4096
-            try:
-                u = urllib.parse.urlparse(settings.opencode_url)
-                if u.port:
-                    port = u.port
-            except Exception:
-                pass
-
+            port = self._opencode_port(settings.opencode_url)
             logger.info("server: starting OpenCode server on port %d", port)
             await self._restart_opencode(settings.llm_model)
             self._last_opencode_model = settings.llm_model
@@ -306,6 +291,112 @@ class DragonglassServer:
             f"Timed out waiting for MCP server on port {port}"
         ) from last_error
 
+    @staticmethod
+    def _opencode_port(opencode_url: str) -> int:
+        port = 4096
+        try:
+            parsed = urllib.parse.urlparse(opencode_url)
+            if parsed.port:
+                port = parsed.port
+        except Exception:
+            logger.warning("server: failed to parse OpenCode URL %s", opencode_url)
+        return port
+
+    @staticmethod
+    def _load_json_file(path: pathlib.Path) -> dict[str, typing.Any]:
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                logger.info("server: loaded OpenCode config source %s", path)
+                return data
+            logger.warning("server: ignoring non-object config file %s", path)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            logger.warning("server: failed reading config file %s", path, exc_info=True)
+        return {}
+
+    @staticmethod
+    def _merge_config_dicts(
+        base: dict[str, typing.Any], incoming: dict[str, typing.Any]
+    ) -> dict[str, typing.Any]:
+        for key, value in incoming.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                DragonglassServer._merge_config_dicts(
+                    typing.cast(dict[str, typing.Any], base[key]), value
+                )
+            else:
+                base[key] = value
+        return base
+
+    def _build_opencode_config(self, model_id: str) -> dict[str, typing.Any]:
+        settings = get_settings()
+        merged: dict[str, typing.Any] = self._merge_config_dicts(
+            {},
+            _OPENCODE_CONFIG_TEMPLATE,
+        )
+
+        local_config = self._load_json_file(OPENCODE_CONFIG_FILE)
+        if local_config:
+            merged = self._merge_config_dicts(merged, local_config)
+
+        mcp_config = merged.setdefault("mcp", {}).setdefault("dragonglass", {})
+        mcp_config["type"] = "remote"
+        mcp_config["url"] = f"http://127.0.0.1:{settings.mcp_http_port}/mcp"
+        mcp_config["enabled"] = True
+
+        agent_config = merged.setdefault("agent", {}).setdefault("dragonglass", {})
+        agent_config["mode"] = "primary"
+        agent_tools = agent_config.setdefault("tools", {})
+        agent_tools["dragonglass_*"] = True
+        if model_id.strip():
+            agent_config["model"] = model_id
+
+        return merged
+
+    def _write_opencode_config(self, model_id: str) -> None:
+        OPENCODE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config = self._build_opencode_config(model_id)
+        with open(OPENCODE_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+        logger.info(
+            "server: wrote OpenCode config to %s (model=%s)",
+            OPENCODE_CONFIG_FILE,
+            model_id,
+        )
+
+    async def _wait_for_opencode_server(self, opencode_url: str) -> None:
+        deadline = time.monotonic() + 15.0
+        last_error: Exception | None = None
+        url = opencode_url.rstrip("/") + "/"
+
+        while time.monotonic() < deadline:
+            if self._opencode_process and self._opencode_process.returncode is not None:
+                raise RuntimeError(
+                    "OpenCode process exited early with code "
+                    f"{self._opencode_process.returncode}"
+                )
+
+            try:
+                async with httpx.AsyncClient(timeout=0.5) as client:
+                    resp = await client.get(url)
+                    if resp.status_code < HTTPStatus.INTERNAL_SERVER_ERROR:
+                        logger.info(
+                            "server: OpenCode health check status=%d url=%s",
+                            resp.status_code,
+                            url,
+                        )
+                        return
+            except Exception as exc:
+                last_error = exc
+
+            await asyncio.sleep(0.1)
+
+        raise RuntimeError(
+            f"Timed out waiting for OpenCode at {opencode_url}"
+        ) from last_error
+
     async def _restart_opencode(self, model_id: str) -> None:
         """Kills existing OpenCode server and restarts."""
         settings = get_settings()
@@ -319,42 +410,34 @@ class DragonglassServer:
                 self._opencode_process.pid,
             )
             self._opencode_process.terminate()
-            await self._opencode_process.wait()
+            try:
+                await asyncio.wait_for(self._opencode_process.wait(), timeout=8.0)
+            except TimeoutError:
+                logger.warning(
+                    "server: OpenCode process did not terminate in time; killing pid %d",
+                    self._opencode_process.pid,
+                )
+                self._opencode_process.kill()
+                await self._opencode_process.wait()
             self._opencode_process = None
 
-        # 2. Update config model ID if needed
+        # 2. Update OpenCode config
         try:
-            with open(OPENCODE_CONFIG_FILE, encoding="utf-8") as f:
-                config = json.load(f)
-
-            agent_config = config.setdefault("agent", {}).setdefault("dragonglass", {})
-            agent_config.setdefault("mode", "primary")
-            agent_tools = agent_config.setdefault("tools", {})
-            agent_tools["dragonglass_*"] = True
-            mcp_config = config.setdefault("mcp", {}).setdefault("dragonglass", {})
-            mcp_config["type"] = "remote"
-            mcp_config["url"] = f"http://127.0.0.1:{settings.mcp_http_port}/mcp"
-            mcp_config["enabled"] = True
-            if agent_config.get("model") != model_id:
-                agent_config["model"] = model_id
-            with open(OPENCODE_CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-            logger.info("server: updated OpenCode config with model %s", model_id)
+            self._write_opencode_config(model_id)
         except Exception:
             logger.warning("server: failed to update OpenCode config", exc_info=True)
 
         # 3. Start new process
-        port = 4096
-        try:
-            u = urllib.parse.urlparse(settings.opencode_url)
-            if u.port:
-                port = u.port
-        except Exception:
-            pass
+        port = self._opencode_port(settings.opencode_url)
 
         try:
             env = os.environ.copy()
             env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
+            logger.info(
+                "server: launching OpenCode process port=%d config=%s",
+                port,
+                OPENCODE_CONFIG_FILE,
+            )
             self._opencode_process = await asyncio.create_subprocess_exec(
                 "opencode",
                 "serve",
@@ -364,6 +447,7 @@ class DragonglassServer:
                 stderr=asyncio.subprocess.DEVNULL,
                 env=env,
             )
+            await self._wait_for_opencode_server(settings.opencode_url)
             logger.info(
                 "server: OpenCode server started with model %s (pid %d)",
                 model_id,
