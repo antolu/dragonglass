@@ -49,9 +49,21 @@ struct SettingsView: View {
                             Spacer()
                             Button("Change…") {
                                 SetupWindowController.shared.show { vaultPath in
-                                    if var current = self.config {
+                                    guard var current = self.config else { return }
+                                    Task {
                                         current.obsidianDir = vaultPath
-                                        self.config = current
+                                        do {
+                                            try await self.client.setConfig(current)
+                                            await MainActor.run {
+                                                self.config = current
+                                            }
+                                        } catch {
+                                            await MainActor.run {
+                                                self.errorMessage =
+                                                    "Failed to save vault path: \(error.localizedDescription)"
+                                                self.showError = true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -175,6 +187,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
         if let window {
             NSApp.activate(ignoringOtherApps: true)
+            window.orderFrontRegardless()
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -198,6 +211,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         let setupWindow = NSWindow(contentViewController: host)
         setupWindow.title = "Obsidian Setup"
         setupWindow.styleMask = [.titled, .closable]
+        setupWindow.level = .floating
+        setupWindow.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         setupWindow.isReleasedWhenClosed = false
         setupWindow.delegate = self
         setupWindow.center()
@@ -205,6 +220,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         window = setupWindow
 
         NSApp.activate(ignoringOtherApps: true)
+        setupWindow.orderFrontRegardless()
         setupWindow.makeKeyAndOrderFront(nil)
     }
 
