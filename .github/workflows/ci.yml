@@ -46,11 +46,10 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Enable corepack and prepare pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@latest --activate
-          pnpm --version
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
 
       - name: Build
         run: |
