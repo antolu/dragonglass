@@ -5,29 +5,37 @@ import contextlib
 import dataclasses
 import json
 import logging
+import os
 import pathlib
 import signal
 import time
 import tomllib
 import typing
+import urllib.parse
 import uuid
 from http import HTTPStatus
 
 import httpx
 import tomli_w
 import websockets
+from opencode_ai import AsyncOpencode
+from uvicorn import Config, Server
 
 from dragonglass import paths
 from dragonglass._version import version
 from dragonglass.agent.agent import (
     AgentEvent,
-    ConversationLoadedEvent,
-    ConversationsListEvent,
     DoneEvent,
     VaultAgent,
     history_to_events,
 )
-from dragonglass.config import get_settings, invalidate_settings
+from dragonglass.agent.types import (
+    ConversationLoadedEvent,
+    ConversationsListEvent,
+)
+from dragonglass.config import Settings, get_settings, invalidate_settings
+from dragonglass.mcp.search import create_search_server
+from dragonglass.paths import OPENCODE_CONFIG_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +112,30 @@ def parse_ollama_models(raw_models: object) -> list[str]:
     return parsed_models
 
 
+def parse_opencode_models(raw_providers: object) -> list[str]:
+    if not isinstance(raw_providers, list):
+        return []
+
+    parsed_models: list[str] = []
+    for provider in raw_providers:
+        if not isinstance(provider, dict):
+            continue
+        provider_id = provider.get("id")
+        models = provider.get("models")
+        if not isinstance(provider_id, str) or not isinstance(models, list):
+            continue
+        for model in models:
+            model_id = None
+            if isinstance(model, str):
+                model_id = model
+            elif isinstance(model, dict):
+                model_id = model.get("id") or model.get("name")
+            if isinstance(model_id, str):
+                parsed_models.append(f"{provider_id}/{model_id}")
+
+    return parsed_models
+
+
 class DragonglassServer:
     def __init__(self, host: str = "localhost", port: int = 51363) -> None:
         self.host = host
@@ -112,6 +144,9 @@ class DragonglassServer:
         self._stop_event = asyncio.Event()
         self._chat_task: asyncio.Task[None] | None = None
         self._current_conversation_id: str | None = None
+        self._opencode_process: asyncio.subprocess.Process | None = None
+        self._mcp_task: asyncio.Task[None] | None = None
+        self._last_opencode_model: str | None = None
 
     @staticmethod
     def _get_conversation_path(conversation_id: str) -> pathlib.Path:
@@ -143,6 +178,10 @@ class DragonglassServer:
     async def run(self) -> None:
         settings = get_settings()
         self.agent = VaultAgent(settings)
+
+        # Start OpenCode and MCP servers if needed
+        await self._start_managed_services(settings)
+
         logger.info("server: connecting to vault")
         try:
             await self.agent.initialise()
@@ -161,7 +200,143 @@ class DragonglassServer:
             await self._stop_event.wait()
 
         logger.info("server: shutting down")
+        if self._chat_task:
+            self._chat_task.cancel()
+        if self._mcp_task:
+            self._mcp_task.cancel()
+        if self._opencode_process:
+            logger.info("server: stopping opencode process")
+            self._opencode_process.terminate()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(self._opencode_process.wait(), timeout=5.0)
+
         await self.agent.close()
+
+    async def _start_managed_services(self, settings: Settings) -> None:
+        # Start MCP HTTP/SSE server
+        mcp_server = create_search_server(settings)
+
+        def run_uvicorn() -> None:
+            config = Config(
+                app=mcp_server.asgi(),
+                host="localhost",
+                port=settings.mcp_http_port,
+                log_level="warning",
+                install_handlers=False,
+            )
+            server = Server(config)
+            server.run()
+
+        self._mcp_task = asyncio.create_task(asyncio.to_thread(run_uvicorn))
+        logger.info(
+            "server: MCP HTTP/SSE server started on port %d", settings.mcp_http_port
+        )
+
+        # Start OpenCode server
+        if settings.llm_backend == "opencode" and settings.spawn_opencode:
+            if not OPENCODE_CONFIG_FILE.exists():
+                logger.info(
+                    "server: creating custom OpenCode config at %s",
+                    OPENCODE_CONFIG_FILE,
+                )
+                mcp_config = {
+                    "$schema": "https://opencode.ai/config.json",
+                    "mcp": {
+                        "dragonglass": {
+                            "type": "remote",
+                            "url": f"http://127.0.0.1:{settings.mcp_http_port}/mcp",
+                            "enabled": True,
+                        }
+                    },
+                    "agent": {
+                        "dragonglass": {
+                            "mode": "primary",
+                            "tools": {
+                                "dragonglass_*": True,
+                            },
+                        }
+                    },
+                }
+                with open(OPENCODE_CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump(mcp_config, f, indent=2)
+
+            port = 4096
+            try:
+                u = urllib.parse.urlparse(settings.opencode_url)
+                if u.port:
+                    port = u.port
+            except Exception:
+                pass
+
+            logger.info("server: starting OpenCode server on port %d", port)
+            await self._restart_opencode(settings.llm_model)
+            self._last_opencode_model = settings.llm_model
+
+    async def _restart_opencode(self, model_id: str) -> None:
+        """Kills existing OpenCode server and restarts."""
+        settings = get_settings()
+        if not settings.spawn_opencode:
+            return
+
+        # 1. Kill existing
+        if self._opencode_process and self._opencode_process.returncode is None:
+            logger.info(
+                "server: terminating existing OpenCode server (pid %d)",
+                self._opencode_process.pid,
+            )
+            self._opencode_process.terminate()
+            await self._opencode_process.wait()
+            self._opencode_process = None
+
+        # 2. Update config model ID if needed
+        try:
+            with open(OPENCODE_CONFIG_FILE, encoding="utf-8") as f:
+                config = json.load(f)
+
+            agent_config = config.setdefault("agent", {}).setdefault("dragonglass", {})
+            agent_config.setdefault("mode", "primary")
+            agent_tools = agent_config.setdefault("tools", {})
+            agent_tools["dragonglass_*"] = True
+            mcp_config = config.setdefault("mcp", {}).setdefault("dragonglass", {})
+            mcp_config["type"] = "remote"
+            mcp_config["url"] = f"http://127.0.0.1:{settings.mcp_http_port}/mcp"
+            mcp_config["enabled"] = True
+            if agent_config.get("model") != model_id:
+                agent_config["model"] = model_id
+            with open(OPENCODE_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            logger.info("server: updated OpenCode config with model %s", model_id)
+        except Exception:
+            logger.warning("server: failed to update OpenCode config", exc_info=True)
+
+        # 3. Start new process
+        port = 4096
+        try:
+            u = urllib.parse.urlparse(settings.opencode_url)
+            if u.port:
+                port = u.port
+        except Exception:
+            pass
+
+        try:
+            env = os.environ.copy()
+            env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
+            self._opencode_process = await asyncio.create_subprocess_exec(
+                "opencode",
+                "serve",
+                "--port",
+                str(port),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+            )
+            logger.info(
+                "server: OpenCode server started with model %s (pid %d)",
+                model_id,
+                self._opencode_process.pid,
+            )
+        except Exception:
+            logger.exception("server: failed to restart OpenCode")
 
     async def _handle_client(  # noqa: PLR0912
         self, websocket: typing.Any
@@ -222,6 +397,21 @@ class DragonglassServer:
         model_override = resolve_chat_model(data.get("model"), settings.selected_model)
 
         logger.info("server: chat message: %r (model=%s)", text, model_override)
+
+        # Check if we need to restart OpenCode for a different model
+        if (
+            settings.llm_backend == "opencode"
+            and model_override
+            and model_override != self._last_opencode_model
+        ):
+            logger.info(
+                "server: model changed from %s to %s, restarting OpenCode",
+                self._last_opencode_model,
+                model_override,
+            )
+            await self._restart_opencode(model_override)
+            self._last_opencode_model = model_override
+
         try:
             if self.agent:
                 if not self._current_conversation_id:
@@ -285,6 +475,16 @@ class DragonglassServer:
             except Exception:
                 logger.debug("ollama unreachable at %s", base_url, exc_info=True)
 
+        if settings.llm_backend == "opencode":
+            try:
+                client = AsyncOpencode(base_url=settings.opencode_url)
+                providers = await client.app.providers()
+                opencode_models = parse_opencode_models(providers)
+                if opencode_models:
+                    models = opencode_models
+            except Exception:
+                logger.exception("failed to fetch opencode models")
+
         await websocket.send(json.dumps({"type": "models_list", "models": models}))
 
     @staticmethod
@@ -311,9 +511,8 @@ class DragonglassServer:
             except Exception:
                 logger.exception("failed to save extra models")
 
-    @staticmethod
     async def _handle_set_config(
-        websocket: typing.Any, data: dict[str, object]
+        self, websocket: typing.Any, data: dict[str, object]
     ) -> None:
         new_config = data.get("config")
         if not isinstance(new_config, dict):
@@ -343,12 +542,22 @@ class DragonglassServer:
             tomli_w.dump(current_toml, f)
 
         invalidate_settings()
+        settings = get_settings()
+
+        # Restart OpenCode if model or backend changed
+        if (
+            settings.llm_backend == "opencode"
+            and settings.llm_model != self._last_opencode_model
+        ):
+            await self._restart_opencode(settings.llm_model)
+            self._last_opencode_model = settings.llm_model
+
         logger.info(
             "server: config updated and settings invalidated for file %s",
             paths.CONFIG_FILE,
         )
         await websocket.send(json.dumps({"type": "config_ack"}))
-        await DragonglassServer._handle_get_config(websocket)
+        await self._handle_get_config(websocket)
 
     @staticmethod
     async def _handle_get_version(

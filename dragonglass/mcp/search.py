@@ -295,7 +295,7 @@ async def do_patch_note_lines(  # noqa: PLR0911
 def create_search_server(settings: Settings) -> fastmcp.FastMCP:
     m = fastmcp.FastMCP("search")
 
-    @m.tool()
+    @m.tool(name="dragonglass_new_search_session")
     def new_search_session() -> dict[str, str]:
         """Create a new search session. Destroys any previous session.
         MUST be called before starting keyword or vector searches.
@@ -303,29 +303,19 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         session = new_session()
         return {"session_id": session.id, "status": "created"}
 
-    @m.tool()
+    @m.tool(name="dragonglass_keyword_search")
     async def keyword_search(queries: _StringList) -> dict[str, typing.Any]:
-        """Search the vault for files matching one or more text queries.
-
-        queries: list of search strings, e.g. ["Milano Ancona", "tag:#travel"].
-        Supports prefixes: file:, tag:, section:, property:.
-        Results from all queries are merged into the session allowlist.
-        """
+        """Search the vault for files matching one or more text queries."""
         return await _do_keyword_search(settings, queries)
 
-    @m.tool()
+    @m.tool(name="dragonglass_vector_search")
     async def vector_search(
         query: str, top_n: int = 10, min_score: float = 0.35
     ) -> list[dict[str, typing.Any]]:
-        """Perform semantic (vector) search.
-        If keyword_search was called previously in this session, this search is restricted
-        to those files (allowlist). If no keywords were found, it falls back to a global search.
-
-        A min_score of 0.35-0.40 is generally good for filtering noise.
-        """
+        """Perform semantic (vector) search."""
         return await _do_vector_search(settings, query, top_n, min_score)
 
-    @m.tool()
+    @m.tool(name="dragonglass_open_note")
     async def open_note(path: str) -> dict[str, str]:
         """Open a note in Obsidian by its vault-relative path."""
         try:
@@ -341,7 +331,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
             logger.exception("open_note failed for path %r", path)
             return {"error": str(exc)}
 
-    @m.tool()
+    @m.tool(name="dragonglass_run_command")
     async def run_command(command_id: str) -> dict[str, str]:
         """Execute an Obsidian command by its ID."""
         try:
@@ -356,7 +346,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
             logger.exception("run_command failed for %r", command_id)
             return {"error": str(exc)}
 
-    @m.tool()
+    @m.tool(name="dragonglass_read_note_with_hash")
     async def read_note_with_hash(
         path: str,
         start_line: int | None = None,
@@ -373,7 +363,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         """
         return await do_read_note_with_hash(settings, path, start_line, end_line)
 
-    @m.tool()
+    @m.tool(name="dragonglass_patch_note_lines")
     async def patch_note_lines(
         path: str,
         start_line: int,
