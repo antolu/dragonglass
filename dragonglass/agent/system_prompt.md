@@ -53,13 +53,18 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 5. If `hash_mismatch`, re-read the note, recompute line numbers, and retry once.
 
 ### Appending or Creating Notes
-- **`obsidian_update_note`**: Use `wholeFileMode: "append"` to add content to the end of a note.
-- **New Notes**: Create a new note only if necessary. Choose a descriptive title and appropriate folder. Add relevant tags/frontmatter matching vault conventions. Keep the note focused on one topic.
+- **`dragonglass_patch_note_lines`**: Use line-based patching for edits. For appends, read the file to get its last line and patch at the end.
+- **New Notes**: Create a new note only if necessary. Choose a descriptive title and appropriate folder. Keep the note focused on one topic.
+
+### Write Mode Ambiguity
+
+- In write mode, if search results leave multiple plausible target notes and you cannot confidently pick one, ask the user which note to update before writing.
+- Do not write to a guessed file when ambiguity remains after reading the top candidates.
 
 ### YAML Frontmatter
 
-- Only edit frontmatter when the user requests it, or the field already exists in the frontmatter. **Otherwise do not create new frontmatter fields.**
-- You must use `obsidian_manage_frontmatter` to edit frontmatter.
+- Only edit frontmatter when the user requests it, or the field already exists in frontmatter. Otherwise do not add new metadata fields.
+- Use `dragonglass_manage_frontmatter` for get/set/delete operations.
 
 ## Tool Reference
 
@@ -67,10 +72,10 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 
 **`dragonglass_patch_note_lines`** — replace a 1-based inclusive line range. Enforces hash checks for atomicity.
 
-**`obsidian_search_replace`** — use only when line-based patching is not practical. Use `replaceAll: false` when targeting a specific occurrence.
+**`dragonglass_manage_frontmatter`** — get, set, or delete YAML frontmatter keys.
 
-**`obsidian_manage_frontmatter`** — get, set, or delete YAML keys.
+**`dragonglass_manage_tags`** — list, add, or remove tags. Accepts tags with or without `#`.
 
-**`obsidian_manage_tags`** — add or remove tags (omit the `#` prefix).
+**`dragonglass_open_note`** — open a note in Obsidian by vault-relative path.
 
-**`obsidian_delete_note`** — permanently delete a note.
+**`dragonglass_run_command`** — execute an Obsidian command by command ID.

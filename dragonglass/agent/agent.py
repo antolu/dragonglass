@@ -95,6 +95,8 @@ _TOOL_STATUS: dict[str, str] = {
     "sequentialthinking": "thinking",
     "dragonglass_open_note": "opening",
     "dragonglass_run_command": "running command",
+    "dragonglass_manage_frontmatter": "updating frontmatter",
+    "dragonglass_manage_tags": "updating tags",
 }
 
 
@@ -200,24 +202,16 @@ def resolve_model_name(model_override: str | None, default_model: str) -> str:
     return override
 
 
-_EXCLUDED_MCP_TOOLS = frozenset({
-    "obsidian_read_note",
-    "obsidian_global_search",
-    "obsidian_search_replace",
-})
+_EXCLUDED_MCP_TOOLS: frozenset[str] = frozenset()
 
 _FILE_READ_TOOLS = frozenset({
     "dragonglass_read_note_with_hash",
-    "obsidian_list_notes",
-    "obsidian_global_search",
 })
 
 _FILE_WRITE_TOOLS = frozenset({
-    "obsidian_update_note",
-    "obsidian_search_replace",
-    "obsidian_manage_frontmatter",
-    "obsidian_manage_tags",
     "dragonglass_patch_note_lines",
+    "dragonglass_manage_frontmatter",
+    "dragonglass_manage_tags",
 })
 _FILE_DELETE_TOOLS: frozenset[str] = frozenset()
 
@@ -691,6 +685,8 @@ class VaultAgent:
             "dragonglass_run_command",
             "dragonglass_read_note_with_hash",
             "dragonglass_patch_note_lines",
+            "dragonglass_manage_frontmatter",
+            "dragonglass_manage_tags",
         }
         if name in search_tools:
             try:
