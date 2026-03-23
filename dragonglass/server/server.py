@@ -218,18 +218,18 @@ class DragonglassServer:
 
         def run_uvicorn() -> None:
             config = Config(
-                app=mcp_server.asgi(),
+                app=mcp_server.http_app(path="/mcp"),
                 host="localhost",
                 port=settings.mcp_http_port,
                 log_level="warning",
-                install_handlers=False,
             )
             server = Server(config)
             server.run()
 
         self._mcp_task = asyncio.create_task(asyncio.to_thread(run_uvicorn))
+        await self._wait_for_mcp_server(settings.mcp_http_port)
         logger.info(
-            "server: MCP HTTP/SSE server started on port %d", settings.mcp_http_port
+            "server: MCP HTTP/SSE server ready on port %d", settings.mcp_http_port
         )
 
         # Start OpenCode server
@@ -271,6 +271,40 @@ class DragonglassServer:
             logger.info("server: starting OpenCode server on port %d", port)
             await self._restart_opencode(settings.llm_model)
             self._last_opencode_model = settings.llm_model
+
+    async def _wait_for_mcp_server(self, port: int) -> None:
+        deadline = time.monotonic() + 10.0
+        last_error: Exception | None = None
+
+        while time.monotonic() < deadline:
+            if self._mcp_task and self._mcp_task.done():
+                task_exc = self._mcp_task.exception()
+                if task_exc is not None:
+                    raise RuntimeError("MCP server task failed to start") from task_exc
+
+            try:
+                async with httpx.AsyncClient(timeout=0.5) as client:
+                    resp = await client.get(f"http://127.0.0.1:{port}/mcp")
+                    if resp.status_code in {
+                        HTTPStatus.OK,
+                        HTTPStatus.BAD_REQUEST,
+                        HTTPStatus.UNAUTHORIZED,
+                        HTTPStatus.METHOD_NOT_ALLOWED,
+                    }:
+                        return
+            except Exception as exc:
+                last_error = exc
+
+            await asyncio.sleep(0.1)
+
+        if self._mcp_task and self._mcp_task.done():
+            task_exc = self._mcp_task.exception()
+            if task_exc is not None:
+                raise RuntimeError("MCP server task failed to start") from task_exc
+
+        raise RuntimeError(
+            f"Timed out waiting for MCP server on port {port}"
+        ) from last_error
 
     async def _restart_opencode(self, model_id: str) -> None:
         """Kills existing OpenCode server and restarts."""
