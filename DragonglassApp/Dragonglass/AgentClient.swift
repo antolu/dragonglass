@@ -82,7 +82,7 @@ enum AgentEvent: Codable {
     }
 
     func encode(to encoder: Encoder) throws {
-        var container = try encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .status(let msg):
             try container.encode("StatusEvent", forKey: .type)
