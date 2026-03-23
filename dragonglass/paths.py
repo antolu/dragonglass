@@ -24,7 +24,11 @@ TEMP_DIR = pathlib.Path(tempfile.gettempdir()) / "dragonglass"
 DATA_DIR = TEMP_DIR / "data"
 LOG_DIR = TEMP_DIR / "logs"
 OPENCODE_CONFIG_DIR = TEMP_DIR / "config"
-OPENCODE_CONFIG_FILE = OPENCODE_CONFIG_DIR / "opencode.json"
+_opencode_config_path = os.environ.get("OPENCODE_CONFIG")
+if _opencode_config_path:
+    OPENCODE_CONFIG_FILE = pathlib.Path(_opencode_config_path).expanduser()
+else:
+    OPENCODE_CONFIG_FILE = OPENCODE_CONFIG_DIR / "opencode.json"
 PROJECT_OPENCODE_CONFIG = OPENCODE_CONFIG_FILE
 
 CONVERSATIONS_DIR = DATA_DIR / "conversations"
@@ -32,6 +36,8 @@ CONVERSATIONS_DIR = DATA_DIR / "conversations"
 # Ensure directories exist
 for d in (CONFIG_DIR, DATA_DIR, CACHE_DIR, CONVERSATIONS_DIR, OPENCODE_CONFIG_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+OPENCODE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 EXTRA_MODELS_FILE = CONFIG_DIR / "extra_models.json"

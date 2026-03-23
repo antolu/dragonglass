@@ -22,6 +22,9 @@ class BackendManager: ObservableObject {
     private var venvDir: URL { appSupportDir.appendingPathComponent("venv") }
     private var pythonPath: URL { venvDir.appendingPathComponent("bin/python3") }
     private var dragonglassPath: URL { venvDir.appendingPathComponent("bin/dragonglass") }
+    private var opencodeConfigPath: URL {
+        appSupportDir.appendingPathComponent("config/opencode.json")
+    }
 
     init() {
         Task {
@@ -330,6 +333,16 @@ class BackendManager: ObservableObject {
         let p = Process()
         p.executableURL = dragonglassPath
         p.arguments = ["serve"]
+
+        var env = ProcessInfo.processInfo.environment
+        env["OPENCODE_CONFIG"] = opencodeConfigPath.path
+        p.environment = env
+
+        try FileManager.default.createDirectory(
+            at: opencodeConfigPath.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
 
         let pipe = Pipe()
         p.standardOutput = pipe
