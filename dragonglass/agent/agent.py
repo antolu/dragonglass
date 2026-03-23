@@ -284,18 +284,12 @@ _EXCLUDED_MCP_TOOLS = frozenset({
 })
 
 _FILE_READ_TOOLS = frozenset({
-    "obsidian_list_notes",
-    "obsidian_global_search",
     "read_note_with_hash",
 })
 _FILE_WRITE_TOOLS = frozenset({
-    "obsidian_update_note",
-    "obsidian_search_replace",
-    "obsidian_manage_frontmatter",
-    "obsidian_manage_tags",
     "patch_note_lines",
 })
-_FILE_DELETE_TOOLS = frozenset({"obsidian_delete_note"})
+_FILE_DELETE_TOOLS: frozenset[str] = frozenset()
 
 
 def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -436,18 +430,7 @@ class VaultAgent:
 
     async def _connect_mcp_servers(self) -> None:
         _check_node_version(_get_mcp_env())
-        settings = get_settings()
-        obsidian_params = StdioServerParameters(
-            command="npx",
-            args=["obsidian-mcp-server"],
-            env=_get_mcp_env({
-                "OBSIDIAN_API_KEY": settings.obsidian_api_key,
-                "OBSIDIAN_BASE_URL": settings.obsidian_api_url,
-                "OBSIDIAN_VERIFY_SSL": "false",
-                "OBSIDIAN_ENABLE_CACHE": "true",
-            }),
-        )
-        for params in [obsidian_params, *_EXTRA_MCP_SERVERS]:
+        for params in _EXTRA_MCP_SERVERS:
             try:
                 session = await self._exit_stack.enter_async_context(
                     _StdioSessionContext(params)

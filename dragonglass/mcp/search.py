@@ -37,14 +37,12 @@ class PatchLinesArgs(typing.TypedDict):
 async def _keyword_search_task(
     client: httpx.AsyncClient,
     query: str,
-    obsidian_url: str,
-    headers: dict[str, str],
+    vector_search_url: str,
 ) -> list[str]:
     try:
         resp = await client.post(
-            f"{obsidian_url}/search/simple/",
+            f"{vector_search_url}/search/simple/",
             params={"query": query, "contextLength": 0},
-            headers=headers,
         )
         logger.debug(
             "_keyword_search_task  query=%r  status=%d  raw_hits=%d  paths=%s",
@@ -74,10 +72,9 @@ async def _do_keyword_search(
     logger.debug("keyword_search  queries=%s", queries)
 
     async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-        headers = {"Authorization": f"Bearer {settings.obsidian_api_key}"}
         for query in queries:
             paths = await _keyword_search_task(
-                client, query, settings.obsidian_api_url, headers
+                client, query, settings.vector_search_url
             )
             found_paths.update(paths)
 
@@ -332,11 +329,10 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
     async def open_note(path: str) -> dict[str, str]:
         """Open a note in Obsidian by its vault-relative path."""
         try:
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 encoded = urllib.parse.quote(path, safe="/")
                 resp = await client.post(
-                    f"{settings.obsidian_api_url}/open/{encoded}",
-                    headers={"Authorization": f"Bearer {settings.obsidian_api_key}"},
+                    f"{settings.vector_search_url}/open/{encoded}",
                 )
                 if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
                     return {"status": "opened", "path": path}
@@ -349,10 +345,9 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
     async def run_command(command_id: str) -> dict[str, str]:
         """Execute an Obsidian command by its ID."""
         try:
-            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{settings.obsidian_api_url}/commands/{command_id}",
-                    headers={"Authorization": f"Bearer {settings.obsidian_api_key}"},
+                    f"{settings.vector_search_url}/commands/{command_id}",
                 )
                 if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
                     return {"status": "executed", "command_id": command_id}

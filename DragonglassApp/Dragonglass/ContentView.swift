@@ -66,7 +66,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: backend.phase) { phase in
-            if phase == .ready {
+            if phase == .ready || ({
+                if case .needsPluginReload = phase { return true }
+                return false
+            }()) {
                 if !client.isConnected { client.connect() }
                 client.refreshState()
             }
@@ -153,6 +156,17 @@ struct ContentView: View {
                 ProgressView("Installing dependencies...")
             case .starting:
                 ProgressView("Starting backend...")
+            case .needsPluginReload(let message):
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.largeTitle)
+                    .foregroundColor(.orange)
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Button("Done") {
+                    backend.phase = .ready
+                }
+                .buttonStyle(.borderedProminent)
             case .failed(let error):
                 Image(systemName: "exclamationmark.triangle")
                     .font(.largeTitle)

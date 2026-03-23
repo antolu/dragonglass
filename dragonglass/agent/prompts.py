@@ -38,19 +38,18 @@ async def load_system_prompt(settings: Settings) -> tuple[str, bool]:
 
 
 async def _load_agents_note(settings: Settings) -> tuple[str, bool]:
+    if not settings.agents_note_path:
+        return "", False
     try:
-        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-            headers = {
-                "Authorization": f"Bearer {settings.obsidian_api_key}",
-                "Accept": "text/markdown",
-            }
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
-                f"{settings.obsidian_api_url}/vault/{settings.agents_note_path}",
-                headers=headers,
+                f"{settings.vector_search_url}/notes/read",
+                params={"path": settings.agents_note_path},
             )
             if resp.status_code != httpx.codes.OK:
                 return "", False
-            return resp.text, True
+            data = resp.json()
+            return data.get("content", ""), True
     except Exception:
         logger.warning("failed to load agents note from vault", exc_info=True)
     return "", False

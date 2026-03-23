@@ -1,10 +1,3 @@
-//
-//  DragonglassApp.swift
-//  Dragonglass
-//
-//  Created by Anton Lu on 2026-02-27.
-//
-
 import SwiftUI
 import AppKit
 
@@ -12,12 +5,20 @@ import AppKit
 struct DragonglassApp: App {
     @StateObject private var backend = BackendManager()
     @StateObject private var client = AgentClient()
+    @State private var showingSetup = UserDefaults.standard.string(forKey: "obsidianDir")?.isEmpty ?? true
 
     var body: some Scene {
         MenuBarExtra {
             ContentView()
                 .environmentObject(backend)
                 .environmentObject(client)
+                .sheet(isPresented: $showingSetup) {
+                    ObsidianSetupView(isPresented: $showingSetup)
+                }
+            Divider()
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
         } label: {
             Group {
                 if NSImage(named: NSImage.Name("MenuBarIcon")) != nil {
