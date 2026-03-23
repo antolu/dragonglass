@@ -268,18 +268,17 @@ class DragonglassServer:
             if self._mcp_task and self._mcp_task.done():
                 task_exc = self._mcp_task.exception()
                 if task_exc is not None:
+                    if await self._check_mcp_server(port):
+                        logger.warning(
+                            "server: MCP task failed but endpoint is already available on port %d; using existing server",
+                            port,
+                        )
+                        return
                     raise RuntimeError("MCP server task failed to start") from task_exc
 
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
-                    resp = await client.get(f"http://127.0.0.1:{port}/mcp")
-                    if resp.status_code in {
-                        HTTPStatus.OK,
-                        HTTPStatus.BAD_REQUEST,
-                        HTTPStatus.UNAUTHORIZED,
-                        HTTPStatus.METHOD_NOT_ALLOWED,
-                    }:
-                        return
+                if await self._check_mcp_server(port):
+                    return
             except Exception as exc:
                 last_error = exc
 
@@ -288,11 +287,28 @@ class DragonglassServer:
         if self._mcp_task and self._mcp_task.done():
             task_exc = self._mcp_task.exception()
             if task_exc is not None:
+                if await self._check_mcp_server(port):
+                    logger.warning(
+                        "server: MCP task failed but endpoint is already available on port %d; using existing server",
+                        port,
+                    )
+                    return
                 raise RuntimeError("MCP server task failed to start") from task_exc
 
         raise RuntimeError(
             f"Timed out waiting for MCP server on port {port}"
         ) from last_error
+
+    @staticmethod
+    async def _check_mcp_server(port: int) -> bool:
+        async with httpx.AsyncClient(timeout=0.5) as client:
+            resp = await client.get(f"http://127.0.0.1:{port}/mcp")
+        return resp.status_code in {
+            HTTPStatus.OK,
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.UNAUTHORIZED,
+            HTTPStatus.METHOD_NOT_ALLOWED,
+        }
 
     @staticmethod
     def _opencode_port(opencode_url: str) -> int:
