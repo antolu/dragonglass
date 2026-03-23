@@ -30,8 +30,7 @@ struct SettingsView: View {
                         vaultSection(config)
                         modelSection(config)
                         permissionsSection(config)
-                        environmentSection(config)
-                        advancedSection
+                        advancedSection(config)
                     }
                     .padding(.horizontal)
                     .padding(.top, 10)
@@ -95,12 +94,8 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
-            Button("Save") {
-                saveConfig()
-            }
-            .disabled(isSaving || !hasUnsavedChanges)
-            Button("Close") {
-                isPresented = false
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
             }
         }
         .padding(.horizontal)
@@ -261,15 +256,10 @@ struct SettingsView: View {
         }
     }
 
-    private var advancedSection: some View {
+    private func advancedSection(_ config: Binding<DragonglassConfig>) -> some View {
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 12) {
-                settingsSection("Danger Zone") {
-                    Button("Quit Dragonglass") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                    .foregroundColor(.red)
-                }
+                environmentSection(config)
             }
             .padding(.top, 8)
         }
