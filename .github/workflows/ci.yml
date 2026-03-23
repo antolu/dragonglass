@@ -31,6 +31,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
 
       - uses: actions/setup-python@v6
         with:
@@ -44,6 +46,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: 'obsidian-plugin/pnpm-lock.yaml'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v5
