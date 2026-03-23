@@ -1,6 +1,6 @@
 import Foundation
 
-struct DragonglassConfig: Codable {
+struct DragonglassConfig: Codable, Equatable {
     var obsidianDir: String
     var ollamaUrl: String
     var vectorSearchUrl: String
