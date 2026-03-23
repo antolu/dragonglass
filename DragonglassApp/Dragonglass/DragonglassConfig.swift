@@ -12,6 +12,9 @@ struct DragonglassConfig: Codable, Equatable {
     var extraModels: [String]?
     var envVars: [String: String]?
     var selectedModel: String?
+    var llmBackend: String
+    var opencodeUrl: String
+    var spawnOpencode: Bool
     var agentsNotePath: String
     var autoAllowEdit: Bool
     var autoAllowCreate: Bool
@@ -22,6 +25,9 @@ struct DragonglassConfig: Codable, Equatable {
         case ollamaUrl = "ollama_url"
         case vectorSearchUrl = "vector_search_url"
         case llmModel = "llm_model"
+        case llmBackend = "llm_backend"
+        case opencodeUrl = "opencode_url"
+        case spawnOpencode = "spawn_opencode"
         case llmTemperature = "llm_temperature"
         case llmTopP = "llm_top_p"
         case llmTopK = "llm_top_k"

@@ -144,6 +144,7 @@ class AgentClient: ObservableObject {
     @Published var selectedModel: String = ""
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
+    @Published var llmBackend: String = "litellm"
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
@@ -188,6 +189,7 @@ class AgentClient: ObservableObject {
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
+                                    self.llmBackend = config.llmBackend
                                     self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list
