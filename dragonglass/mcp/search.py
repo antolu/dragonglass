@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import typing
 import urllib.parse
 
@@ -10,6 +11,7 @@ import httpx
 import pydantic
 
 from dragonglass.config import Settings
+from dragonglass.mcp.telemetry import emit_tool_event
 from dragonglass.search.session import get_current_session, new_session
 
 logger = logging.getLogger(__name__)
@@ -292,32 +294,98 @@ async def do_patch_note_lines(  # noqa: PLR0911
         return {"error": str(exc)}
 
 
-def create_search_server(settings: Settings) -> fastmcp.FastMCP:
+def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR0915
     m = fastmcp.FastMCP("search")
+
+    def _safe_value_preview(value: object, limit: int = 160) -> str:
+        text = str(value)
+        if len(text) <= limit:
+            return text
+        return text[:limit] + f"... [truncated {len(text) - limit} chars]"
 
     @m.tool(name="dragonglass_new_search_session")
     def new_search_session() -> dict[str, str]:
         """Create a new search session. Destroys any previous session.
         MUST be called before starting keyword or vector searches.
         """
+        emit_tool_event(
+            "dragonglass_new_search_session",
+            "start",
+            "Creating new search session",
+        )
         session = new_session()
+        emit_tool_event(
+            "dragonglass_new_search_session",
+            "done",
+            f"Search session created id={session.id}",
+        )
         return {"session_id": session.id, "status": "created"}
 
     @m.tool(name="dragonglass_keyword_search")
     async def keyword_search(queries: _StringList) -> dict[str, typing.Any]:
         """Search the vault for files matching one or more text queries."""
-        return await _do_keyword_search(settings, queries)
+        emit_tool_event(
+            "dragonglass_keyword_search",
+            "start",
+            f"Running keyword search for {len(queries)} queries",
+        )
+        started = time.monotonic()
+        result = await _do_keyword_search(settings, queries)
+        elapsed = time.monotonic() - started
+        if "error" in result:
+            emit_tool_event(
+                "dragonglass_keyword_search",
+                "error",
+                _safe_value_preview(result.get("error")),
+            )
+        else:
+            emit_tool_event(
+                "dragonglass_keyword_search",
+                "done",
+                (
+                    f"Keyword search complete in {elapsed:.2f}s "
+                    f"(total_found={result.get('total_found', 0)})"
+                ),
+            )
+        return result
 
     @m.tool(name="dragonglass_vector_search")
     async def vector_search(
         query: str, top_n: int = 10, min_score: float = 0.35
     ) -> list[dict[str, typing.Any]]:
         """Perform semantic (vector) search."""
-        return await _do_vector_search(settings, query, top_n, min_score)
+        emit_tool_event(
+            "dragonglass_vector_search",
+            "start",
+            f"Running vector search top_n={top_n} min_score={min_score}",
+        )
+        started = time.monotonic()
+        result = await _do_vector_search(settings, query, top_n, min_score)
+        elapsed = time.monotonic() - started
+        errors = [item.get("error") for item in result if isinstance(item, dict)]
+        errors = [err for err in errors if isinstance(err, str)]
+        if errors:
+            emit_tool_event(
+                "dragonglass_vector_search",
+                "error",
+                _safe_value_preview(errors[0]),
+            )
+        else:
+            emit_tool_event(
+                "dragonglass_vector_search",
+                "done",
+                f"Vector search complete in {elapsed:.2f}s (hits={len(result)})",
+            )
+        return result
 
     @m.tool(name="dragonglass_open_note")
     async def open_note(path: str) -> dict[str, str]:
         """Open a note in Obsidian by its vault-relative path."""
+        emit_tool_event(
+            "dragonglass_open_note",
+            "start",
+            f"Opening note {_safe_value_preview(path)}",
+        )
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 encoded = urllib.parse.quote(path, safe="/")
@@ -325,25 +393,60 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                     f"{settings.vector_search_url}/open/{encoded}",
                 )
                 if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
+                    emit_tool_event(
+                        "dragonglass_open_note",
+                        "done",
+                        f"Opened note {_safe_value_preview(path)}",
+                    )
                     return {"status": "opened", "path": path}
+                emit_tool_event(
+                    "dragonglass_open_note",
+                    "error",
+                    f"HTTP {resp.status_code}",
+                )
                 return {"error": f"HTTP {resp.status_code}"}
         except Exception as exc:
             logger.exception("open_note failed for path %r", path)
+            emit_tool_event(
+                "dragonglass_open_note",
+                "error",
+                _safe_value_preview(exc),
+            )
             return {"error": str(exc)}
 
     @m.tool(name="dragonglass_run_command")
     async def run_command(command_id: str) -> dict[str, str]:
         """Execute an Obsidian command by its ID."""
+        emit_tool_event(
+            "dragonglass_run_command",
+            "start",
+            f"Running command {_safe_value_preview(command_id)}",
+        )
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
                     f"{settings.vector_search_url}/commands/{command_id}",
                 )
                 if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
+                    emit_tool_event(
+                        "dragonglass_run_command",
+                        "done",
+                        f"Executed command {_safe_value_preview(command_id)}",
+                    )
                     return {"status": "executed", "command_id": command_id}
+                emit_tool_event(
+                    "dragonglass_run_command",
+                    "error",
+                    f"HTTP {resp.status_code}",
+                )
                 return {"error": f"HTTP {resp.status_code}"}
         except Exception as exc:
             logger.exception("run_command failed for %r", command_id)
+            emit_tool_event(
+                "dragonglass_run_command",
+                "error",
+                _safe_value_preview(exc),
+            )
             return {"error": str(exc)}
 
     @m.tool(name="dragonglass_read_note_with_hash")
@@ -361,7 +464,27 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
 
         Must be called before patch_note_lines unless expected_hash is provided.
         """
-        return await do_read_note_with_hash(settings, path, start_line, end_line)
+        emit_tool_event(
+            "dragonglass_read_note_with_hash",
+            "start",
+            f"Reading note {_safe_value_preview(path)}",
+        )
+        started = time.monotonic()
+        result = await do_read_note_with_hash(settings, path, start_line, end_line)
+        elapsed = time.monotonic() - started
+        if "error" in result:
+            emit_tool_event(
+                "dragonglass_read_note_with_hash",
+                "error",
+                _safe_value_preview(result.get("error")),
+            )
+        else:
+            emit_tool_event(
+                "dragonglass_read_note_with_hash",
+                "done",
+                f"Read note complete in {elapsed:.2f}s",
+            )
+        return result
 
     @m.tool(name="dragonglass_patch_note_lines")
     async def patch_note_lines(
@@ -379,7 +502,16 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
         which is required for this tool to ensure atomicity even if only
         a subset of lines was read.
         """
-        return await do_patch_note_lines(
+        emit_tool_event(
+            "dragonglass_patch_note_lines",
+            "start",
+            (
+                f"Patching note {_safe_value_preview(path)} lines "
+                f"{start_line}-{end_line}"
+            ),
+        )
+        started = time.monotonic()
+        result = await do_patch_note_lines(
             settings,
             {
                 "path": path,
@@ -389,5 +521,19 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:
                 "expected_hash": expected_hash,
             },
         )
+        elapsed = time.monotonic() - started
+        if "error" in result:
+            emit_tool_event(
+                "dragonglass_patch_note_lines",
+                "error",
+                _safe_value_preview(result.get("error")),
+            )
+        else:
+            emit_tool_event(
+                "dragonglass_patch_note_lines",
+                "done",
+                f"Patch complete in {elapsed:.2f}s",
+            )
+        return result
 
     return m

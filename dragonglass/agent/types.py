@@ -88,6 +88,13 @@ class UserMessageEvent:
 
 
 @dataclasses.dataclass
+class MCPToolEvent:
+    tool: str
+    phase: str
+    message: str
+
+
+@dataclasses.dataclass
 class ConversationsListEvent:
     conversations: list[dict[str, typing.Any]]
 
@@ -105,6 +112,7 @@ AgentEvent = (
     | UsageEvent
     | DoneEvent
     | FileAccessEvent
+    | MCPToolEvent
     | ConversationsListEvent
     | ConversationLoadedEvent
     | UserMessageEvent

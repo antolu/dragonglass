@@ -32,6 +32,7 @@ struct ContentView: View {
             Spacer()
 
             Button(action: {
+                guard !client.isThinking else { return }
                 showingSettings = false
                 showingConversations = true
             }) {
@@ -39,12 +40,14 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .disabled(client.isThinking)
             .popover(isPresented: $showingConversations, arrowEdge: .top) {
                 ConversationManagerView(isPresented: $showingConversations)
                     .environmentObject(client)
             }
 
             Button(action: {
+                guard !client.isThinking else { return }
                 showingConversations = false
                 showingSettings = true
             }) {
@@ -52,6 +55,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .disabled(client.isThinking)
             .popover(isPresented: $showingSettings, arrowEdge: .top) {
                 SettingsView(isPresented: $showingSettings)
                     .environmentObject(client)
@@ -315,6 +319,15 @@ struct EventRow: View {
             .font(.caption)
             .padding(4)
             .background(Color.blue.opacity(0.1))
+            .cornerRadius(4)
+        case .mcpTool(let tool, let phase, let message):
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "bolt.fill")
+                Text("\(tool) [\(phase)] \(message)")
+            }
+            .font(.caption)
+            .padding(4)
+            .background(Color.orange.opacity(0.12))
             .cornerRadius(4)
         case .config:
             EmptyView()

@@ -6,7 +6,13 @@ import logging
 import signal
 import sys
 
-from dragonglass.agent.agent import DoneEvent, StatusEvent, TextChunk, ToolErrorEvent
+from dragonglass.agent.agent import (
+    DoneEvent,
+    MCPToolEvent,
+    StatusEvent,
+    TextChunk,
+    ToolErrorEvent,
+)
 from dragonglass.agent.client import AgentClient
 
 logger = logging.getLogger(__name__)
@@ -44,6 +50,9 @@ async def run_headless() -> None:
                         sys.stdout.flush()
                     case ToolErrorEvent(tool=tool, error=err):
                         sys.stdout.write(f"\n[error] {tool}: {err}\n")
+                        sys.stdout.flush()
+                    case MCPToolEvent(tool=tool, phase=phase, message=message):
+                        sys.stdout.write(f"\n[mcp] {tool} [{phase}] {message}\n")
                         sys.stdout.flush()
                     case DoneEvent():
                         sys.stdout.write("\n")

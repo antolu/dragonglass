@@ -14,6 +14,7 @@ enum AgentEvent: Codable {
     case userMessage(String)
     case conversationsList([ConversationMetadata])
     case conversationLoaded(String, [AgentEvent])
+    case mcpTool(String, String, String)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -32,6 +33,7 @@ enum AgentEvent: Codable {
         case conversations
         case id
         case history
+        case phase
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +70,12 @@ enum AgentEvent: Codable {
             self = .conversationLoaded(try container.decode(String.self, forKey: .id), try container.decode([AgentEvent].self, forKey: .history))
         case "UserMessageEvent", "user_message":
             self = .userMessage(try container.decode(String.self, forKey: .message))
+        case "MCPToolEvent", "mcptoolevent":
+            self = .mcpTool(
+                try container.decode(String.self, forKey: .tool),
+                try container.decode(String.self, forKey: .phase),
+                try container.decode(String.self, forKey: .message)
+            )
         default:
             self = .unknown(type)
         }
@@ -118,6 +126,11 @@ enum AgentEvent: Codable {
             try container.encode(history, forKey: .history)
         case .unknown(let type):
             try container.encode(type, forKey: .type)
+        case .mcpTool(let tool, let phase, let message):
+            try container.encode("MCPToolEvent", forKey: .type)
+            try container.encode(tool, forKey: .tool)
+            try container.encode(phase, forKey: .phase)
+            try container.encode(message, forKey: .message)
         }
     }
 }
@@ -182,6 +195,8 @@ class AgentClient: ObservableObject {
                                         self.events.append(event)
                                     }
                                 case .status, .error, .fileAccess:
+                                    self.events.append(event)
+                                case .mcpTool:
                                     self.events.append(event)
                                 case .done:
                                     self.events.append(event)

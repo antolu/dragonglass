@@ -23,6 +23,7 @@ from dragonglass.agent.types import (
     DoneEvent,
     FileAccessEvent,
     JsonValue,
+    MCPToolEvent,
     StatusEvent,
     TextChunk,
     ToolErrorEvent,
@@ -51,6 +52,16 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
             events.append(UserMessageEvent(message=content))
         elif role == "assistant" and content:
             events.append(TextChunk(text=content))
+        elif role == "tool":
+            tool_name = str(msg.get("tool_call_id") or "tool")
+            if content:
+                events.append(
+                    MCPToolEvent(
+                        tool=tool_name,
+                        phase="done",
+                        message=content,
+                    )
+                )
         # Tool messages and tool_calls are currently omitted from UI history
         # as they are intermediate steps.
     return events

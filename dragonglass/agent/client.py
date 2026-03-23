@@ -12,6 +12,7 @@ from dragonglass.agent.agent import (
     AgentEvent,
     DoneEvent,
     FileAccessEvent,
+    MCPToolEvent,
     StatusEvent,
     TextChunk,
     ToolErrorEvent,
@@ -27,6 +28,7 @@ _EVENT_MAP: dict[str, type[AgentEvent]] = {
     "UsageEvent": UsageEvent,
     "DoneEvent": DoneEvent,
     "FileAccessEvent": FileAccessEvent,
+    "MCPToolEvent": MCPToolEvent,
 }
 
 

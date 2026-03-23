@@ -41,6 +41,7 @@ struct ConversationManagerView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .disabled(client.isThinking)
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))
@@ -63,11 +64,16 @@ struct ConversationManagerView: View {
             LazyVStack(spacing: 1) {
                 ForEach(client.conversations) { conversation in
                     ConversationRow(conversation: conversation) {
-                        client.loadConversation(id: conversation.id)
-                        isPresented = false
+                        if !client.isThinking {
+                            client.loadConversation(id: conversation.id)
+                            isPresented = false
+                        }
                     } onDelete: {
-                        client.deleteConversation(id: conversation.id)
+                        if !client.isThinking {
+                            client.deleteConversation(id: conversation.id)
+                        }
                     }
+                    .disabled(client.isThinking)
                 }
             }
         }

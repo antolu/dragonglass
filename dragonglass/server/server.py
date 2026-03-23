@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections.abc
 import contextlib
 import dataclasses
 import json
@@ -26,6 +27,7 @@ from dragonglass._version import version
 from dragonglass.agent.agent import (
     AgentEvent,
     DoneEvent,
+    MCPToolEvent,
     VaultAgent,
     history_to_events,
 )
@@ -35,6 +37,7 @@ from dragonglass.agent.types import (
 )
 from dragonglass.config import Settings, get_settings, invalidate_settings
 from dragonglass.mcp.search import create_search_server
+from dragonglass.mcp.telemetry import drain_tool_events
 from dragonglass.paths import OPENCODE_CONFIG_FILE
 
 logger = logging.getLogger(__name__)
@@ -535,8 +538,42 @@ class DragonglassServer:
                 if not self._current_conversation_id:
                     self._current_conversation_id = str(uuid.uuid4())
 
-                async for event in self.agent.run(text, model_override=model_override):
+                async def flush_mcp_telemetry() -> None:
+                    for telemetry_event in drain_tool_events():
+                        await websocket.send(
+                            serialize_event(
+                                MCPToolEvent(
+                                    tool=telemetry_event.tool,
+                                    phase=telemetry_event.phase,
+                                    message=telemetry_event.message,
+                                )
+                            )
+                        )
+
+                await flush_mcp_telemetry()
+
+                agent_stream: collections.abc.AsyncIterator[AgentEvent] = (
+                    self.agent.run(
+                        text,
+                        model_override=model_override,
+                    )
+                )
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            anext(agent_stream),
+                            timeout=0.1,
+                        )
+                    except TimeoutError:
+                        await flush_mcp_telemetry()
+                        continue
+                    except StopAsyncIteration:
+                        break
+
                     await websocket.send(serialize_event(event))
+                    await flush_mcp_telemetry()
+
+                await flush_mcp_telemetry()
 
                 # Auto-save after response
                 self._save_conversation(
