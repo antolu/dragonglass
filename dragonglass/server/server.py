@@ -746,8 +746,12 @@ class DragonglassServer:
                 client = AsyncOpencode(base_url=settings.opencode_url)
                 providers = await client.app.providers()
                 opencode_models = parse_opencode_models(providers)
-                if opencode_models:
-                    models = opencode_models
+                # When the selected backend is OpenCode we should replace the
+                # model list with whatever OpenCode reports, even if that list
+                # is empty. Previously we only replaced the list when
+                # OpenCode returned at least one model which left stale
+                # Ollama results visible after switching backends.
+                models = opencode_models
             except Exception:
                 logger.exception("failed to fetch opencode models")
 
