@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import pathlib
+import shutil
 import signal
 import time
 import tomllib
@@ -34,6 +35,7 @@ from dragonglass.agent.agent import (
 from dragonglass.agent.types import (
     ConversationLoadedEvent,
     ConversationsListEvent,
+    StatusEvent,
 )
 from dragonglass.config import Settings, get_settings, invalidate_settings
 from dragonglass.mcp.search import create_search_server
@@ -168,6 +170,7 @@ class DragonglassServer:
         self._opencode_process: asyncio.subprocess.Process | None = None
         self._mcp_task: asyncio.Task[None] | None = None
         self._last_opencode_model: str | None = None
+        self._opencode_start_error: str | None = None
 
     @staticmethod
     def _get_conversation_path(conversation_id: str) -> pathlib.Path:
@@ -262,8 +265,8 @@ class DragonglassServer:
         if settings.llm_backend == "opencode" and settings.spawn_opencode:
             port = self._opencode_port(settings.opencode_url)
             logger.info("server: starting OpenCode server on port %d", port)
-            await self._restart_opencode(settings.llm_model)
-            self._last_opencode_model = settings.llm_model
+            if await self._restart_opencode(settings.llm_model):
+                self._last_opencode_model = settings.llm_model
 
     async def _wait_for_mcp_server(self, port: int) -> None:
         deadline = time.monotonic() + 10.0
@@ -421,11 +424,25 @@ class DragonglassServer:
             f"Timed out waiting for OpenCode at {opencode_url}"
         ) from last_error
 
-    async def _restart_opencode(self, model_id: str) -> None:
+    @staticmethod
+    def _resolve_opencode_executable() -> str | None:
+        explicit = os.environ.get("OPENCODE_BIN", "").strip()
+        if explicit:
+            expanded = os.path.expanduser(explicit)
+            if os.path.isfile(expanded) and os.access(expanded, os.X_OK):
+                return expanded
+
+        discovered = shutil.which("opencode")
+        if discovered:
+            return discovered
+        return None
+
+    async def _restart_opencode(self, model_id: str) -> bool:
         """Kills existing OpenCode server and restarts."""
         settings = get_settings()
         if not settings.spawn_opencode:
-            return
+            self._opencode_start_error = None
+            return True
 
         # 1. Kill existing
         if self._opencode_process and self._opencode_process.returncode is None:
@@ -445,6 +462,14 @@ class DragonglassServer:
                 await self._opencode_process.wait()
             self._opencode_process = None
 
+        opencode_executable = self._resolve_opencode_executable()
+        if not opencode_executable:
+            self._opencode_start_error = (
+                "OpenCode binary not found. Install opencode-ai or set OPENCODE_BIN."
+            )
+            logger.error("server: %s", self._opencode_start_error)
+            return False
+
         # 2. Update OpenCode config
         try:
             self._write_opencode_config(model_id)
@@ -458,12 +483,13 @@ class DragonglassServer:
             env = os.environ.copy()
             env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
             logger.info(
-                "server: launching OpenCode process port=%d config=%s",
+                "server: launching OpenCode process exe=%s port=%d config=%s",
+                opencode_executable,
                 port,
                 OPENCODE_CONFIG_FILE,
             )
             self._opencode_process = await asyncio.create_subprocess_exec(
-                "opencode",
+                opencode_executable,
                 "serve",
                 "--port",
                 str(port),
@@ -477,8 +503,13 @@ class DragonglassServer:
                 model_id,
                 self._opencode_process.pid,
             )
+            self._opencode_start_error = None
         except Exception:
             logger.exception("server: failed to restart OpenCode")
+            self._opencode_start_error = "Failed to start OpenCode server. Check OPENCODE_BIN and npm installation."
+            return False
+
+        return True
 
     async def _handle_client(  # noqa: PLR0912
         self, websocket: typing.Any
@@ -551,8 +582,15 @@ class DragonglassServer:
                 self._last_opencode_model,
                 model_override,
             )
-            await self._restart_opencode(model_override)
-            self._last_opencode_model = model_override
+            if await self._restart_opencode(model_override):
+                self._last_opencode_model = model_override
+            else:
+                if self._opencode_start_error:
+                    await websocket.send(
+                        serialize_event(StatusEvent(message=self._opencode_start_error))
+                    )
+                await websocket.send(serialize_event(DoneEvent()))
+                return
 
         try:
             if self.agent:
@@ -624,8 +662,8 @@ class DragonglassServer:
             })
         )
 
-    @staticmethod
     async def _handle_list_models(
+        self,
         websocket: typing.Any,
     ) -> None:
         settings = get_settings()
@@ -652,6 +690,10 @@ class DragonglassServer:
                 logger.debug("ollama unreachable at %s", base_url, exc_info=True)
 
         if settings.llm_backend == "opencode":
+            if self._opencode_start_error:
+                await websocket.send(
+                    serialize_event(StatusEvent(message=self._opencode_start_error))
+                )
             try:
                 client = AsyncOpencode(base_url=settings.opencode_url)
                 providers = await client.app.providers()
@@ -724,8 +766,7 @@ class DragonglassServer:
         if (
             settings.llm_backend == "opencode"
             and settings.llm_model != self._last_opencode_model
-        ):
-            await self._restart_opencode(settings.llm_model)
+        ) and await self._restart_opencode(settings.llm_model):
             self._last_opencode_model = settings.llm_model
 
         logger.info(
