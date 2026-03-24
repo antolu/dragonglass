@@ -201,7 +201,12 @@ class DragonglassServer:
         self.agent = VaultAgent(settings)
 
         # Start OpenCode and MCP servers if needed
-        await self._start_managed_services(settings)
+        try:
+            await self._start_managed_services(settings)
+        except Exception:
+            logger.exception(
+                "server: failed to start managed services; continuing without them"
+            )
 
         logger.info("server: connecting to vault")
         try:
