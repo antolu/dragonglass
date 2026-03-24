@@ -75,8 +75,8 @@ def force_update_opencode_json(opencode_json_path: Path, mcp_port: int) -> None:
 
 async def run_full_pipeline_test() -> None:  # noqa: PLR0912, PLR0915
     # Use fixed ports to avoid confusion during debugging
-    dragonglass_port = 51363
-    mcp_port = 51364
+    dragonglass_port = 51365
+    mcp_port = 51366
     opencode_port = 4096
 
     print(

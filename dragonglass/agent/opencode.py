@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 import contextlib
+import json
 import logging
 import time
 import typing
@@ -147,7 +148,7 @@ async def _post_message(  # noqa: PLR0913, PLR0917
     return await http_client.post(
         f"/session/{session_id}/message",
         json=body,
-        headers={"Accept": "application/json", "User-Agent": "curl/8.7.1"},
+        headers={"Accept": "application/json"},
         timeout=timeout,
     )
 
@@ -182,11 +183,21 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                 opencode_client,
                 session_id,
             )
-            stream = await opencode_client.event.list()
-            stream_iter = aiter(stream)
-
             user_message_id = f"msg_{uuid.uuid4()}"
             existing_message_ids.add(user_message_id)
+
+            post_task = asyncio.create_task(
+                _post_message(
+                    http_client,
+                    session_id,
+                    user_message,
+                    model_id,
+                    provider_id,
+                    system_prompt,
+                    agent,
+                    user_message_id,
+                )
+            )
 
             # Track state for the turn
             part_text_map: dict[str, str] = {}
@@ -321,62 +332,103 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                     for res in handle_updated(props):
                         yield res
 
-            while True:
-                if time.monotonic() - turn_started >= _OPENCODE_TURN_DEADLINE_SECONDS:
-                    _raise_turn_timeout()
+            async with http_client.stream("GET", "/event", timeout=None) as stream:
+                if stream.status_code != 200:  # noqa: PLR2004
+                    logger.error(
+                        "opencode stream GET /event status=%d", stream.status_code
+                    )
+                    session_error = f"Stream connection failed: {stream.status_code}"
 
-                if (
-                    post_task is not None
-                    and post_task.done()
-                    and stream_idle_at is None
-                ):
-                    post_task.result()
+                stream_iter = stream.aiter_lines()
+
+                while not session_error:
+                    if (
+                        time.monotonic() - turn_started
+                        >= _OPENCODE_TURN_DEADLINE_SECONDS
+                    ):
+                        _raise_turn_timeout()
+
+                    if (
+                        post_task is not None
+                        and post_task.done()
+                        and stream_idle_at is None
+                    ):
+                        post_task.result()
+                        stream_idle_at = (
+                            time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
+                        )
+
+                    if (
+                        stream_idle_at is not None
+                        and time.monotonic() >= stream_idle_at
+                    ):
+                        break
+
+                    try:
+                        line = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                        if line.startswith("data: "):
+                            data_raw = line[6:].strip()
+                            if data_raw:
+                                try:
+                                    event_data = json.loads(data_raw)
+                                    async for result in _process_stream_event(
+                                        event_data
+                                    ):
+                                        yield result
+                                except json.JSONDecodeError:
+                                    logger.warning(
+                                        "opencode malformed SSE data=%s", data_raw
+                                    )
+                        if session_error:
+                            break
+                    except TimeoutError:
+                        continue
+                    except StopAsyncIteration:
+                        break
+
+                # Wait for post_task if not already done
+                remaining = _OPENCODE_TURN_DEADLINE_SECONDS - (
+                    time.monotonic() - turn_started
+                )
+                if remaining <= 0:
+                    _raise_turn_timeout()
+                if post_task is not None and not post_task.done():
+                    await asyncio.wait_for(post_task, timeout=remaining)
+                if post_task is not None:
+                    raw_response = post_task.result()
+                else:
+                    _raise_post_task_none()
+
+                # Collect any remaining late events
+                if stream_idle_at is None:
                     stream_idle_at = (
                         time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
                     )
-
-                if stream_idle_at is not None and time.monotonic() >= stream_idle_at:
-                    break
-
-                try:
-                    event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
-                    async for chunk in _process_stream_event(event):
-                        yield chunk
-                    if session_error:
+                while time.monotonic() < stream_idle_at and not session_error:
+                    if (
+                        time.monotonic() - turn_started
+                        >= _OPENCODE_TURN_DEADLINE_SECONDS
+                    ):
+                        _raise_turn_timeout()
+                    try:
+                        line = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                        if line.startswith("data: "):
+                            data_raw = line[6:].strip()
+                            if data_raw:
+                                try:
+                                    event_data = json.loads(data_raw)
+                                    async for result in _process_stream_event(
+                                        event_data
+                                    ):
+                                        yield result
+                                except json.JSONDecodeError:
+                                    pass
+                        if session_error:
+                            break
+                    except TimeoutError:
+                        continue
+                    except StopAsyncIteration:
                         break
-                except TimeoutError:
-                    continue
-                except StopAsyncIteration:
-                    break
-
-            remaining = _OPENCODE_TURN_DEADLINE_SECONDS - (
-                time.monotonic() - turn_started
-            )
-            if remaining <= 0:
-                _raise_turn_timeout()
-            if post_task is not None and post_task.done():
-                raw_response = post_task.result()
-            elif post_task is not None:
-                raw_response = await asyncio.wait_for(post_task, timeout=remaining)
-            else:
-                # Should not happen as post_task is created at start of turn
-                _raise_post_task_none()
-            if stream_idle_at is None:
-                stream_idle_at = time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
-
-            while time.monotonic() < stream_idle_at:
-                if time.monotonic() - turn_started >= _OPENCODE_TURN_DEADLINE_SECONDS:
-                    _raise_turn_timeout()
-                try:
-                    event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
-                    async for chunk in _process_stream_event(event):
-                        yield chunk
-                    if session_error:
-                        break
-                except TimeoutError:
-                    continue
-                except StopAsyncIteration:
-                    break
 
             elapsed = time.monotonic() - turn_started
             logger.info(
