@@ -570,6 +570,7 @@ class BackendManager: ObservableObject {
         p.arguments = ["serve"]
 
         var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
         env["OPENCODE_CONFIG"] = opencodeConfigPath.path
         env["OPENCODE_BIN"] = opencodeBinPath.path
         p.environment = env

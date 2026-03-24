@@ -45,6 +45,7 @@ from dragonglass.paths import OPENCODE_CONFIG_FILE
 logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 40
+_OPENCODE_PATH_PREFIX = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 _OPENCODE_CONFIG_TEMPLATE: dict[str, typing.Any] = {
     "$schema": "https://opencode.ai/config.json",
@@ -471,6 +472,14 @@ class DragonglassServer:
                 async with httpx.AsyncClient(timeout=0.5) as client:
                     resp = await client.get(url)
                     if resp.status_code < HTTPStatus.INTERNAL_SERVER_ERROR:
+                        await asyncio.sleep(0.35)
+                        if (
+                            self._opencode_process
+                            and self._opencode_process.returncode is not None
+                        ):
+                            self._raise_opencode_exited(
+                                self._opencode_process.returncode
+                            )
                         logger.info(
                             "server: OpenCode health check status=%d url=%s",
                             resp.status_code,
@@ -498,6 +507,12 @@ class DragonglassServer:
         if discovered:
             return discovered
         return None
+
+    @staticmethod
+    def _raise_opencode_exited(returncode: int) -> typing.NoReturn:
+        raise RuntimeError(
+            f"OpenCode process exited after health check with code {returncode}"
+        )
 
     async def _restart_opencode(self, model_id: str) -> bool:
         """Kills existing OpenCode server and restarts."""
@@ -530,6 +545,7 @@ class DragonglassServer:
         try:
             env = os.environ.copy()
             env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
+            env["PATH"] = _OPENCODE_PATH_PREFIX + ":" + env.get("PATH", "")
             opencode_log_path = paths.DATA_DIR / "opencode.log"
             opencode_log_path.parent.mkdir(parents=True, exist_ok=True)
             self._opencode_log_handle = open(opencode_log_path, "ab")  # noqa: SIM115
