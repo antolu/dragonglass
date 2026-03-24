@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import logging
 import time
 import typing
@@ -155,6 +156,7 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
     agent: str | None = None,
 ) -> collections.abc.AsyncGenerator[AgentEvent]:
     turn_started = time.monotonic()
+    post_task: asyncio.Task[httpx.Response] | None = None
     logger.info(
         "opencode turn start session=%s provider=%s model=%s agent=%s message_len=%d",
         session_id,
@@ -198,6 +200,7 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                     _raise_turn_timeout()
 
                 if post_task.done() and stream_idle_at is None:
+                    post_task.result()
                     stream_idle_at = (
                         time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
                     )
@@ -272,7 +275,10 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             )
             if remaining <= 0:
                 _raise_turn_timeout()
-            raw_response = await asyncio.wait_for(post_task, timeout=remaining)
+            if post_task.done():
+                raw_response = post_task.result()
+            else:
+                raw_response = await asyncio.wait_for(post_task, timeout=remaining)
             if stream_idle_at is None:
                 stream_idle_at = time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
 
@@ -474,6 +480,26 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             )
             yield DoneEvent()
             return
+        except httpx.TransportError as exc:
+            logger.warning(
+                "opencode transport error session=%s provider=%s model=%s error=%s",
+                session_id,
+                provider_id,
+                model_id,
+                exc,
+                exc_info=True,
+            )
+            await _log_session_state(
+                http_client, session_id, "opencode transport-error"
+            )
+            yield StatusEvent(
+                message=(
+                    "OpenCode connection failed while sending or receiving this turn. "
+                    "Try again."
+                )
+            )
+            yield DoneEvent()
+            return
         except asyncio.CancelledError:
             logger.info("opencode turn cancelled session=%s", session_id)
             raise
@@ -488,3 +514,13 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             await _log_session_state(http_client, session_id, "opencode exception")
             yield StatusEvent(message=f"OpenCode Error: {exc}")
             yield DoneEvent()
+        finally:
+            if post_task is None:
+                pass
+            elif not post_task.done():
+                post_task.cancel()
+                with contextlib.suppress(Exception):
+                    await post_task
+            else:
+                with contextlib.suppress(Exception):
+                    post_task.result()
