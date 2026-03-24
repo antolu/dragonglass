@@ -110,6 +110,10 @@ def _raise_turn_timeout() -> typing.NoReturn:
     raise TimeoutError
 
 
+def _raise_post_task_none() -> typing.NoReturn:
+    raise RuntimeError("opencode post_task is None")
+
+
 async def _post_message(  # noqa: PLR0913, PLR0917
     http_client: httpx.AsyncClient,
     session_id: str,
@@ -169,7 +173,7 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
         len(user_message),
     )
 
-    async with (
+    async with (  # noqa
         httpx.AsyncClient(base_url=settings.opencode_url) as http_client,
         AsyncOpencode(base_url=settings.opencode_url) as opencode_client,
     ):
@@ -184,31 +188,97 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             user_message_id = f"msg_{uuid.uuid4()}"
             existing_message_ids.add(user_message_id)
 
-            post_task = asyncio.create_task(
-                _post_message(
-                    http_client,
-                    session_id,
-                    user_message,
-                    model_id,
-                    provider_id,
-                    system_prompt,
-                    agent,
-                    user_message_id,
-                )
-            )
-            # Track the last seen text for each part ID to calculate deltas
+            # Track state for the turn
             part_text_map: dict[str, str] = {}
             stream_idle_at: float | None = None
             streamed_text = False
             streamed_usage = False
             session_error: str | None = None
 
-            async def _process_stream_event(  # noqa: PLR0911, PLR0912, PLR0914
+            def handle_delta(ev_props: typing.Any) -> typing.Iterator[AgentEvent]:
+                p_sid = getattr(ev_props, "session_id", None)
+                if isinstance(p_sid, str) and p_sid != session_id:
+                    return
+
+                m_id = getattr(ev_props, "message_id", None)
+                if isinstance(m_id, str) and m_id in existing_message_ids:
+                    return
+
+                field = getattr(ev_props, "field", "")
+                if field in {"text", "thought", "reasoning"}:
+                    delta_text = getattr(ev_props, "delta", "")
+                    if delta_text:
+                        nonlocal streamed_text
+                        streamed_text = True
+                        if field == "text":
+                            yield TextChunk(text=delta_text)
+                        else:
+                            yield StatusEvent(
+                                message=f"Thinking: {delta_text.strip()[:50]}..."
+                            )
+
+            def handle_updated(  # noqa: PLR0912
+                ev_props: typing.Any,
+            ) -> typing.Iterator[AgentEvent]:
+                part_obj = getattr(ev_props, "part", None)
+                diff_obj = getattr(ev_props, "diff", None)
+                if part_obj is None and diff_obj is None:
+                    return
+
+                obj = part_obj if part_obj is not None else diff_obj
+                p_sid = getattr(obj, "session_id", None)
+                if isinstance(p_sid, str) and p_sid != session_id:
+                    return
+
+                m_id = getattr(obj, "message_id", None)
+                if isinstance(m_id, str) and m_id in existing_message_ids:
+                    return
+
+                p_id = getattr(obj, "id", None)
+                if not isinstance(p_id, str) or not p_id:
+                    return
+
+                p_type = getattr(obj, "type", "")
+                if p_type in {"text", "thought", "reasoning"}:
+                    new_txt: str = ""
+                    if diff_obj is not None:
+                        new_txt = getattr(diff_obj, "text", "")
+                    elif part_obj is not None:
+                        full = getattr(part_obj, "text", "")
+                        last = part_text_map.get(p_id, "")
+                        if len(full) > len(last):
+                            new_txt = full[len(last) :]
+                            part_text_map[p_id] = full
+
+                    if new_txt:
+                        nonlocal streamed_text
+                        streamed_text = True
+                        if p_type == "text":
+                            yield TextChunk(text=new_txt)
+                        else:
+                            yield StatusEvent(
+                                message=f"Thinking: {new_txt.strip()[:50]}..."
+                            )
+
+                elif p_type == "step-finish":
+                    tokens = getattr(obj, "tokens", None)
+                    if tokens is not None:
+                        nonlocal streamed_usage
+                        streamed_usage = True
+                        p_tk = int(getattr(tokens, "input", 0) or 0)
+                        c_tk = int(getattr(tokens, "output", 0) or 0)
+                        yield UsageEvent(
+                            prompt_tokens=p_tk,
+                            completion_tokens=c_tk,
+                            total_tokens=p_tk + c_tk,
+                            session_total=p_tk + c_tk,
+                        )
+
+            async def _process_stream_event(  # noqa: PLR0912
                 ev: typing.Any,
             ) -> collections.abc.AsyncGenerator[AgentEvent, None]:
-                nonlocal streamed_text, streamed_usage, session_error, stream_idle_at
-
-                await asyncio.sleep(0)  # satisfy RUF029 (async def without await)
+                nonlocal session_error, stream_idle_at, streamed_usage
+                await asyncio.sleep(0)
 
                 ev_type = getattr(ev, "type", "")
                 props = getattr(ev, "properties", None)
@@ -225,81 +295,41 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                         stream_idle_at = time.monotonic()
                     return
 
-                if ev_type != "message.part.updated":
+                if ev_type == "message.updated":
+                    inf = getattr(props, "info", None)
+                    if inf is not None:
+                        m_id = getattr(inf, "id", None)
+                        if m_id not in existing_message_ids:
+                            tks = getattr(inf, "tokens", None)
+                            if tks is not None and not streamed_usage:
+                                pt = int(getattr(tks, "input", 0) or 0)
+                                ct = int(getattr(tks, "output", 0) or 0)
+                                if pt + ct > 0:
+                                    streamed_usage = True
+                                    yield UsageEvent(
+                                        prompt_tokens=pt,
+                                        completion_tokens=ct,
+                                        total_tokens=pt + ct,
+                                        session_total=pt + ct,
+                                    )
                     return
 
-                # message.part.updated can contain either 'part' (full replacement)
-                # or 'diff' (incremental update).
-                part = getattr(props, "part", None)
-                diff = getattr(props, "diff", None)
-
-                if part is None and diff is None:
-                    return
-
-                # If we have both, 'part' is the source of truth for the ID and session.
-                # If we only have 'diff', it should still have these fields according to docs.
-                p_obj = part if part is not None else diff
-
-                p_sid = getattr(p_obj, "session_id", None)
-                if isinstance(p_sid, str) and p_sid != session_id:
-                    return
-
-                m_id = getattr(p_obj, "message_id", None)
-                if isinstance(m_id, str) and m_id in existing_message_ids:
-                    return
-
-                p_id = getattr(p_obj, "id", None)
-                if not isinstance(p_id, str) or not p_id:
-                    return
-
-                p_type = getattr(p_obj, "type", "")
-
-                # Handle text updates
-                if p_type in {"text", "thought", "reasoning"}:
-                    new_text: str = ""
-
-                    if diff is not None:
-                        # If it's a diff, the text field is the delta
-                        new_text = getattr(diff, "text", "")
-                    elif part is not None:
-                        # If it's a full part, calculate the delta
-                        full_content = getattr(part, "text", "")
-                        last_content = part_text_map.get(p_id, "")
-                        if len(full_content) > len(last_content):
-                            new_text = full_content[len(last_content) :]
-                            part_text_map[p_id] = full_content
-                        else:
-                            new_text = ""
-
-                    if new_text:
-                        streamed_text = True
-                        if p_type == "text":
-                            yield TextChunk(text=new_text)
-                        else:
-                            # Show thoughts/reasoning as status updates to keep UI alive
-                            yield StatusEvent(
-                                message=f"Thinking: {new_text.strip()[:50]}..."
-                            )
-
-                elif p_type == "step-finish":
-                    tokens = getattr(p_obj, "tokens", None)
-                    if tokens is not None:
-                        streamed_usage = True
-                        p_tokens = int(getattr(tokens, "input", 0) or 0)
-                        c_tokens = int(getattr(tokens, "output", 0) or 0)
-                        t_tokens = p_tokens + c_tokens
-                        yield UsageEvent(
-                            prompt_tokens=p_tokens,
-                            completion_tokens=c_tokens,
-                            total_tokens=t_tokens,
-                            session_total=t_tokens,
-                        )
+                if ev_type == "message.part.delta":
+                    for res in handle_delta(props):
+                        yield res
+                elif ev_type == "message.part.updated":
+                    for res in handle_updated(props):
+                        yield res
 
             while True:
                 if time.monotonic() - turn_started >= _OPENCODE_TURN_DEADLINE_SECONDS:
                     _raise_turn_timeout()
 
-                if post_task.done() and stream_idle_at is None:
+                if (
+                    post_task is not None
+                    and post_task.done()
+                    and stream_idle_at is None
+                ):
                     post_task.result()
                     stream_idle_at = (
                         time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
@@ -324,10 +354,13 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             )
             if remaining <= 0:
                 _raise_turn_timeout()
-            if post_task.done():
+            if post_task is not None and post_task.done():
                 raw_response = post_task.result()
-            else:
+            elif post_task is not None:
                 raw_response = await asyncio.wait_for(post_task, timeout=remaining)
+            else:
+                # Should not happen as post_task is created at start of turn
+                _raise_post_task_none()
             if stream_idle_at is None:
                 stream_idle_at = time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
 
