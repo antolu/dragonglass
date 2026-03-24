@@ -28,7 +28,7 @@ repository = "https://github.com/antolu/dragonglass"
 
 [project.optional-dependencies]
 dev = ["pre-commit", "ruff", "mypy"]
-test = ["pytest"]
+test = ["pytest", "pytest-timeout >= 2.1"]
 
 [project.scripts]
 dragonglass = "dragonglass.cli:cli"
