@@ -1,5 +1,7 @@
 {
-  "name": "opencode-ai",
-  "version": "1.3.0",
-  "private": true
+  "name": "dragonglass-opencode-bootstrap",
+  "private": true,
+  "dependencies": {
+    "opencode-ai": "1.3.0"
+  }
 }

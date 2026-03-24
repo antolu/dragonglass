@@ -27,6 +27,9 @@ class BackendManager: ObservableObject {
     private var opencodeBinPath: URL {
         opencodeInstallDir.appendingPathComponent("node_modules/.bin/opencode")
     }
+    private var opencodeCliPackagePath: URL {
+        opencodeInstallDir.appendingPathComponent("node_modules/opencode-ai/package.json")
+    }
     private var opencodeConfigPath: URL {
         appSupportDir.appendingPathComponent("config/opencode.json")
     }
@@ -444,6 +447,25 @@ class BackendManager: ObservableObject {
         return data
     }
 
+    private func bundledOpencodeCliVersion() -> String? {
+        guard let data = bundledOpencodePackageData(),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let deps = json["dependencies"] as? [String: String],
+              let version = deps["opencode-ai"] else {
+            return nil
+        }
+        return version
+    }
+
+    private func installedOpencodeCliVersion() -> String? {
+        guard let data = try? Data(contentsOf: opencodeCliPackagePath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String else {
+            return nil
+        }
+        return version
+    }
+
     private func findNpm() -> String? {
         let candidates = [
             "/opt/homebrew/bin/npm",
@@ -482,8 +504,13 @@ class BackendManager: ObservableObject {
         let localPackageData = try? Data(contentsOf: localPackage)
         let packageChanged = localPackageData != bundledPackageData
 
+        let desiredCliVersion = bundledOpencodeCliVersion()
+        let installedCliVersion = installedOpencodeCliVersion()
+        let cliVersionChanged = desiredCliVersion != installedCliVersion
+
         let needsInstall = !FileManager.default.isExecutableFile(atPath: opencodeBinPath.path)
             || packageChanged
+            || cliVersionChanged
         if !needsInstall {
             return
         }
@@ -520,6 +547,18 @@ class BackendManager: ObservableObject {
                 domain: "BackendManager",
                 code: 4,
                 userInfo: [NSLocalizedDescriptionKey: "OpenCode CLI install completed but binary was not found."]
+            )
+        }
+
+        if let desiredCliVersion,
+           let installedCliVersion,
+           desiredCliVersion != installedCliVersion {
+            throw NSError(
+                domain: "BackendManager",
+                code: 5,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "OpenCode CLI version mismatch: expected \(desiredCliVersion), found \(installedCliVersion)."
+                ]
             )
         }
 
