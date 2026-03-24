@@ -6,6 +6,7 @@ import contextlib
 import logging
 import time
 import typing
+import uuid
 
 import httpx
 from opencode_ai import NOT_GIVEN, AsyncOpencode
@@ -117,6 +118,7 @@ async def _post_message(  # noqa: PLR0913, PLR0917
     provider_id: str,
     system_prompt: str | None,
     agent: str | None,
+    message_id: str,
 ) -> httpx.Response:
     parts: list[typing.Any] = [{"text": user_message, "type": "text"}]
     body = {
@@ -125,6 +127,7 @@ async def _post_message(  # noqa: PLR0913, PLR0917
             "modelID": model_id,
             "providerID": provider_id,
         },
+        "messageID": message_id,
         "agent": agent or "dragonglass",
         "system": system_prompt if system_prompt is not None else NOT_GIVEN,
     }
@@ -178,6 +181,9 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             stream = await opencode_client.event.list()
             stream_iter = aiter(stream)
 
+            user_message_id = str(uuid.uuid4())
+            existing_message_ids.add(user_message_id)
+
             post_task = asyncio.create_task(
                 _post_message(
                     http_client,
@@ -187,6 +193,7 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                     provider_id,
                     system_prompt,
                     agent,
+                    user_message_id,
                 )
             )
             # Track the last seen text for each part ID to calculate deltas
