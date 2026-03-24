@@ -181,7 +181,7 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             stream = await opencode_client.event.list()
             stream_iter = aiter(stream)
 
-            user_message_id = str(uuid.uuid4())
+            user_message_id = f"msg_{uuid.uuid4()}"
             existing_message_ids.add(user_message_id)
 
             post_task = asyncio.create_task(
@@ -364,6 +364,11 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                 return
 
             if raw_response.status_code != 200:  # noqa: PLR2004
+                with open("/tmp/opencode_error.json", "w", encoding="utf-8") as f:
+                    f.write(raw_response.text)
+                print(
+                    f"OpenCode returned status={raw_response.status_code}. Full body written to /tmp/opencode_error.json"
+                )
                 logger.error(
                     "OpenCode returned status=%d body=%s",
                     raw_response.status_code,

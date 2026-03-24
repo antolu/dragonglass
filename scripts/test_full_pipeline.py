@@ -9,7 +9,7 @@ import traceback
 from pathlib import Path
 
 from dragonglass.agent.agent import VaultAgent
-from dragonglass.agent.types import TextChunk
+from dragonglass.agent.types import StatusEvent, TextChunk
 from dragonglass.config import get_settings
 from dragonglass.paths import OPENCODE_CONFIG_FILE
 
@@ -165,27 +165,34 @@ async def run_full_pipeline_test() -> None:  # noqa: PLR0912, PLR0915
         # Override settings for the test run
         settings.llm_backend = "opencode"
         settings.opencode_url = f"http://127.0.0.1:{opencode_port}"
-        settings.llm_model = "github-copilot/gpt-5-mini"
-        settings.selected_model = "github-copilot/gpt-5-mini"
+        # Use gpt-5-mini as requested
+        test_model = "github-copilot/gpt-5-mini"
+        settings.llm_model = test_model
+        settings.selected_model = test_model
 
         agent = VaultAgent(settings)
         await agent.initialise()
 
         user_query = "When is Michael's birthday."
-        print(f"User: '{user_query}'", flush=True)
+        print(f"\nUser: '{user_query}'\n", flush=True)
 
         found_answer = False
+        print("Agent: ", end="", flush=True)
         async for event in agent.run(
             user_query,
-            model_override="github-copilot/gpt-5-mini",
+            model_override=test_model,
         ):
-            # Print simplified events
             if isinstance(event, TextChunk):
                 text = event.text
-                print(f"Agent: {text}", flush=True)
+                print(text, end="", flush=True)
                 if "October 14" in text or "1988" in text:
                     found_answer = True
+            elif isinstance(event, StatusEvent):
+                # Print status updates on a new line to avoid interfering with stream
+                print(f"\n[Status] {event.message}", flush=True)
+                print("Agent: ", end="", flush=True)
 
+        print("\n")
         if found_answer:
             print("[SUCCESS] Agent found the birthday!", flush=True)
         else:
