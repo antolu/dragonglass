@@ -10,6 +10,7 @@ import os
 import pathlib
 import shutil
 import signal
+import subprocess
 import time
 import tomllib
 import typing
@@ -326,6 +327,7 @@ class DragonglassServer:
         if settings.llm_backend == "opencode" and settings.spawn_opencode:
             port = self._opencode_port(settings.opencode_url)
             logger.info("server: starting OpenCode server on port %d", port)
+            await self._kill_stale_opencode_on_port(port)
             if await self._restart_opencode(settings.llm_model):
                 self._last_opencode_model = settings.llm_model
             elif self._opencode_start_error:
@@ -391,6 +393,75 @@ class DragonglassServer:
         except Exception:
             logger.warning("server: failed to parse OpenCode URL %s", opencode_url)
         return port
+
+    @staticmethod
+    def _list_listener_pids(port: int) -> list[int]:
+        try:
+            result = subprocess.run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            pids = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            return [int(pid) for pid in pids if pid.isdigit()]
+        except Exception:
+            logger.warning(
+                "server: failed listing listeners on port %d", port, exc_info=True
+            )
+            return []
+
+    @staticmethod
+    def _pid_exists(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        else:
+            return True
+
+    async def _kill_stale_opencode_on_port(self, port: int) -> None:
+        for pid in self._list_listener_pids(port):
+            if self._opencode_process and pid == self._opencode_process.pid:
+                continue
+
+            try:
+                proc = subprocess.run(
+                    ["ps", "-o", "command=", "-p", str(pid)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                command = proc.stdout.strip().lower()
+            except Exception:
+                logger.warning(
+                    "server: failed reading process command for pid %d",
+                    pid,
+                    exc_info=True,
+                )
+                continue
+
+            if "opencode" not in command:
+                continue
+
+            logger.warning(
+                "server: killing stale OpenCode process pid=%d on port %d",
+                pid,
+                port,
+            )
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGTERM)
+
+            await asyncio.sleep(0.4)
+            if self._pid_exists(pid):
+                logger.warning(
+                    "server: forcing stale OpenCode process pid=%d to stop",
+                    pid,
+                )
+                with contextlib.suppress(Exception):
+                    os.kill(pid, signal.SIGKILL)
 
     @staticmethod
     def _load_json_file(path: pathlib.Path) -> dict[str, typing.Any]:
@@ -523,6 +594,9 @@ class DragonglassServer:
 
         # 1. Kill existing
         await self._stop_opencode()
+        await self._kill_stale_opencode_on_port(
+            self._opencode_port(settings.opencode_url)
+        )
 
         opencode_executable = self._resolve_opencode_executable()
         if not opencode_executable:
