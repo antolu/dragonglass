@@ -189,11 +189,104 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                     agent,
                 )
             )
-            emitted_part_ids: set[str] = set()
+            # Track the last seen text for each part ID to calculate deltas
+            part_text_map: dict[str, str] = {}
             stream_idle_at: float | None = None
             streamed_text = False
             streamed_usage = False
             session_error: str | None = None
+
+            async def _process_stream_event(  # noqa: PLR0911, PLR0912, PLR0914
+                ev: typing.Any,
+            ) -> collections.abc.AsyncGenerator[AgentEvent, None]:
+                nonlocal streamed_text, streamed_usage, session_error, stream_idle_at
+
+                await asyncio.sleep(0)  # satisfy RUF029 (async def without await)
+
+                ev_type = getattr(ev, "type", "")
+                props = getattr(ev, "properties", None)
+                if props is None:
+                    return
+
+                if ev_type == "session.error":
+                    session_error = _extract_session_error(ev)
+                    return
+
+                if ev_type == "session.idle":
+                    idle_sid = getattr(props, "session_id", None)
+                    if not idle_sid or idle_sid == session_id:
+                        stream_idle_at = time.monotonic()
+                    return
+
+                if ev_type != "message.part.updated":
+                    return
+
+                # message.part.updated can contain either 'part' (full replacement)
+                # or 'diff' (incremental update).
+                part = getattr(props, "part", None)
+                diff = getattr(props, "diff", None)
+
+                if part is None and diff is None:
+                    return
+
+                # If we have both, 'part' is the source of truth for the ID and session.
+                # If we only have 'diff', it should still have these fields according to docs.
+                p_obj = part if part is not None else diff
+
+                p_sid = getattr(p_obj, "session_id", None)
+                if isinstance(p_sid, str) and p_sid != session_id:
+                    return
+
+                m_id = getattr(p_obj, "message_id", None)
+                if isinstance(m_id, str) and m_id in existing_message_ids:
+                    return
+
+                p_id = getattr(p_obj, "id", None)
+                if not isinstance(p_id, str) or not p_id:
+                    return
+
+                p_type = getattr(p_obj, "type", "")
+
+                # Handle text updates
+                if p_type in {"text", "thought", "reasoning"}:
+                    new_text: str = ""
+
+                    if diff is not None:
+                        # If it's a diff, the text field is the delta
+                        new_text = getattr(diff, "text", "")
+                    elif part is not None:
+                        # If it's a full part, calculate the delta
+                        full_content = getattr(part, "text", "")
+                        last_content = part_text_map.get(p_id, "")
+                        if len(full_content) > len(last_content):
+                            new_text = full_content[len(last_content) :]
+                            part_text_map[p_id] = full_content
+                        else:
+                            new_text = ""
+
+                    if new_text:
+                        streamed_text = True
+                        if p_type == "text":
+                            yield TextChunk(text=new_text)
+                        else:
+                            # Show thoughts/reasoning as status updates to keep UI alive
+                            yield StatusEvent(
+                                message=f"Thinking: {new_text.strip()[:50]}..."
+                            )
+
+                elif p_type == "step-finish":
+                    tokens = getattr(p_obj, "tokens", None)
+                    if tokens is not None:
+                        streamed_usage = True
+                        p_tokens = int(getattr(tokens, "input", 0) or 0)
+                        c_tokens = int(getattr(tokens, "output", 0) or 0)
+                        t_tokens = p_tokens + c_tokens
+                        yield UsageEvent(
+                            prompt_tokens=p_tokens,
+                            completion_tokens=c_tokens,
+                            total_tokens=t_tokens,
+                            session_total=t_tokens,
+                        )
 
             while True:
                 if time.monotonic() - turn_started >= _OPENCODE_TURN_DEADLINE_SECONDS:
@@ -210,65 +303,14 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
 
                 try:
                     event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                    async for chunk in _process_stream_event(event):
+                        yield chunk
+                    if session_error:
+                        break
                 except TimeoutError:
                     continue
                 except StopAsyncIteration:
                     break
-
-                event_type = getattr(event, "type", "")
-                properties = getattr(event, "properties", None)
-
-                if event_type == "session.error":
-                    session_error = _extract_session_error(event)
-                    break
-
-                if event_type == "session.idle":
-                    idle_sid = getattr(properties, "session_id", None)
-                    if not idle_sid or idle_sid == session_id:
-                        stream_idle_at = time.monotonic()
-                    continue
-
-                if event_type != "message.part.updated" or properties is None:
-                    continue
-
-                part = getattr(properties, "part", None)
-                if part is None:
-                    continue
-
-                part_session_id = getattr(part, "session_id", None)
-                if isinstance(part_session_id, str) and part_session_id != session_id:
-                    continue
-
-                message_id = getattr(part, "message_id", None)
-                if isinstance(message_id, str) and message_id in existing_message_ids:
-                    continue
-
-                part_id = getattr(part, "id", None)
-                if isinstance(part_id, str):
-                    if part_id in emitted_part_ids:
-                        continue
-                    emitted_part_ids.add(part_id)
-
-                part_type = getattr(part, "type", "")
-                if part_type == "text":
-                    text = getattr(part, "text", "")
-                    if isinstance(text, str) and text:
-                        streamed_text = True
-                        yield TextChunk(text=text)
-                elif part_type == "step-finish":
-                    tokens = getattr(part, "tokens", None)
-                    if tokens is None:
-                        continue
-                    streamed_usage = True
-                    prompt_tokens = int(getattr(tokens, "input", 0) or 0)
-                    completion_tokens = int(getattr(tokens, "output", 0) or 0)
-                    total_tokens = prompt_tokens + completion_tokens
-                    yield UsageEvent(
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        total_tokens=total_tokens,
-                        session_total=total_tokens,
-                    )
 
             remaining = _OPENCODE_TURN_DEADLINE_SECONDS - (
                 time.monotonic() - turn_started
@@ -287,59 +329,14 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
                     _raise_turn_timeout()
                 try:
                     event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                    async for chunk in _process_stream_event(event):
+                        yield chunk
+                    if session_error:
+                        break
                 except TimeoutError:
                     continue
                 except StopAsyncIteration:
                     break
-
-                event_type = getattr(event, "type", "")
-                properties = getattr(event, "properties", None)
-
-                if event_type == "session.error":
-                    session_error = _extract_session_error(event)
-                    break
-
-                if event_type != "message.part.updated" or properties is None:
-                    continue
-
-                part = getattr(properties, "part", None)
-                if part is None:
-                    continue
-
-                part_session_id = getattr(part, "session_id", None)
-                if isinstance(part_session_id, str) and part_session_id != session_id:
-                    continue
-
-                message_id = getattr(part, "message_id", None)
-                if isinstance(message_id, str) and message_id in existing_message_ids:
-                    continue
-
-                part_id = getattr(part, "id", None)
-                if isinstance(part_id, str):
-                    if part_id in emitted_part_ids:
-                        continue
-                    emitted_part_ids.add(part_id)
-
-                part_type = getattr(part, "type", "")
-                if part_type == "text":
-                    text = getattr(part, "text", "")
-                    if isinstance(text, str) and text:
-                        streamed_text = True
-                        yield TextChunk(text=text)
-                elif part_type == "step-finish":
-                    tokens = getattr(part, "tokens", None)
-                    if tokens is None:
-                        continue
-                    streamed_usage = True
-                    prompt_tokens = int(getattr(tokens, "input", 0) or 0)
-                    completion_tokens = int(getattr(tokens, "output", 0) or 0)
-                    total_tokens = prompt_tokens + completion_tokens
-                    yield UsageEvent(
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        total_tokens=total_tokens,
-                        session_total=total_tokens,
-                    )
 
             elapsed = time.monotonic() - turn_started
             logger.info(
