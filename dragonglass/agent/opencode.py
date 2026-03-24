@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import logging
 import time
 import typing
 
 import httpx
-from opencode_ai import NOT_GIVEN
+from opencode_ai import NOT_GIVEN, AsyncOpencode
 
 from dragonglass.agent.types import (
     AgentEvent,
@@ -20,6 +21,7 @@ from dragonglass.config import Settings
 logger = logging.getLogger(__name__)
 
 _OPENCODE_MESSAGE_TIMEOUT_SECONDS = 180.0
+_OPENCODE_STREAM_IDLE_GRACE_SECONDS = 1.0
 
 
 def _preview_text(value: object, limit: int = 500) -> str:
@@ -63,7 +65,81 @@ async def _log_session_state(
         logger.warning("%s failed to fetch session state", prefix, exc_info=True)
 
 
-async def run_opencode_turn(  # noqa: PLR0913
+async def _load_existing_message_ids(
+    client: AsyncOpencode,
+    session_id: str,
+) -> set[str]:
+    ids: set[str] = set()
+    try:
+        messages = await client.session.messages(session_id)
+    except Exception:
+        logger.debug(
+            "opencode could not load baseline messages session=%s",
+            session_id,
+            exc_info=True,
+        )
+        return ids
+
+    for message in messages:
+        info = getattr(message, "info", None)
+        msg_id = getattr(info, "id", None)
+        if isinstance(msg_id, str) and msg_id:
+            ids.add(msg_id)
+    return ids
+
+
+def _extract_session_error(event: object) -> str | None:
+    props = getattr(event, "properties", None)
+    if props is None:
+        return None
+
+    error = getattr(props, "error", None)
+    if error is None:
+        return None
+
+    message = getattr(error, "message", None)
+    if isinstance(message, str) and message:
+        return message
+    return str(error)
+
+
+async def _post_message(  # noqa: PLR0913, PLR0917
+    http_client: httpx.AsyncClient,
+    session_id: str,
+    user_message: str,
+    model_id: str,
+    provider_id: str,
+    system_prompt: str | None,
+    agent: str | None,
+) -> httpx.Response:
+    parts: list[typing.Any] = [{"text": user_message, "type": "text"}]
+    body = {
+        "parts": parts,
+        "model": {
+            "modelID": model_id,
+            "providerID": provider_id,
+        },
+        "agent": agent or "dragonglass",
+        "system": system_prompt if system_prompt is not None else NOT_GIVEN,
+    }
+
+    timeout = httpx.Timeout(_OPENCODE_MESSAGE_TIMEOUT_SECONDS, connect=10.0)
+    logger.debug(
+        "opencode POST /session/%s/message timeout=%.1fs body=%s",
+        session_id,
+        _OPENCODE_MESSAGE_TIMEOUT_SECONDS,
+        _preview_text(body, 400),
+    )
+
+    return await http_client.post(
+        f"/session/{session_id}/message",
+        json=body,
+        headers={"Accept": "application/json", "User-Agent": "curl/8.7.1"},
+        timeout=timeout,
+    )
+
+
+async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
     session_id: str,
     user_message: str,
     model_id: str,
@@ -83,33 +159,166 @@ async def run_opencode_turn(  # noqa: PLR0913
         len(user_message),
     )
 
-    async with httpx.AsyncClient(base_url=settings.opencode_url) as http_client:
+    async with (
+        httpx.AsyncClient(base_url=settings.opencode_url) as http_client,
+        AsyncOpencode(base_url=settings.opencode_url) as opencode_client,
+    ):
         try:
-            parts: list[typing.Any] = [{"text": user_message, "type": "text"}]
-
-            body = {
-                "parts": parts,
-                "model": {
-                    "modelID": model_id,
-                    "providerID": provider_id,
-                },
-                "agent": agent or "dragonglass",
-                "system": system_prompt if system_prompt is not None else NOT_GIVEN,
-            }
-
-            timeout = httpx.Timeout(_OPENCODE_MESSAGE_TIMEOUT_SECONDS, connect=10.0)
-            logger.debug(
-                "opencode POST /session/%s/message timeout=%.1fs body=%s",
+            existing_message_ids = await _load_existing_message_ids(
+                opencode_client,
                 session_id,
-                _OPENCODE_MESSAGE_TIMEOUT_SECONDS,
-                _preview_text(body, 400),
             )
-            raw_response = await http_client.post(
-                f"/session/{session_id}/message",
-                json=body,
-                headers={"Accept": "application/json", "User-Agent": "curl/8.7.1"},
-                timeout=timeout,
+            stream = await opencode_client.event.list()
+            stream_iter = aiter(stream)
+
+            post_task = asyncio.create_task(
+                _post_message(
+                    http_client,
+                    session_id,
+                    user_message,
+                    model_id,
+                    provider_id,
+                    system_prompt,
+                    agent,
+                )
             )
+            emitted_part_ids: set[str] = set()
+            stream_idle_at: float | None = None
+            streamed_text = False
+            streamed_usage = False
+            session_error: str | None = None
+
+            while True:
+                if post_task.done() and stream_idle_at is None:
+                    stream_idle_at = (
+                        time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
+                    )
+
+                if stream_idle_at is not None and time.monotonic() >= stream_idle_at:
+                    break
+
+                try:
+                    event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                except TimeoutError:
+                    continue
+                except StopAsyncIteration:
+                    break
+
+                event_type = getattr(event, "type", "")
+                properties = getattr(event, "properties", None)
+
+                if event_type == "session.error":
+                    session_error = _extract_session_error(event)
+                    break
+
+                if event_type == "session.idle":
+                    idle_sid = getattr(properties, "session_id", None)
+                    if not idle_sid or idle_sid == session_id:
+                        stream_idle_at = time.monotonic()
+                    continue
+
+                if event_type != "message.part.updated" or properties is None:
+                    continue
+
+                part = getattr(properties, "part", None)
+                if part is None:
+                    continue
+
+                part_session_id = getattr(part, "session_id", None)
+                if isinstance(part_session_id, str) and part_session_id != session_id:
+                    continue
+
+                message_id = getattr(part, "message_id", None)
+                if isinstance(message_id, str) and message_id in existing_message_ids:
+                    continue
+
+                part_id = getattr(part, "id", None)
+                if isinstance(part_id, str):
+                    if part_id in emitted_part_ids:
+                        continue
+                    emitted_part_ids.add(part_id)
+
+                part_type = getattr(part, "type", "")
+                if part_type == "text":
+                    text = getattr(part, "text", "")
+                    if isinstance(text, str) and text:
+                        streamed_text = True
+                        yield TextChunk(text=text)
+                elif part_type == "step-finish":
+                    tokens = getattr(part, "tokens", None)
+                    if tokens is None:
+                        continue
+                    streamed_usage = True
+                    prompt_tokens = int(getattr(tokens, "input", 0) or 0)
+                    completion_tokens = int(getattr(tokens, "output", 0) or 0)
+                    total_tokens = prompt_tokens + completion_tokens
+                    yield UsageEvent(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
+                        session_total=total_tokens,
+                    )
+
+            raw_response = await post_task
+            if stream_idle_at is None:
+                stream_idle_at = time.monotonic() + _OPENCODE_STREAM_IDLE_GRACE_SECONDS
+
+            while time.monotonic() < stream_idle_at:
+                try:
+                    event = await asyncio.wait_for(anext(stream_iter), timeout=0.2)
+                except TimeoutError:
+                    continue
+                except StopAsyncIteration:
+                    break
+
+                event_type = getattr(event, "type", "")
+                properties = getattr(event, "properties", None)
+
+                if event_type == "session.error":
+                    session_error = _extract_session_error(event)
+                    break
+
+                if event_type != "message.part.updated" or properties is None:
+                    continue
+
+                part = getattr(properties, "part", None)
+                if part is None:
+                    continue
+
+                part_session_id = getattr(part, "session_id", None)
+                if isinstance(part_session_id, str) and part_session_id != session_id:
+                    continue
+
+                message_id = getattr(part, "message_id", None)
+                if isinstance(message_id, str) and message_id in existing_message_ids:
+                    continue
+
+                part_id = getattr(part, "id", None)
+                if isinstance(part_id, str):
+                    if part_id in emitted_part_ids:
+                        continue
+                    emitted_part_ids.add(part_id)
+
+                part_type = getattr(part, "type", "")
+                if part_type == "text":
+                    text = getattr(part, "text", "")
+                    if isinstance(text, str) and text:
+                        streamed_text = True
+                        yield TextChunk(text=text)
+                elif part_type == "step-finish":
+                    tokens = getattr(part, "tokens", None)
+                    if tokens is None:
+                        continue
+                    streamed_usage = True
+                    prompt_tokens = int(getattr(tokens, "input", 0) or 0)
+                    completion_tokens = int(getattr(tokens, "output", 0) or 0)
+                    total_tokens = prompt_tokens + completion_tokens
+                    yield UsageEvent(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
+                        session_total=total_tokens,
+                    )
 
             elapsed = time.monotonic() - turn_started
             logger.info(
@@ -118,6 +327,16 @@ async def run_opencode_turn(  # noqa: PLR0913
                 raw_response.status_code,
                 elapsed,
             )
+
+            if session_error:
+                logger.error(
+                    "OpenCode session error session=%s error=%s",
+                    session_id,
+                    session_error,
+                )
+                yield StatusEvent(message=f"OpenCode Error: {session_error}")
+                yield DoneEvent()
+                return
 
             if raw_response.status_code != 200:  # noqa: PLR2004
                 logger.error(
@@ -134,7 +353,7 @@ async def run_opencode_turn(  # noqa: PLR0913
 
             info: dict[str, typing.Any] = data.get("info", {})
             tokens = info.get("tokens", {})
-            if tokens:
+            if tokens and not streamed_usage:
                 yield UsageEvent(
                     prompt_tokens=int(tokens.get("input", 0)),
                     completion_tokens=int(tokens.get("output", 0)),
@@ -163,7 +382,7 @@ async def run_opencode_turn(  # noqa: PLR0913
                 len(parts_list),
                 _summarize_parts(parts_list) if parts_list else "none",
             )
-            if parts_list:
+            if parts_list and not streamed_text:
                 for part in parts_list:
                     if part.get("type") == "text":
                         text = part.get("text", "")
@@ -209,6 +428,9 @@ async def run_opencode_turn(  # noqa: PLR0913
             )
             yield DoneEvent()
             return
+        except asyncio.CancelledError:
+            logger.info("opencode turn cancelled session=%s", session_id)
+            raise
 
         except Exception as exc:
             logger.exception(
