@@ -173,6 +173,61 @@ class DragonglassServer:
         self._opencode_start_error: str | None = None
 
     @staticmethod
+    def _opencode_is_active(settings: Settings) -> bool:
+        return settings.llm_backend == "opencode" and settings.spawn_opencode
+
+    async def _stop_opencode(self) -> None:
+        if self._opencode_process and self._opencode_process.returncode is None:
+            logger.info(
+                "server: terminating OpenCode server (pid %d)",
+                self._opencode_process.pid,
+            )
+            self._opencode_process.terminate()
+            try:
+                await asyncio.wait_for(self._opencode_process.wait(), timeout=8.0)
+            except TimeoutError:
+                logger.warning(
+                    "server: OpenCode process did not terminate in time; killing pid %d",
+                    self._opencode_process.pid,
+                )
+                self._opencode_process.kill()
+                await self._opencode_process.wait()
+        self._opencode_process = None
+        self._last_opencode_model = None
+
+    @staticmethod
+    def _read_config_toml() -> dict[str, typing.Any]:
+        try:
+            with open(paths.CONFIG_FILE, "rb") as f:
+                data = tomllib.load(f)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+
+    @staticmethod
+    def _write_config_toml(data: dict[str, typing.Any]) -> None:
+        paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(paths.CONFIG_FILE, "wb") as f:
+            tomli_w.dump(data, f)
+
+    async def _fallback_to_litellm(self, reason: str) -> None:
+        self._opencode_start_error = reason
+        await self._stop_opencode()
+
+        current = self._read_config_toml()
+        changed = False
+        if current.get("llm_backend") == "opencode":
+            current["llm_backend"] = "litellm"
+            changed = True
+
+        if changed:
+            self._write_config_toml(current)
+            invalidate_settings()
+            logger.warning(
+                "server: switched llm_backend to litellm because OpenCode is unavailable"
+            )
+
+    @staticmethod
     def _get_conversation_path(conversation_id: str) -> pathlib.Path:
         return paths.CONVERSATIONS_DIR / f"{conversation_id}.json"
 
@@ -267,6 +322,8 @@ class DragonglassServer:
             logger.info("server: starting OpenCode server on port %d", port)
             if await self._restart_opencode(settings.llm_model):
                 self._last_opencode_model = settings.llm_model
+            elif self._opencode_start_error:
+                await self._fallback_to_litellm(self._opencode_start_error)
 
     async def _wait_for_mcp_server(self, port: int) -> None:
         deadline = time.monotonic() + 10.0
@@ -445,22 +502,7 @@ class DragonglassServer:
             return True
 
         # 1. Kill existing
-        if self._opencode_process and self._opencode_process.returncode is None:
-            logger.info(
-                "server: terminating existing OpenCode server (pid %d)",
-                self._opencode_process.pid,
-            )
-            self._opencode_process.terminate()
-            try:
-                await asyncio.wait_for(self._opencode_process.wait(), timeout=8.0)
-            except TimeoutError:
-                logger.warning(
-                    "server: OpenCode process did not terminate in time; killing pid %d",
-                    self._opencode_process.pid,
-                )
-                self._opencode_process.kill()
-                await self._opencode_process.wait()
-            self._opencode_process = None
+        await self._stop_opencode()
 
         opencode_executable = self._resolve_opencode_executable()
         if not opencode_executable:
@@ -468,6 +510,7 @@ class DragonglassServer:
                 "OpenCode binary not found. Install opencode-ai or set OPENCODE_BIN."
             )
             logger.error("server: %s", self._opencode_start_error)
+            await self._fallback_to_litellm(self._opencode_start_error)
             return False
 
         # 2. Update OpenCode config
@@ -507,6 +550,7 @@ class DragonglassServer:
         except Exception:
             logger.exception("server: failed to restart OpenCode")
             self._opencode_start_error = "Failed to start OpenCode server. Check OPENCODE_BIN and npm installation."
+            await self._fallback_to_litellm(self._opencode_start_error)
             return False
 
         return True
@@ -643,8 +687,7 @@ class DragonglassServer:
             with contextlib.suppress(Exception):
                 await websocket.send(serialize_event(DoneEvent()))
 
-    @staticmethod
-    async def _handle_get_config(websocket: typing.Any) -> None:
+    async def _handle_get_config(self, websocket: typing.Any) -> None:
         settings = get_settings()
         extra_models = []
         if paths.EXTRA_MODELS_FILE.exists():
@@ -659,6 +702,11 @@ class DragonglassServer:
                 "type": "config",
                 **settings.model_dump(),
                 "extra_models": extra_models,
+                "opencode_available": (
+                    DragonglassServer._resolve_opencode_executable() is not None
+                    and self._opencode_start_error is None
+                ),
+                "opencode_disabled_reason": self._opencode_start_error,
             })
         )
 
@@ -749,8 +797,12 @@ class DragonglassServer:
             )
             return
 
+        old_settings = get_settings()
+
         # Merge new config into current TOML
         # We assume keys coming from Swift are already snake_case via CodingKeys
+        new_config.pop("opencode_available", None)
+        new_config.pop("opencode_disabled_reason", None)
         current_toml.update(new_config)
 
         # Ensure the config directory exists before writing
@@ -762,11 +814,19 @@ class DragonglassServer:
         invalidate_settings()
         settings = get_settings()
 
-        # Restart OpenCode if model or backend changed
-        if (
-            settings.llm_backend == "opencode"
+        old_active = self._opencode_is_active(old_settings)
+        new_active = self._opencode_is_active(settings)
+        should_restart_opencode = (not old_active and new_active) or (
+            old_active
+            and new_active
             and settings.llm_model != self._last_opencode_model
-        ) and await self._restart_opencode(settings.llm_model):
+        )
+
+        if old_active and not new_active:
+            await self._stop_opencode()
+        elif should_restart_opencode and await self._restart_opencode(
+            settings.llm_model
+        ):
             self._last_opencode_model = settings.llm_model
 
         logger.info(
