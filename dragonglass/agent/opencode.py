@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import logging
 import time
@@ -20,6 +21,7 @@ from dragonglass.config import Settings
 logger = logging.getLogger(__name__)
 
 _OPENCODE_MESSAGE_TIMEOUT_SECONDS = 180.0
+_OPENCODE_TURN_DEADLINE_SECONDS = 240.0
 
 
 def _preview_text(value: object, limit: int = 500) -> str:
@@ -63,7 +65,7 @@ async def _log_session_state(
         logger.warning("%s failed to fetch session state", prefix, exc_info=True)
 
 
-async def run_opencode_turn(  # noqa: PLR0913
+async def run_opencode_turn(  # noqa: PLR0913, PLR0915
     session_id: str,
     user_message: str,
     model_id: str,
@@ -104,11 +106,14 @@ async def run_opencode_turn(  # noqa: PLR0913
                 _OPENCODE_MESSAGE_TIMEOUT_SECONDS,
                 _preview_text(body, 400),
             )
-            raw_response = await http_client.post(
-                f"/session/{session_id}/message",
-                json=body,
-                headers={"Accept": "application/json", "User-Agent": "curl/8.7.1"},
-                timeout=timeout,
+            raw_response = await asyncio.wait_for(
+                http_client.post(
+                    f"/session/{session_id}/message",
+                    json=body,
+                    headers={"Accept": "application/json", "User-Agent": "curl/8.7.1"},
+                    timeout=timeout,
+                ),
+                timeout=_OPENCODE_TURN_DEADLINE_SECONDS,
             )
 
             elapsed = time.monotonic() - turn_started
@@ -188,6 +193,27 @@ async def run_opencode_turn(  # noqa: PLR0913
             )
 
             yield DoneEvent()
+
+        except TimeoutError:
+            elapsed = time.monotonic() - turn_started
+            logger.warning(
+                "opencode hard timeout session=%s provider=%s model=%s elapsed=%.2fs deadline=%.1fs",
+                session_id,
+                provider_id,
+                model_id,
+                elapsed,
+                _OPENCODE_TURN_DEADLINE_SECONDS,
+                exc_info=True,
+            )
+            await _log_session_state(http_client, session_id, "opencode hard-timeout")
+            yield StatusEvent(
+                message=(
+                    "OpenCode did not finish the turn in time. "
+                    "Try again or simplify the request."
+                )
+            )
+            yield DoneEvent()
+            return
 
         except httpx.ReadTimeout:
             elapsed = time.monotonic() - turn_started

@@ -171,6 +171,7 @@ class DragonglassServer:
         self._mcp_task: asyncio.Task[None] | None = None
         self._last_opencode_model: str | None = None
         self._opencode_start_error: str | None = None
+        self._opencode_log_handle: typing.IO[bytes] | None = None
 
     @staticmethod
     def _opencode_is_active(settings: Settings) -> bool:
@@ -194,6 +195,10 @@ class DragonglassServer:
                 await self._opencode_process.wait()
         self._opencode_process = None
         self._last_opencode_model = None
+        if self._opencode_log_handle is not None:
+            with contextlib.suppress(Exception):
+                self._opencode_log_handle.close()
+            self._opencode_log_handle = None
 
     @staticmethod
     def _read_config_toml() -> dict[str, typing.Any]:
@@ -525,19 +530,23 @@ class DragonglassServer:
         try:
             env = os.environ.copy()
             env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
+            opencode_log_path = paths.DATA_DIR / "opencode.log"
+            opencode_log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._opencode_log_handle = open(opencode_log_path, "ab")  # noqa: SIM115
             logger.info(
-                "server: launching OpenCode process exe=%s port=%d config=%s",
+                "server: launching OpenCode process exe=%s port=%d config=%s log=%s",
                 opencode_executable,
                 port,
                 OPENCODE_CONFIG_FILE,
+                opencode_log_path,
             )
             self._opencode_process = await asyncio.create_subprocess_exec(
                 opencode_executable,
                 "serve",
                 "--port",
                 str(port),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                stdout=self._opencode_log_handle,
+                stderr=self._opencode_log_handle,
                 env=env,
             )
             await self._wait_for_opencode_server(settings.opencode_url)
