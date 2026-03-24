@@ -90,3 +90,7 @@ ignore_missing_imports = true
 
 [tool.pyright]
 reportPrivateImportUsage = "none"
+
+[tool.pytest.ini_options]
+timeout = 30
+timeout_method = "signal"
