@@ -171,27 +171,98 @@ class BackendManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 500_000_000)
 
             // 2. Fallback to hard kill for any stragglers
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-            process.arguments = ["-ti:51363"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            try? process.run()
-            process.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                let pids = output.components(separatedBy: .newlines).compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                for pid in pids {
-                    print("[BackendManager] Killing orphaned backend process PID \(pid)")
-                    let killProcess = Process()
-                    killProcess.executableURL = URL(fileURLWithPath: "/bin/kill")
-                    killProcess.arguments = ["-9", "\(pid)"]
-                    try? killProcess.run()
-                    killProcess.waitUntilExit()
-                }
-            }
+            Self.killProcesses(onPort: 51363, label: "backend", matcher: .backend)
+            Self.killProcesses(onPort: 51364, label: "mcp", matcher: .mcp)
         }.value
+    }
+
+    private enum ProcessMatcher {
+        case backend
+        case mcp
+    }
+
+    nonisolated private static func killProcesses(
+        onPort port: Int,
+        label: String,
+        matcher: ProcessMatcher
+    ) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-F", "pcn"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return }
+
+        let targets = parseLsofProcessEntries(output)
+
+        for target in targets where isExpectedProcess(target, matcher: matcher) {
+            print("[BackendManager] Killing orphaned \(label) process PID \(target.pid) (\(target.command)) on port \(port)")
+            let killProcess = Process()
+            killProcess.executableURL = URL(fileURLWithPath: "/bin/kill")
+            killProcess.arguments = ["-9", "\(target.pid)"]
+            try? killProcess.run()
+            killProcess.waitUntilExit()
+        }
+    }
+
+    private struct LsofProcessEntry {
+        let pid: Int
+        let command: String
+        let processName: String
+    }
+
+    nonisolated private static func parseLsofProcessEntries(_ output: String) -> [LsofProcessEntry] {
+        var entries: [LsofProcessEntry] = []
+        var currentPid: Int?
+        var currentCommand = ""
+
+        for rawLine in output.components(separatedBy: .newlines) {
+            if rawLine.isEmpty { continue }
+            guard let prefix = rawLine.first else { continue }
+            let value = String(rawLine.dropFirst())
+            switch prefix {
+            case "p":
+                if let pid = currentPid {
+                    entries.append(
+                        LsofProcessEntry(
+                            pid: pid,
+                            command: currentCommand,
+                            processName: currentCommand.lowercased()
+                        )
+                    )
+                }
+                currentPid = Int(value)
+                currentCommand = ""
+            case "c":
+                currentCommand = value
+            default:
+                continue
+            }
+        }
+
+        if let pid = currentPid {
+            entries.append(
+                LsofProcessEntry(
+                    pid: pid,
+                    command: currentCommand,
+                    processName: currentCommand.lowercased()
+                )
+            )
+        }
+        return entries
+    }
+
+    nonisolated private static func isExpectedProcess(_ process: LsofProcessEntry, matcher: ProcessMatcher) -> Bool {
+        switch matcher {
+        case .backend:
+            return process.processName.contains("dragonglass") || process.processName.contains("python")
+        case .mcp:
+            return process.processName.contains("python") || process.processName.contains("uvicorn") || process.processName.contains("dragonglass")
+        }
     }
 
     private func findPython3() -> String {
