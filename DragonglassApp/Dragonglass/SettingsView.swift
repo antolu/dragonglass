@@ -184,9 +184,15 @@ struct SettingsView: View {
     private func backendSection(_ config: Binding<DragonglassConfig>) -> some View {
         settingsSection("LLM Backend") {
             VStack(alignment: .leading, spacing: 8) {
+                let opencodeAvailable = config.opencodeAvailable.wrappedValue ?? true
+                let opencodeDisabledReason = config.opencodeDisabledReason.wrappedValue
+
                 Picker("Backend", selection: config.llmBackend) {
                     Text("LiteLLM").tag("litellm")
-                    Text("OpenCode").tag("opencode")
+                    Text("OpenCode")
+                        .tag("opencode")
+                        .disabled(!opencodeAvailable)
+                        .help(opencodeDisabledReason ?? "OpenCode is unavailable")
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: config.llmBackend.wrappedValue) { _ in
@@ -194,6 +200,12 @@ struct SettingsView: View {
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         client.fetchModels()
                     }
+                }
+
+                if !opencodeAvailable {
+                    Text(opencodeDisabledReason ?? "OpenCode is unavailable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 if config.llmBackend.wrappedValue == "opencode" {

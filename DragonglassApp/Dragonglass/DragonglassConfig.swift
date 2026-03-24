@@ -19,6 +19,8 @@ struct DragonglassConfig: Codable, Equatable {
     var autoAllowEdit: Bool
     var autoAllowCreate: Bool
     var autoAllowDelete: Bool
+    var opencodeAvailable: Bool?
+    var opencodeDisabledReason: String?
 
     enum CodingKeys: String, CodingKey {
         case obsidianDir = "obsidian_dir"
@@ -39,5 +41,7 @@ struct DragonglassConfig: Codable, Equatable {
         case autoAllowDelete = "auto_allow_delete"
         case extraModels = "extra_models"
         case envVars = "env_vars"
+        case opencodeAvailable = "opencode_available"
+        case opencodeDisabledReason = "opencode_disabled_reason"
     }
 }

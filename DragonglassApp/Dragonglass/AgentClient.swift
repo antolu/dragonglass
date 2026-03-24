@@ -205,6 +205,10 @@ class AgentClient: ObservableObject {
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
                                     self.llmBackend = config.llmBackend
+                                    if (config.opencodeAvailable ?? true) == false,
+                                       self.llmBackend == "opencode" {
+                                        self.llmBackend = "litellm"
+                                    }
                                     self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list
