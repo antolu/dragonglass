@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @Binding var isPresented: Bool
@@ -94,6 +95,9 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

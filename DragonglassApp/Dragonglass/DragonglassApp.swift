@@ -15,10 +15,6 @@ struct DragonglassApp: App {
                 .sheet(isPresented: $showingSetup) {
                     ObsidianSetupView(isPresented: $showingSetup)
                 }
-            Divider()
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
         } label: {
             Group {
                 if NSImage(named: NSImage.Name("MenuBarIcon")) != nil {
