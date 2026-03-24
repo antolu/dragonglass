@@ -501,7 +501,7 @@ class VaultAgent:
             kwargs: dict[str, typing.Any] = {
                 "model": model_name,
                 "messages": messages,
-                "stream": False,
+                "stream": True,
                 "temperature": settings.llm_temperature,
                 "top_p": settings.llm_top_p,
                 "top_k": settings.llm_top_k,
@@ -537,37 +537,88 @@ class VaultAgent:
                 else:
                     logger.debug("  msg[%d] %s  %s", i, role, str(content)[:2000])
 
-            response = await litellm.acompletion(**kwargs)
-            logger.debug(
-                "LLM raw response: %s",
-                json.dumps(response.model_dump(), indent=2, default=str),
-            )
+            stream = await litellm.acompletion(**kwargs)
+            full_text = ""
+            accumulated_tool_calls: dict[str, _ToolCallMsg] = {}
+            usage_emitted = False
+            final_reasoning = ""
 
-            # Log the full assistant response to make it easier to follow the chain
-            choice = response.choices[0]
-            msg = choice.message
-            if msg.content:
-                logger.debug("Assistant response content: %s", msg.content)
+            async for chunk in stream:
+                usage = getattr(chunk, "usage", None)
+                if usage and not usage_emitted:
+                    pt = getattr(usage, "prompt_tokens", 0) or 0
+                    ct = getattr(usage, "completion_tokens", 0) or 0
+                    self._total_tokens += pt + ct
+                    yield UsageEvent(
+                        prompt_tokens=pt,
+                        completion_tokens=ct,
+                        total_tokens=pt + ct,
+                        session_total=self._total_tokens,
+                    )
+                    usage_emitted = True
 
-            usage = getattr(response, "usage", None)
-            if usage:
-                pt = getattr(usage, "prompt_tokens", 0) or 0
-                ct = getattr(usage, "completion_tokens", 0) or 0
-                self._total_tokens += pt + ct
-                yield UsageEvent(
-                    prompt_tokens=pt,
-                    completion_tokens=ct,
-                    total_tokens=pt + ct,
-                    session_total=self._total_tokens,
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+
+                delta = getattr(choices[0], "delta", None)
+                if delta is None:
+                    continue
+
+                content_delta = getattr(delta, "content", None)
+                if isinstance(content_delta, str) and content_delta:
+                    full_text += content_delta
+                    yield TextChunk(text=content_delta)
+
+                reasoning_delta = getattr(delta, "reasoning_content", None)
+                if isinstance(reasoning_delta, str) and reasoning_delta:
+                    final_reasoning += reasoning_delta
+
+                chunk_tool_calls = getattr(delta, "tool_calls", None) or []
+                for tc in chunk_tool_calls:
+                    tc_id = getattr(tc, "id", None)
+                    if not isinstance(tc_id, str) or not tc_id:
+                        continue
+                    function = getattr(tc, "function", None)
+                    name_delta = getattr(function, "name", None) if function else None
+                    args_delta = (
+                        getattr(function, "arguments", None) if function else None
+                    )
+
+                    existing = accumulated_tool_calls.get(tc_id)
+                    if existing is None:
+                        accumulated_tool_calls[tc_id] = _ToolCallMsg(
+                            id=tc_id,
+                            type="function",
+                            function=_FunctionCall(
+                                name=name_delta or "",
+                                arguments=args_delta or "",
+                            ),
+                        )
+                    else:
+                        if isinstance(name_delta, str) and name_delta:
+                            existing["function"]["name"] = (
+                                existing["function"].get("name", "") + name_delta
+                            )
+                        if isinstance(args_delta, str) and args_delta:
+                            existing["function"]["arguments"] = (
+                                existing["function"].get("arguments", "") + args_delta
+                            )
+
+            msg_content = full_text
+            tool_calls = [
+                _FallbackToolCall(
+                    id=tc["id"],
+                    function=_FallbackFunction(
+                        name=tc["function"].get("name", ""),
+                        arguments=tc["function"].get("arguments", ""),
+                    ),
                 )
-
-            choice = response.choices[0]
-            msg = choice.message
-            tool_calls = getattr(msg, "tool_calls", None)
+                for tc in accumulated_tool_calls.values()
+            ]
 
             if not tool_calls:
-                reasoning = getattr(msg, "reasoning_content", None) or ""
-                fallback = parse_tool_calls_from_text(reasoning)
+                fallback = parse_tool_calls_from_text(final_reasoning)
                 if fallback:
                     logger.warning(
                         "tool calls found in reasoning_content, not in tool_calls — "
@@ -588,10 +639,10 @@ class VaultAgent:
             logger.debug(
                 "LLM response  tool_calls=%s  content=%s",
                 [tc.function.name for tc in tool_calls] if tool_calls else None,
-                msg.content,
+                msg_content,
             )
 
-            assistant_msg = _Message(role="assistant", content=msg.content or "")
+            assistant_msg = _Message(role="assistant", content=msg_content)
             if tool_calls:
                 assistant_msg["tool_calls"] = [
                     _ToolCallMsg(
@@ -607,8 +658,6 @@ class VaultAgent:
             messages.append(assistant_msg)
 
             if not tool_calls:
-                if msg.content:
-                    yield TextChunk(text=msg.content)
                 yield DoneEvent()
                 return
 
