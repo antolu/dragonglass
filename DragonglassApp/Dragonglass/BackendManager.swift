@@ -21,6 +21,7 @@ class BackendManager: ObservableObject {
 
     private var venvDir: URL { appSupportDir.appendingPathComponent("venv") }
     private var pythonPath: URL { venvDir.appendingPathComponent("bin/python3") }
+    private var uvPath: URL { venvDir.appendingPathComponent("bin/uv") }
     private var dragonglassPath: URL { venvDir.appendingPathComponent("bin/dragonglass") }
     private var opencodeInstallDir: URL { appSupportDir.appendingPathComponent("opencode") }
     private var opencodeBinPath: URL {
@@ -388,12 +389,42 @@ class BackendManager: ObservableObject {
         venvProcess.arguments = ["-m", "venv", venvDir.path]
         try await venvProcess.runAsync()
 
+        // 1.5 Ensure uv is available in the app-managed environment.
+        if !FileManager.default.isExecutableFile(atPath: uvPath.path) {
+            let uvInstallProcess = Process()
+            uvInstallProcess.executableURL = pythonPath
+            uvInstallProcess.arguments = ["-m", "pip", "install", "uv"]
+            do {
+                try await uvInstallProcess.runAsync()
+            } catch {
+                print("[BackendManager] uv install failed, falling back to pip: \(error)")
+            }
+        }
+
         // 2. Install wheel from bundle
         guard let wheelDir = Bundle.main.url(forResource: "wheels", withExtension: nil) else {
             throw NSError(domain: "BackendManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wheels not found in bundle"])
         }
 
         print("[BackendManager] Installing wheels from \(wheelDir.path)...")
+        if FileManager.default.isExecutableFile(atPath: uvPath.path) {
+            let uvInstallProcess = Process()
+            uvInstallProcess.executableURL = uvPath
+            uvInstallProcess.arguments = [
+                "pip", "install",
+                "--python", pythonPath.path,
+                "--no-index",
+                "--find-links", wheelDir.path,
+                "dragonglass"
+            ]
+            do {
+                try await uvInstallProcess.runAsync()
+                return
+            } catch {
+                print("[BackendManager] uv package install failed, falling back to pip: \(error)")
+            }
+        }
+
         let pipProcess = Process()
         pipProcess.executableURL = pythonPath
         pipProcess.arguments = [
@@ -473,14 +504,14 @@ class BackendManager: ObservableObject {
         }
         try bundledPackageData.write(to: localPackage)
 
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+
         print("[BackendManager] Installing OpenCode CLI with npm using \(npmPath)...")
         let installProcess = Process()
         installProcess.executableURL = URL(fileURLWithPath: npmPath)
         installProcess.arguments = ["install", "--omit=dev", "--no-audit", "--no-fund"]
         installProcess.currentDirectoryURL = opencodeInstallDir
-
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
         installProcess.environment = env
         try await installProcess.runAsync()
 
