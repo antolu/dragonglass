@@ -22,6 +22,10 @@ class BackendManager: ObservableObject {
     private var venvDir: URL { appSupportDir.appendingPathComponent("venv") }
     private var pythonPath: URL { venvDir.appendingPathComponent("bin/python3") }
     private var dragonglassPath: URL { venvDir.appendingPathComponent("bin/dragonglass") }
+    private var opencodeInstallDir: URL { appSupportDir.appendingPathComponent("opencode") }
+    private var opencodeBinPath: URL {
+        opencodeInstallDir.appendingPathComponent("node_modules/.bin/opencode")
+    }
     private var opencodeConfigPath: URL {
         appSupportDir.appendingPathComponent("config/opencode.json")
     }
@@ -68,6 +72,7 @@ class BackendManager: ObservableObject {
 
         phase = .starting
         do {
+            try await ensureOpencodeInstalled()
             if let reloadMessage = await deployObsidianPlugin() {
                 phase = .needsPluginReload(reloadMessage)
             }
@@ -400,6 +405,95 @@ class BackendManager: ObservableObject {
         try await pipProcess.runAsync()
     }
 
+    private func bundledOpencodePackageData() -> Data? {
+        guard let url = Bundle.main.url(forResource: "opencode_package", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return data
+    }
+
+    private func findNpm() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/npm",
+            "/usr/local/bin/npm",
+            "/usr/bin/npm",
+            "npm"
+        ]
+        for candidate in candidates {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["which", candidate]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            try? process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8) {
+                    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        return trimmed
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func ensureOpencodeInstalled() async throws {
+        guard let bundledPackageData = bundledOpencodePackageData() else {
+            print("[BackendManager] Missing bundled opencode_package.json, skipping OpenCode install")
+            return
+        }
+
+        let localPackage = opencodeInstallDir.appendingPathComponent("package.json")
+        let localPackageData = try? Data(contentsOf: localPackage)
+        let packageChanged = localPackageData != bundledPackageData
+
+        let needsInstall = !FileManager.default.isExecutableFile(atPath: opencodeBinPath.path)
+            || packageChanged
+        if !needsInstall {
+            return
+        }
+
+        guard let npmPath = findNpm() else {
+            throw NSError(
+                domain: "BackendManager",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "npm is required to install OpenCode. Install Node.js (npm) and retry."
+                ]
+            )
+        }
+
+        try FileManager.default.createDirectory(at: opencodeInstallDir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: localPackage.path) {
+            try? FileManager.default.removeItem(at: localPackage)
+        }
+        try bundledPackageData.write(to: localPackage)
+
+        print("[BackendManager] Installing OpenCode CLI with npm using \(npmPath)...")
+        let installProcess = Process()
+        installProcess.executableURL = URL(fileURLWithPath: npmPath)
+        installProcess.arguments = ["install", "--omit=dev", "--no-audit", "--no-fund"]
+        installProcess.currentDirectoryURL = opencodeInstallDir
+
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+        installProcess.environment = env
+        try await installProcess.runAsync()
+
+        guard FileManager.default.isExecutableFile(atPath: opencodeBinPath.path) else {
+            throw NSError(
+                domain: "BackendManager",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "OpenCode CLI install completed but binary was not found."]
+            )
+        }
+
+    }
+
     private func launchProcess() throws {
         let p = Process()
         p.executableURL = dragonglassPath
@@ -407,6 +501,7 @@ class BackendManager: ObservableObject {
 
         var env = ProcessInfo.processInfo.environment
         env["OPENCODE_CONFIG"] = opencodeConfigPath.path
+        env["OPENCODE_BIN"] = opencodeBinPath.path
         p.environment = env
 
         try FileManager.default.createDirectory(

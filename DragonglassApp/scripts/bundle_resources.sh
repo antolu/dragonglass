@@ -68,6 +68,8 @@ VERSION="$("$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from drago
 printf "%s\n" "$VERSION" > "$RESOURCES_DIR/version.txt"
 "$_PY" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" > "$RESOURCES_DIR/python_version.txt"
 
+cp "$SRCROOT/opencode/package.json" "$RESOURCES_DIR/opencode_package.json"
+
 # 3) Build and bundle Obsidian plugin.
 PLUGIN_DIR="$SRCROOT/../obsidian-plugin"
 PLUGIN_RES_DIR="$RESOURCES_DIR/ObsidianPlugin"
