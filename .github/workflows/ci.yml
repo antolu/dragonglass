@@ -24,7 +24,29 @@ jobs:
         run: pip install -e ".[test]"
 
       - name: Run tests
-        run: python -m pytest
+        run: |
+          # Run tests verbosely, record output to a log and surface slow tests.
+          # Use pipefail so the step fails when pytest fails while still
+          # producing a captured log file for post-mortem analysis.
+          set -o pipefail
+          python -m pytest -vv --maxfail=1 --durations=10 | tee pytest.log
+
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log
+          path: pytest.log
+
+      - name: Upload pip freeze
+        if: always()
+        run: pip freeze > pip-freeze.txt
+      - name: Upload pip freeze artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-freeze
+          path: pip-freeze.txt
 
   build-macos:
     name: Build macOS App
