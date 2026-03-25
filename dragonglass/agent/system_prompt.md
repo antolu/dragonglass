@@ -76,6 +76,4 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 
 **`dragonglass_manage_tags`** — list, add, or remove tags. Accepts tags with or without `#`.
 
-**`dragonglass_open_note`** — open a note in Obsidian by vault-relative path.
-
 **`dragonglass_run_command`** — execute an Obsidian command by command ID.

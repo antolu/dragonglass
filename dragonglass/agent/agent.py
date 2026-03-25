@@ -730,7 +730,6 @@ class VaultAgent:
             "dragonglass_new_search_session",
             "dragonglass_keyword_search",
             "dragonglass_vector_search",
-            "dragonglass_open_note",
             "dragonglass_run_command",
             "dragonglass_read_note_with_hash",
             "dragonglass_patch_note_lines",

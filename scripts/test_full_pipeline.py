@@ -92,11 +92,11 @@ async def run_full_pipeline_test() -> None:  # noqa: PLR0912, PLR0915
     os.system("pkill -f 'opencode serve' 2>/dev/stdout || true")
 
     env = os.environ.copy()
-    env["DRAGONGLASS_MCP_HTTP_PORT"] = str(mcp_port)
-    env["DRAGONGLASS_SPAWN_OPENCODE"] = "false"
-    env["DRAGONGLASS_LLM_BACKEND"] = "opencode"
-    env["DRAGONGLASS_LLM_MODEL"] = "github-copilot/gpt-5-mini"
-    env["DRAGONGLASS_OPENCODE_URL"] = f"http://127.0.0.1:{opencode_port}"
+    env["MCP_HTTP_PORT"] = str(mcp_port)
+    env["SPAWN_OPENCODE"] = "false"
+    env["LLM_BACKEND"] = "opencode"
+    env["LLM_MODEL"] = "github-copilot/gpt-5-mini"
+    env["OPENCODE_URL"] = f"http://127.0.0.1:{opencode_port}"
     env["OPENCODE_CONFIG"] = str(OPENCODE_CONFIG_FILE)
 
     force_update_opencode_json(OPENCODE_CONFIG_FILE, mcp_port)
@@ -155,6 +155,15 @@ async def run_full_pipeline_test() -> None:  # noqa: PLR0912, PLR0915
                 stream_output("OPENCODE-OUT", opencode_proc.stdout)
             )
             _ = (server_task, opencode_task)
+
+        print(f"Wait for MCP server on port {mcp_port}...")
+        for _ in range(20):
+            if await is_port_in_use(mcp_port):
+                print(f"MCP server up on port {mcp_port}")
+                break
+            await asyncio.sleep(1)
+        else:
+            print(f"ERROR: MCP server did not start on port {mcp_port}")
 
         print("Wait for OpenCode to boot...")
         await asyncio.sleep(8)

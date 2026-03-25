@@ -5,7 +5,6 @@ import logging
 import re
 import time
 import typing
-import urllib.parse
 
 import fastmcp
 import httpx
@@ -553,7 +552,9 @@ async def _do_keyword_search(
 ) -> dict[str, typing.Any]:
     session = get_current_session()
     if not session:
-        return {"error": "No active search session. Call new_search_session first."}
+        return {
+            "error": "No active search session. Call dragonglass_new_search_session first."
+        }
 
     found_paths: set[str] = set()
     logger.debug("keyword_search  queries=%s", queries)
@@ -650,7 +651,9 @@ async def do_read_note_with_hash(  # noqa: PLR0911
 ) -> dict[str, typing.Any]:
     session = get_current_session()
     if not session:
-        return {"error": "No active search session. Call new_search_session first."}
+        return {
+            "error": "No active search session. Call dragonglass_new_search_session first."
+        }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -717,17 +720,15 @@ async def do_patch_note_lines(  # noqa: PLR0911
     settings: Settings,
     args: PatchLinesArgs,
 ) -> dict[str, typing.Any]:
-    session = get_current_session()
-    if not session:
-        return {"error": "No active search session. Call new_search_session first."}
+    session = get_current_session() or new_session()
 
     path = args["path"]
     resolved_expected_hash = args["expected_hash"] or session.get_last_read_hash(path)
     if not resolved_expected_hash:
         return {
             "error": (
-                "No stored hash for this file. Call read_note_with_hash(path) before "
-                "patch_note_lines(path, ...)."
+                "No stored hash for this file. Call dragonglass_read_note_with_hash(path) before "
+                "dragonglass_patch_note_lines(path, ...)."
             )
         }
 
@@ -862,42 +863,6 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                 f"Vector search complete in {elapsed:.2f}s (hits={len(result)})",
             )
         return result
-
-    @m.tool(name="dragonglass_open_note")
-    async def open_note(path: str) -> dict[str, str]:
-        """Open a note in Obsidian by its vault-relative path."""
-        emit_tool_event(
-            "dragonglass_open_note",
-            "start",
-            f"Opening note {_safe_value_preview(path)}",
-        )
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                encoded = urllib.parse.quote(path, safe="/")
-                resp = await client.post(
-                    f"{settings.vector_search_url}/open/{encoded}",
-                )
-                if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
-                    emit_tool_event(
-                        "dragonglass_open_note",
-                        "done",
-                        f"Opened note {_safe_value_preview(path)}",
-                    )
-                    return {"status": "opened", "path": path}
-                emit_tool_event(
-                    "dragonglass_open_note",
-                    "error",
-                    f"HTTP {resp.status_code}",
-                )
-                return {"error": f"HTTP {resp.status_code}"}
-        except Exception as exc:
-            logger.exception("open_note failed for path %r", path)
-            emit_tool_event(
-                "dragonglass_open_note",
-                "error",
-                _safe_value_preview(exc),
-            )
-            return {"error": str(exc)}
 
     @m.tool(name="dragonglass_run_command")
     async def run_command(command_id: str) -> dict[str, str]:
