@@ -714,27 +714,6 @@ class DragonglassServer:
 
         logger.info("server: chat message: %r (model=%s)", text, model_override)
 
-        # Check if we need to restart OpenCode for a different model
-        if (
-            settings.llm_backend == "opencode"
-            and model_override
-            and model_override != self._last_opencode_model
-        ):
-            logger.info(
-                "server: model changed from %s to %s, restarting OpenCode",
-                self._last_opencode_model,
-                model_override,
-            )
-            if await self._restart_opencode(model_override):
-                self._last_opencode_model = model_override
-            else:
-                if self._opencode_start_error:
-                    await websocket.send(
-                        serialize_event(StatusEvent(message=self._opencode_start_error))
-                    )
-                await websocket.send(serialize_event(DoneEvent()))
-                return
-
         try:
             if self.agent:
                 if not self._current_conversation_id:
