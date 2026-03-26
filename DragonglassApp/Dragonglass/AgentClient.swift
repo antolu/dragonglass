@@ -310,6 +310,13 @@ class AgentClient: ObservableObject {
         send(["command": "save_model", "name": name])
     }
 
+    func setBackend(_ backend: String) {
+        availableModels = []
+        selectedModel = ""
+        llmBackend = backend
+        send(["command": "set_config", "config": ["llm_backend": backend]])
+    }
+
     func setSelectedModel(_ model: String) {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         let command: [String: Any] = [

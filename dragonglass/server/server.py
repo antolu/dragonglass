@@ -933,7 +933,13 @@ class DragonglassServer:
         # We assume keys coming from Swift are already snake_case via CodingKeys
         new_config.pop("opencode_available", None)
         new_config.pop("opencode_disabled_reason", None)
+        backend_changed = (
+            "llm_backend" in new_config
+            and new_config["llm_backend"] != old_settings.llm_backend
+        )
         current_toml.update(new_config)
+        if backend_changed:
+            current_toml.pop("selected_model", None)
 
         # Ensure the config directory exists before writing
         paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -965,6 +971,8 @@ class DragonglassServer:
         )
         await websocket.send(json.dumps({"type": "config_ack"}))
         await self._handle_get_config(websocket)
+        if backend_changed:
+            await self._handle_list_models(websocket)
 
     @staticmethod
     async def _handle_get_version(

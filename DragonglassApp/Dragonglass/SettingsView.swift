@@ -195,11 +195,9 @@ struct SettingsView: View {
                         .help(opencodeDisabledReason ?? "OpenCode is unavailable")
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: config.llmBackend.wrappedValue) { _ in
-                    Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        client.fetchModels()
-                    }
+                .onChange(of: config.llmBackend.wrappedValue) { newBackend in
+                    config.selectedModel.wrappedValue = ""
+                    client.setBackend(newBackend)
                 }
 
                 if !opencodeAvailable {
