@@ -14,7 +14,7 @@ enum AgentEvent: Codable {
     case userMessage(String)
     case conversationsList([ConversationMetadata])
     case conversationLoaded(String, [AgentEvent])
-    case mcpTool(String, String, String)
+    case mcpTool(String, String, String, String)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -34,6 +34,7 @@ enum AgentEvent: Codable {
         case id
         case history
         case phase
+        case detail
     }
 
     init(from decoder: Decoder) throws {
@@ -74,7 +75,8 @@ enum AgentEvent: Codable {
             self = .mcpTool(
                 try container.decode(String.self, forKey: .tool),
                 try container.decode(String.self, forKey: .phase),
-                try container.decode(String.self, forKey: .message)
+                try container.decode(String.self, forKey: .message),
+                (try? container.decode(String.self, forKey: .detail)) ?? ""
             )
         default:
             self = .unknown(type)
@@ -126,11 +128,12 @@ enum AgentEvent: Codable {
             try container.encode(history, forKey: .history)
         case .unknown(let type):
             try container.encode(type, forKey: .type)
-        case .mcpTool(let tool, let phase, let message):
+        case .mcpTool(let tool, let phase, let message, let detail):
             try container.encode("MCPToolEvent", forKey: .type)
             try container.encode(tool, forKey: .tool)
             try container.encode(phase, forKey: .phase)
             try container.encode(message, forKey: .message)
+            try container.encode(detail, forKey: .detail)
         }
     }
 }
@@ -158,11 +161,12 @@ class AgentClient: ObservableObject {
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
     @Published var llmBackend: String = "litellm"
+    @Published var detailedToolEvents: Bool = false
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
 
-    func connect() {
+    func connect() {.
         webSocketTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask?.resume()
         isConnected = true

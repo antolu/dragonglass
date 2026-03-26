@@ -92,6 +92,7 @@ class MCPToolEvent:
     tool: str
     phase: str
     message: str
+    detail: str = ""
 
 
 @dataclasses.dataclass

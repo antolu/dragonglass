@@ -740,6 +740,7 @@ class DragonglassServer:
                                     tool=telemetry_event.tool,
                                     phase=telemetry_event.phase,
                                     message=telemetry_event.message,
+                                    detail=telemetry_event.detail,
                                 )
                             )
                         )

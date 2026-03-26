@@ -10,18 +10,20 @@ class MCPToolTelemetryEvent:
     tool: str
     phase: str
     message: str
+    detail: str
     ts: float
 
 
 _QUEUE: queue.Queue[MCPToolTelemetryEvent] = queue.Queue()
 
 
-def emit_tool_event(tool: str, phase: str, message: str) -> None:
+def emit_tool_event(tool: str, phase: str, message: str, detail: str = "") -> None:
     _QUEUE.put(
         MCPToolTelemetryEvent(
             tool=tool,
             phase=phase,
             message=message,
+            detail=detail,
             ts=time.time(),
         )
     )

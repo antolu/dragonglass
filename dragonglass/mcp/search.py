@@ -794,45 +794,34 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         """Create a new search session. Destroys any previous session.
         MUST be called before starting keyword or vector searches.
         """
-        emit_tool_event(
-            "dragonglass_new_search_session",
-            "start",
-            "Creating new search session",
-        )
         session = new_session()
         emit_tool_event(
             "dragonglass_new_search_session",
             "done",
-            f"Search session created id={session.id}",
+            "New search session",
+            f"id={session.id}",
         )
         return {"session_id": session.id, "status": "created"}
 
     @m.tool(name="dragonglass_keyword_search")
     async def keyword_search(queries: _StringList) -> dict[str, typing.Any]:
         """Search the vault for files matching one or more text queries."""
-        emit_tool_event(
-            "dragonglass_keyword_search",
-            "start",
-            f"Running keyword search for {len(queries)} queries",
-        )
         started = time.monotonic()
         result = await _do_keyword_search(settings, queries)
         elapsed = time.monotonic() - started
-        if "error" in result:
-            emit_tool_event(
-                "dragonglass_keyword_search",
-                "error",
-                _safe_value_preview(result.get("error")),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_keyword_search",
-                "done",
-                (
-                    f"Keyword search complete in {elapsed:.2f}s "
-                    f"(total_found={result.get('total_found', 0)})"
-                ),
-            )
+        terms = ", ".join(str(q) for q in queries)
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"{result.get('total_found', 0)} files found ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_keyword_search",
+            phase,
+            f"Keyword search: {terms}",
+            detail,
+        )
         return result
 
     @m.tool(name="dragonglass_vector_search")
@@ -840,38 +829,28 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         query: str, top_n: int = 10, min_score: float = 0.35
     ) -> list[dict[str, typing.Any]]:
         """Perform semantic (vector) search."""
-        emit_tool_event(
-            "dragonglass_vector_search",
-            "start",
-            f"Running vector search top_n={top_n} min_score={min_score}",
-        )
         started = time.monotonic()
         result = await _do_vector_search(settings, query, top_n, min_score)
         elapsed = time.monotonic() - started
-        errors = [item.get("error") for item in result if isinstance(item, dict)]
-        errors = [err for err in errors if isinstance(err, str)]
-        if errors:
-            emit_tool_event(
-                "dragonglass_vector_search",
-                "error",
-                _safe_value_preview(errors[0]),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_vector_search",
-                "done",
-                f"Vector search complete in {elapsed:.2f}s (hits={len(result)})",
-            )
+        errs = [item.get("error") for item in result if isinstance(item, dict)]
+        errs = [e for e in errs if isinstance(e, str)]
+        phase = "error" if errs else "done"
+        detail = (
+            _safe_value_preview(errs[0])
+            if errs
+            else f"{len(result)} hits ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_vector_search",
+            phase,
+            f"Vector search: {_safe_value_preview(query, 80)}",
+            detail,
+        )
         return result
 
     @m.tool(name="dragonglass_run_command")
     async def run_command(command_id: str) -> dict[str, str]:
         """Execute an Obsidian command by its ID."""
-        emit_tool_event(
-            "dragonglass_run_command",
-            "start",
-            f"Running command {_safe_value_preview(command_id)}",
-        )
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
@@ -881,12 +860,14 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                     emit_tool_event(
                         "dragonglass_run_command",
                         "done",
-                        f"Executed command {_safe_value_preview(command_id)}",
+                        f"Run command: {_safe_value_preview(command_id)}",
+                        "ok",
                     )
                     return {"status": "executed", "command_id": command_id}
                 emit_tool_event(
                     "dragonglass_run_command",
                     "error",
+                    f"Run command: {_safe_value_preview(command_id)}",
                     f"HTTP {resp.status_code}",
                 )
                 return {"error": f"HTTP {resp.status_code}"}
@@ -895,6 +876,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             emit_tool_event(
                 "dragonglass_run_command",
                 "error",
+                f"Run command: {_safe_value_preview(command_id)}",
                 _safe_value_preview(exc),
             )
             return {"error": str(exc)}
@@ -914,26 +896,21 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
 
         Must be called before patch_note_lines unless expected_hash is provided.
         """
-        emit_tool_event(
-            "dragonglass_read_note_with_hash",
-            "start",
-            f"Reading note {_safe_value_preview(path)}",
-        )
         started = time.monotonic()
         result = await do_read_note_with_hash(settings, path, start_line, end_line)
         elapsed = time.monotonic() - started
-        if "error" in result:
-            emit_tool_event(
-                "dragonglass_read_note_with_hash",
-                "error",
-                _safe_value_preview(result.get("error")),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_read_note_with_hash",
-                "done",
-                f"Read note complete in {elapsed:.2f}s",
-            )
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"{result.get('total_lines', '?')} lines ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_read_note_with_hash",
+            phase,
+            f"Reading: {_safe_value_preview(path, 80)}",
+            detail,
+        )
         return result
 
     @m.tool(name="dragonglass_patch_note_lines")
@@ -952,14 +929,6 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         which is required for this tool to ensure atomicity even if only
         a subset of lines was read.
         """
-        emit_tool_event(
-            "dragonglass_patch_note_lines",
-            "start",
-            (
-                f"Patching note {_safe_value_preview(path)} lines "
-                f"{start_line}-{end_line}"
-            ),
-        )
         started = time.monotonic()
         result = await do_patch_note_lines(
             settings,
@@ -972,18 +941,18 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             },
         )
         elapsed = time.monotonic() - started
-        if "error" in result:
-            emit_tool_event(
-                "dragonglass_patch_note_lines",
-                "error",
-                _safe_value_preview(result.get("error")),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_patch_note_lines",
-                "done",
-                f"Patch complete in {elapsed:.2f}s",
-            )
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"ok ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_patch_note_lines",
+            phase,
+            f"Patching: {_safe_value_preview(path, 60)} lines {start_line}-{end_line}",
+            detail,
+        )
         return result
 
     @m.tool(name="dragonglass_manage_frontmatter")
@@ -994,11 +963,6 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         value: typing.Any = None,
     ) -> dict[str, typing.Any]:
         """Get, set, or delete a frontmatter key."""
-        emit_tool_event(
-            "dragonglass_manage_frontmatter",
-            "start",
-            f"Frontmatter {operation} {_safe_value_preview(key)} in {_safe_value_preview(path)}",
-        )
         started = time.monotonic()
         args: ManageFrontmatterArgs = {
             "path": path,
@@ -1009,18 +973,18 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             args["value"] = value
         result = await do_manage_frontmatter(settings, args)
         elapsed = time.monotonic() - started
-        if "error" in result:
-            emit_tool_event(
-                "dragonglass_manage_frontmatter",
-                "error",
-                _safe_value_preview(result.get("error")),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_manage_frontmatter",
-                "done",
-                f"Frontmatter {operation} complete in {elapsed:.2f}s",
-            )
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"ok ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_manage_frontmatter",
+            phase,
+            f"Frontmatter: {operation} {_safe_value_preview(key)} in {_safe_value_preview(path, 60)}",
+            detail,
+        )
         return result
 
     @m.tool(name="dragonglass_manage_tags")
@@ -1030,11 +994,6 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         tags: list[str] | None = None,
     ) -> dict[str, typing.Any]:
         """Add, remove, or list note tags."""
-        emit_tool_event(
-            "dragonglass_manage_tags",
-            "start",
-            f"Tags {operation} in {_safe_value_preview(path)}",
-        )
         started = time.monotonic()
         args: ManageTagsArgs = {
             "path": path,
@@ -1044,18 +1003,18 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             args["tags"] = tags
         result = await do_manage_tags(settings, args)
         elapsed = time.monotonic() - started
-        if "error" in result:
-            emit_tool_event(
-                "dragonglass_manage_tags",
-                "error",
-                _safe_value_preview(result.get("error")),
-            )
-        else:
-            emit_tool_event(
-                "dragonglass_manage_tags",
-                "done",
-                f"Tags {operation} complete in {elapsed:.2f}s",
-            )
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"ok ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_manage_tags",
+            phase,
+            f"Tags: {operation} in {_safe_value_preview(path, 60)}",
+            detail,
+        )
         return result
 
     return m

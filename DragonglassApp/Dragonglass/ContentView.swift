@@ -47,6 +47,16 @@ struct ContentView: View {
             }
 
             Button(action: {
+                client.detailedToolEvents.toggle()
+            }) {
+                Image(systemName: client.detailedToolEvents ? "list.bullet.indent" : "list.bullet")
+                    .foregroundColor(client.detailedToolEvents ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .help(client.detailedToolEvents ? "Detailed tool events" : "Simple tool events")
+
+            Button(action: {
                 guard !client.isThinking else { return }
                 showingConversations = false
                 showingSettings = true
@@ -193,7 +203,7 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(0..<client.events.count, id: \.self) { index in
-                        EventRow(event: client.events[index])
+                        EventRow(event: client.events[index], detailed: client.detailedToolEvents)
                     }
 
                     if client.isThinking {
@@ -294,6 +304,7 @@ struct ContentView: View {
 
 struct EventRow: View {
     let event: AgentEvent
+    var detailed: Bool = false
 
     var body: some View {
         switch event {
@@ -320,14 +331,23 @@ struct EventRow: View {
             .padding(4)
             .background(Color.blue.opacity(0.1))
             .cornerRadius(4)
-        case .mcpTool(let tool, let phase, let message):
+        case .mcpTool(let tool, let phase, let message, let detail):
             HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "bolt.fill")
-                Text("\(tool) [\(phase)] \(message)")
+                Image(systemName: phase == "error" ? "exclamationmark.circle" : "bolt.fill")
+                    .foregroundColor(phase == "error" ? .red : .orange)
+                if detailed {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(tool) [\(phase)]")
+                            .foregroundColor(.secondary)
+                        Text(message + (detail.isEmpty ? "" : " — \(detail)"))
+                    }
+                } else {
+                    Text(message)
+                }
             }
             .font(.caption)
             .padding(4)
-            .background(Color.orange.opacity(0.12))
+            .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
             .cornerRadius(4)
         case .config:
             EmptyView()
