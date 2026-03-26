@@ -295,15 +295,28 @@ class DragonglassServer:
             self._chat_task.cancel()
         if self._mcp_task:
             self._mcp_task.cancel()
-        if self._opencode_process:
-            logger.info("server: stopping opencode process")
-            self._opencode_process.terminate()
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._opencode_process.wait(), timeout=5.0)
+        await self._stop_opencode()
+        settings = get_settings()
+        await self._kill_stale_opencode_on_port(
+            self._opencode_port(settings.opencode_url)
+        )
 
         await self.agent.close()
 
+    async def _kill_stale_on_port(self, port: int) -> None:
+        for pid in self._list_listener_pids(port):
+            logger.warning("server: killing stale process pid=%d on port %d", pid, port)
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGTERM)
+            await asyncio.sleep(0.4)
+            if self._pid_exists(pid):
+                with contextlib.suppress(Exception):
+                    os.kill(pid, signal.SIGKILL)
+
     async def _start_managed_services(self, settings: Settings) -> None:
+        # Kill anything already on the MCP port before binding
+        await self._kill_stale_on_port(settings.mcp_http_port)
+
         # Start MCP HTTP/SSE server
         mcp_server = create_search_server(settings)
 
