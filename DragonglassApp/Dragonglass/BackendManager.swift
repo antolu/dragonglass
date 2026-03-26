@@ -84,14 +84,15 @@ class BackendManager: ObservableObject {
             if case .needsPluginReload = phase { } else {
                 // Wait for the backend to be actually responsive before setting .ready
                 print("[BackendManager] Waiting for health check...")
+                try await Task.sleep(nanoseconds: 3_000_000_000) // 3s initial delay for Python startup
                 let start = Date()
                 var ready = false
-                while Date().timeIntervalSince(start) < 10 { // 10s timeout
+                while Date().timeIntervalSince(start) < 30 { // 30s timeout after initial delay
                     if await isBackendResponsive() {
                         ready = true
                         break
                     }
-                    try await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                    try await Task.sleep(nanoseconds: 500_000_000) // 500ms
                 }
                 if ready {
                     print("[BackendManager] Backend is ready and healthy.")
@@ -109,9 +110,10 @@ class BackendManager: ObservableObject {
         let url = URL(string: "http://localhost:51363/health")!
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 0.5
+        request.timeoutInterval = 1.0
+        let session = URLSession(configuration: .ephemeral)
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await session.data(for: request)
             return (response as? HTTPURLResponse)?.statusCode == 200
         } catch {
             return false
