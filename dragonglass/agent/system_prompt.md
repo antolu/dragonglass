@@ -20,7 +20,7 @@ Always search before answering or making changes. Follow this order:
 **Step 1 — `dragonglass_new_search_session`** (mandatory). `dragonglass_keyword_search` and `dragonglass_vector_search` require an active session.
 
 **Step 2 — `dragonglass_keyword_search`**
-- Pass multiple complementary query strings in one call to broaden coverage.
+- Pass multiple complementary query strings in the `queries` parameter to broaden coverage.
 - Use prefixes for precision: `file:`, `tag:#`, `section:`, `property:`.
 - Try synonyms and related terms across queries.
 - If the first batch returns nothing, reformulate — do not retry identical queries.

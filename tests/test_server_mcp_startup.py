@@ -100,7 +100,12 @@ def test_run_continues_when_managed_services_fail(
 
     monkeypatch.setattr(server, "_start_managed_services", fail_start)
     monkeypatch.setattr("dragonglass.server.server.VaultAgent", lambda _: DummyAgent())
-    monkeypatch.setattr("dragonglass.server.server.get_settings", object)
+    monkeypatch.setattr(
+        "dragonglass.server.server.get_settings",
+        lambda: types.SimpleNamespace(
+            opencode_url="http://opencode", vector_search_url="http://vector"
+        ),
+    )
     monkeypatch.setattr(
         "dragonglass.server.server.websockets.serve",
         lambda *args, **kwargs: DummyAsyncContext(),

@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 
 def _coerce_json_string_to_list(v: typing.Any) -> typing.Any:
     if isinstance(v, str):
-        return json.loads(v)
+        try:
+            return json.loads(v)
+        except (json.JSONDecodeError, TypeError):
+            return [v]
     return v
 
 
@@ -804,8 +807,24 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         return {"session_id": session.id, "status": "created"}
 
     @m.tool(name="dragonglass_keyword_search")
-    async def keyword_search(queries: _StringList) -> dict[str, typing.Any]:
-        """Search the vault for files matching one or more text queries."""
+    async def keyword_search(
+        queries: _StringList | None = None,
+        query: str | None = None,
+    ) -> dict[str, typing.Any]:
+        """Search the vault for files matching one or more text queries.
+
+        Args:
+            queries: A list of search strings, e.g., ["meeting notes", "project alpha"].
+            query: Alias for queries; accepts a single search string.
+
+        At least one of `queries` or `query` must be provided. Pass multiple
+        complementary strings in `queries` to improve search coverage.
+        """
+        if query and not queries:
+            queries = [query]
+        if not queries:
+            return {"error": "At least one search query is required"}
+
         started = time.monotonic()
         result = await _do_keyword_search(settings, queries)
         elapsed = time.monotonic() - started
@@ -828,7 +847,13 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
     async def vector_search(
         query: str, top_n: int = 10, min_score: float = 0.35
     ) -> list[dict[str, typing.Any]]:
-        """Perform semantic (vector) search."""
+        """Perform semantic (vector) search to find notes by meaning.
+
+        Args:
+            query: a natural language description of what you are looking for.
+            top_n: maximum number of results to return (default: 10).
+            min_score: minimum similarity score [0..1] (default: 0.35).
+        """
         started = time.monotonic()
         result = await _do_vector_search(settings, query, top_n, min_score)
         elapsed = time.monotonic() - started

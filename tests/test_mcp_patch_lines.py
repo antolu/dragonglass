@@ -1,19 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
 from collections.abc import Callable
+from typing import Self
 
 import httpx
 import pytest
-
-if "fastmcp" not in sys.modules:
-    fastmcp_stub = types.ModuleType("fastmcp")
-    fastmcp_stub.FastMCP = object  # type: ignore[attr-defined]
-    sys.modules["fastmcp"] = fastmcp_stub
-
-from typing import Self
 
 import dragonglass.mcp.search as mcp_search
 from dragonglass.config import Settings
