@@ -394,6 +394,7 @@ class DragonglassServer:
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.UNAUTHORIZED,
             HTTPStatus.METHOD_NOT_ALLOWED,
+            HTTPStatus.NOT_ACCEPTABLE,
         }
 
     @staticmethod
