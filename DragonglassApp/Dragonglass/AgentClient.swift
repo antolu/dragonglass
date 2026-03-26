@@ -166,7 +166,7 @@ class AgentClient: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
 
-    func connect() {.
+    func connect() {
         webSocketTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask?.resume()
         isConnected = true
