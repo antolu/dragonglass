@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections.abc
 import contextlib
 import dataclasses
 import json
@@ -747,26 +746,35 @@ class DragonglassServer:
 
                 await flush_mcp_telemetry()
 
-                agent_stream: collections.abc.AsyncIterator[AgentEvent] = (
-                    self.agent.run(
-                        text,
-                        model_override=model_override,
-                    )
-                )
-                while True:
-                    try:
-                        event = await asyncio.wait_for(
-                            anext(agent_stream),
-                            timeout=0.1,
-                        )
-                    except TimeoutError:
-                        await flush_mcp_telemetry()
-                        continue
-                    except StopAsyncIteration:
-                        break
+                event_queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
+                agent = self.agent
 
-                    await websocket.send(serialize_event(event))
-                    await flush_mcp_telemetry()
+                async def _feed_queue() -> None:
+                    try:
+                        async for ev in agent.run(text, model_override=model_override):
+                            await event_queue.put(ev)
+                    finally:
+                        await event_queue.put(None)
+
+                feed_task = asyncio.create_task(_feed_queue())
+                try:
+                    while True:
+                        try:
+                            event = await asyncio.wait_for(
+                                event_queue.get(), timeout=0.1
+                            )
+                        except TimeoutError:
+                            await flush_mcp_telemetry()
+                            continue
+                        if event is None:
+                            break
+                        await websocket.send(serialize_event(event))
+                        await flush_mcp_telemetry()
+                finally:
+                    if not feed_task.done():
+                        feed_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await feed_task
 
                 await flush_mcp_telemetry()
 
