@@ -287,7 +287,16 @@ class DragonglassServer:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self._stop_event.set)
 
-        async with websockets.serve(self._handle_client, self.host, self.port):
+        def process_request(
+            path: str, _headers: typing.Any
+        ) -> tuple[HTTPStatus, list[typing.Any], bytes] | None:
+            if path == "/health":
+                return HTTPStatus.OK, [], b"OK\n"
+            return None
+
+        async with websockets.serve(
+            self._handle_client, self.host, self.port, process_request=process_request
+        ):
             await self._stop_event.wait()
 
         logger.info("server: shutting down")
@@ -860,8 +869,8 @@ class DragonglassServer:
                     serialize_event(StatusEvent(message=self._opencode_start_error))
                 )
             try:
-                client = AsyncOpencode(base_url=settings.opencode_url)
-                providers = await client.app.providers()
+                opencode_client = AsyncOpencode(base_url=settings.opencode_url)
+                providers = await opencode_client.app.providers()
                 opencode_models = parse_opencode_models(providers)
                 # When the selected backend is OpenCode we should replace the
                 # model list with whatever OpenCode reports, even if that list

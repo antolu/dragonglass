@@ -82,10 +82,39 @@ class BackendManager: ObservableObject {
             }
             try launchProcess()
             if case .needsPluginReload = phase { } else {
-                phase = .ready
+                // Wait for the backend to be actually responsive before setting .ready
+                print("[BackendManager] Waiting for health check...")
+                let start = Date()
+                var ready = false
+                while Date().timeIntervalSince(start) < 10 { // 10s timeout
+                    if await isBackendResponsive() {
+                        ready = true
+                        break
+                    }
+                    try await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                }
+                if ready {
+                    print("[BackendManager] Backend is ready and healthy.")
+                    phase = .ready
+                } else {
+                    phase = .failed("Backend started but health check failed (timeout).")
+                }
             }
         } catch {
             phase = .failed("Launch failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func isBackendResponsive() async -> Bool {
+        let url = URL(string: "http://localhost:51363/health")!
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 0.5
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
         }
     }
 
