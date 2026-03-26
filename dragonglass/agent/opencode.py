@@ -596,6 +596,9 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             return
         except asyncio.CancelledError:
             logger.info("opencode turn cancelled session=%s", session_id)
+            # Signal the server to abort the active session turn
+            with contextlib.suppress(Exception):
+                await opencode_client.session.abort(session_id)
             raise
 
         except Exception as exc:
