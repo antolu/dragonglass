@@ -163,6 +163,7 @@ class DragonglassServer:
         self.agent: VaultAgent | None = None
         self._stop_event = asyncio.Event()
         self._chat_task: asyncio.Task[None] | None = None
+        self._agent_ready = False
         self._current_conversation_id: str | None = None
         self._opencode_process: asyncio.subprocess.Process | None = None
         self._mcp_task: asyncio.Task[None] | None = None
@@ -261,24 +262,6 @@ class DragonglassServer:
         settings = get_settings()
         self.agent = VaultAgent(settings)
 
-        # Start OpenCode and MCP servers if needed
-        try:
-            await self._start_managed_services(settings)
-        except Exception:
-            logger.exception(
-                "server: failed to start managed services; continuing without them"
-            )
-
-        logger.info("server: connecting to vault")
-        try:
-            await self.agent.initialise()
-        except Exception:
-            logger.exception("server: failed to connect to vault")
-            return
-
-        logger.info("server: starting websocket server on %s:%d", self.host, self.port)
-
-        # Signal handling for graceful shutdown
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, self._stop_event.set)
@@ -290,10 +273,29 @@ class DragonglassServer:
                 return HTTPStatus.OK, [], b"OK\n"
             return None
 
+        async def _init() -> None:
+            try:
+                await self._start_managed_services(settings)
+            except Exception:
+                logger.exception(
+                    "server: failed to start managed services; continuing without them"
+                )
+            logger.info("server: connecting to vault")
+            try:
+                await self.agent.initialise()  # type: ignore[union-attr]
+                self._agent_ready = True
+            except Exception:
+                logger.exception("server: failed to connect to vault")
+
+        logger.info("server: starting websocket server on %s:%d", self.host, self.port)
         async with websockets.serve(
             self._handle_client, self.host, self.port, process_request=process_request
         ):
+            init_task = asyncio.create_task(_init())
             await self._stop_event.wait()
+            init_task.cancel()
+            with contextlib.suppress(Exception):
+                await init_task
 
         logger.info("server: shutting down")
         if self._chat_task:
@@ -749,6 +751,16 @@ class DragonglassServer:
         logger.info("server: chat message: %r (model=%s)", text, model_override)
 
         try:
+            if not self._agent_ready:
+                await websocket.send(
+                    serialize_event(
+                        StatusEvent(
+                            message="Backend is still starting up, please wait a moment."
+                        )
+                    )
+                )
+                await websocket.send(serialize_event(DoneEvent()))
+                return
             if self.agent:
                 if not self._current_conversation_id:
                     self._current_conversation_id = str(uuid.uuid4())
