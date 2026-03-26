@@ -498,6 +498,9 @@ class VaultAgent:
                     yield event
                 return
 
+            if model_name.startswith("ollama/"):
+                model_name = "ollama_chat/" + model_name[len("ollama/") :]
+
             kwargs: dict[str, typing.Any] = {
                 "model": model_name,
                 "messages": messages,

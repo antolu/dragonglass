@@ -99,15 +99,6 @@ def resolve_chat_model(raw_model_override: object, selected_model: str) -> str |
     return None
 
 
-def format_ollama_chat_model_name(model_name: str) -> str:
-    stripped = model_name.strip()
-    if not stripped:
-        return stripped
-    if "/" in stripped:
-        return stripped
-    return f"ollama_chat/{stripped}"
-
-
 def is_embedding_model(model_name: str) -> bool:
     lowered = model_name.lower()
     return "embed" in lowered or "embedding" in lowered
@@ -129,9 +120,14 @@ def parse_ollama_models(raw_models: object) -> list[str]:
         if not name:
             continue
 
-        formatted_name = format_ollama_chat_model_name(name)
-        if not is_embedding_model(formatted_name):
-            parsed_models.append(formatted_name)
+        bare = name.strip()
+        if bare.startswith("ollama_chat/"):
+            bare = bare[len("ollama_chat/") :]
+        elif bare.startswith("ollama/"):
+            bare = bare[len("ollama/") :]
+        display_name = f"ollama/{bare}"
+        if not is_embedding_model(bare):
+            parsed_models.append(display_name)
 
     return parsed_models
 
