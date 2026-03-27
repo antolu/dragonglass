@@ -84,7 +84,7 @@ class BackendManager: ObservableObject {
             if case .needsPluginReload = phase { } else {
                 // Wait for the backend to be actually responsive before setting .ready
                 print("[BackendManager] Waiting for health check...")
-                try await Task.sleep(nanoseconds: 3_000_000_000) // 3s initial delay for Python startup
+                try await Task.sleep(nanoseconds: 6_000_000_000) // 6s initial delay for Python startup
                 let start = Date()
                 var ready = false
                 while Date().timeIntervalSince(start) < 30 { // 30s timeout after initial delay

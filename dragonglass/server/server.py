@@ -20,6 +20,9 @@ from http import HTTPStatus
 import httpx
 import tomli_w
 import websockets
+import websockets.asyncio.server
+import websockets.datastructures
+import websockets.http11
 from opencode_ai import AsyncOpencode
 from uvicorn import Config, Server
 
@@ -267,10 +270,13 @@ class DragonglassServer:
             loop.add_signal_handler(sig, self._stop_event.set)
 
         def process_request(
-            path: str, _headers: typing.Any
-        ) -> tuple[HTTPStatus, list[typing.Any], bytes] | None:
-            if path == "/health":
-                return HTTPStatus.OK, [], b"OK\n"
+            connection: websockets.asyncio.server.ServerConnection,
+            request: websockets.http11.Request,
+        ) -> websockets.http11.Response | None:
+            if request.path == "/health":
+                return websockets.http11.Response(
+                    200, "OK", websockets.datastructures.Headers([]), b"OK\n"
+                )
             return None
 
         async def _init() -> None:
