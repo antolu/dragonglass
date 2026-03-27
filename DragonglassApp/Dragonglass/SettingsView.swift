@@ -32,6 +32,7 @@ struct SettingsView: View {
                         modelSection(config)
                         backendSection(config)
                         permissionsSection(config)
+                        uiSection()
                         advancedSection(config)
                     }
                     .padding(.horizontal)
@@ -291,10 +292,18 @@ struct SettingsView: View {
         }
     }
 
+    private func uiSection() -> some View {
+        settingsSection("Interface") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Detailed tool events", isOn: $client.detailedToolEvents)
+                Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
+            }
+        }
+    }
+
     private func advancedSection(_ config: Binding<DragonglassConfig>) -> some View {
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
                 environmentSection(config)
             }
             .padding(.top, 8)

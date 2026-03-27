@@ -47,16 +47,6 @@ struct ContentView: View {
             }
 
             Button(action: {
-                client.detailedToolEvents.toggle()
-            }) {
-                Image(systemName: client.detailedToolEvents ? "list.bullet.indent" : "list.bullet")
-                    .foregroundColor(client.detailedToolEvents ? .accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .help(client.detailedToolEvents ? "Detailed tool events" : "Simple tool events")
-
-            Button(action: {
                 guard !client.isThinking else { return }
                 showingConversations = false
                 showingSettings = true

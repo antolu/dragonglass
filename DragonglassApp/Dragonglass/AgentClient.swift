@@ -161,7 +161,9 @@ class AgentClient: ObservableObject {
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
     @Published var llmBackend: String = "litellm"
-    @Published var detailedToolEvents: Bool = false
+    @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
+        didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
+    }
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
