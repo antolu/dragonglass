@@ -146,5 +146,5 @@ fi
   $PNPM_RUNNER build
 )
 
-cp "$PLUGIN_DIR/main.js" "$PLUGIN_RES_DIR/main.js"
-cp "$PLUGIN_DIR/manifest.json" "$PLUGIN_RES_DIR/manifest.json"
+cp "$PLUGIN_DIR/dist/main.js" "$PLUGIN_RES_DIR/main.js"
+cp "$PLUGIN_DIR/dist/manifest.json" "$PLUGIN_RES_DIR/manifest.json"
