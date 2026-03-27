@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var lastModelSent: String?
     @State private var lastRequestStartIndex: Int?
     @State private var showingConversations = false
+    @State private var isAtBottom = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -201,12 +202,33 @@ struct ContentView: View {
                     }
                 }
                 .padding()
+
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: BottomVisibilityKey.self,
+                        value: geo.frame(in: .global).minY
+                    )
+                }
+                .frame(height: 1)
+                .id("bottom")
+            }
+            .coordinateSpace(name: "scroll")
+            .backgroundPreferenceValue(BottomVisibilityKey.self) { minY in
+                GeometryReader { scrollGeo in
+                    let scrollMaxY = scrollGeo.frame(in: .global).maxY
+                    Color.clear.onAppear {
+                        isAtBottom = minY <= scrollMaxY
+                    }.onChange(of: minY) { _, y in
+                        isAtBottom = y <= scrollMaxY
+                    }
+                }
             }
             .onChange(of: client.events.count) { _, _ in
                 if let last = client.events.indices.last {
-                    proxy.scrollTo(last)
+                    if isAtBottom {
+                        proxy.scrollTo("bottom")
+                    }
 
-                    // If last event is .done and we used a custom model, save it
                     if case .done = client.events[last],
                        let model = lastModelSent,
                        !model.isEmpty,
@@ -356,6 +378,13 @@ struct EventRow: View {
             Text("Unknown event: \(type)")
                 .font(.caption)
         }
+    }
+}
+
+private struct BottomVisibilityKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
