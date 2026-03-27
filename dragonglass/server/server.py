@@ -951,9 +951,16 @@ class DragonglassServer:
             "llm_backend" in new_config
             and new_config["llm_backend"] != old_settings.llm_backend
         )
+        if backend_changed:
+            current_toml[f"selected_model_{old_settings.llm_backend}"] = (
+                old_settings.selected_model
+            )
         current_toml.update(new_config)
         if backend_changed:
-            current_toml.pop("selected_model", None)
+            new_backend = new_config["llm_backend"]
+            current_toml["selected_model"] = current_toml.get(
+                f"selected_model_{new_backend}", ""
+            )
 
         # Ensure the config directory exists before writing
         paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
