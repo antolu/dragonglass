@@ -100,6 +100,8 @@ struct SettingsView: View {
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
+            .foregroundColor(.red)
+            .focusable(false)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -210,6 +212,7 @@ struct SettingsView: View {
 
                 if config.llmBackend.wrappedValue == "opencode" {
                     Toggle("Spawn Managed Server", isOn: config.spawnOpencode)
+                        .toggleStyle(.switch)
                 }
             }
         }
@@ -220,8 +223,11 @@ struct SettingsView: View {
         settingsSection("Permissions") {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Auto-allow Edits", isOn: config.autoAllowEdit)
+                    .toggleStyle(.switch)
                 Toggle("Auto-allow Create", isOn: config.autoAllowCreate)
+                    .toggleStyle(.switch)
                 Toggle("Auto-allow Delete", isOn: config.autoAllowDelete)
+                    .toggleStyle(.switch)
             }
         }
     }
@@ -296,7 +302,9 @@ struct SettingsView: View {
         settingsSection("Interface") {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Detailed tool events", isOn: $client.detailedToolEvents)
+                    .toggleStyle(.switch)
                 Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
+                    .toggleStyle(.switch)
             }
         }
     }
