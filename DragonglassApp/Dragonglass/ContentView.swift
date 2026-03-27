@@ -34,6 +34,16 @@ struct ContentView: View {
 
             Button(action: {
                 guard !client.isThinking else { return }
+                client.startNewChat()
+            }) {
+                Image(systemName: "square.and.pencil")
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .disabled(client.isThinking)
+
+            Button(action: {
+                guard !client.isThinking else { return }
                 showingSettings = false
                 showingConversations = true
             }) {
