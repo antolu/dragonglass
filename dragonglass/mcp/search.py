@@ -731,7 +731,7 @@ async def do_patch_note_lines(  # noqa: PLR0911
         return {
             "error": (
                 "No stored hash for this file. Call dragonglass_read_note_with_hash(path) before "
-                "dragonglass_patch_note_lines(path, ...)."
+                "calling any note edit tool."
             )
         }
 
@@ -938,21 +938,22 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         )
         return result
 
-    @m.tool(name="dragonglass_patch_note_lines")
-    async def patch_note_lines(
+    @m.tool(name="dragonglass_replace_lines")
+    async def replace_lines(
         path: str,
         start_line: int,
         end_line: int,
         replacement: str,
         expected_hash: str | None = None,
     ) -> dict[str, typing.Any]:
-        """Replace a 1-based inclusive line range in a markdown note.
+        """Replace a 1-based inclusive line range in a note with new text.
 
-        If expected_hash is omitted, the tool uses the hash captured by
-        read_note_with_hash(path) from the current search session.
-        Note that read_note_with_hash captures the hash of the ENTIRE file,
-        which is required for this tool to ensure atomicity even if only
-        a subset of lines was read.
+        Use this when you need to modify existing content (e.g. rewrite a sentence
+        or paragraph). Do NOT use this to insert — use dragonglass_insert_after_line
+        instead, as using replace for insertion will overwrite existing lines.
+
+        If expected_hash is omitted, uses the hash from the current session
+        (captured by read_note_with_hash). The hash covers the entire file.
         """
         started = time.monotonic()
         result = await do_patch_note_lines(
@@ -973,9 +974,91 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             else f"ok ({elapsed:.2f}s)"
         )
         emit_tool_event(
-            "dragonglass_patch_note_lines",
+            "dragonglass_replace_lines",
             phase,
-            f"Patching: {_safe_value_preview(path, 60)} lines {start_line}-{end_line}",
+            f"Replacing: {_safe_value_preview(path, 60)} lines {start_line}-{end_line}",
+            detail,
+        )
+        return result
+
+    @m.tool(name="dragonglass_insert_after_line")
+    async def insert_after_line(
+        path: str,
+        line: int,
+        text: str,
+        expected_hash: str | None = None,
+    ) -> dict[str, typing.Any]:
+        """Insert new text after a given 1-based line number without overwriting anything.
+
+        Use this to add new content (new sentences, list items, paragraphs) after
+        an existing line. To append to the end of the file, pass the last line number.
+
+        If expected_hash is omitted, uses the hash from the current session
+        (captured by read_note_with_hash).
+        """
+        started = time.monotonic()
+        result = await do_patch_note_lines(
+            settings,
+            {
+                "path": path,
+                "start_line": line + 1,
+                "end_line": line,
+                "replacement": text,
+                "expected_hash": expected_hash,
+            },
+        )
+        elapsed = time.monotonic() - started
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"ok ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_insert_after_line",
+            phase,
+            f"Inserting: {_safe_value_preview(path, 60)} after line {line}",
+            detail,
+        )
+        return result
+
+    @m.tool(name="dragonglass_delete_lines")
+    async def delete_lines(
+        path: str,
+        start_line: int,
+        end_line: int,
+        expected_hash: str | None = None,
+    ) -> dict[str, typing.Any]:
+        """Delete a 1-based inclusive line range from a note.
+
+        Use this to remove lines entirely. To replace content, use
+        dragonglass_replace_lines instead.
+
+        If expected_hash is omitted, uses the hash from the current session
+        (captured by read_note_with_hash).
+        """
+        started = time.monotonic()
+        result = await do_patch_note_lines(
+            settings,
+            {
+                "path": path,
+                "start_line": start_line,
+                "end_line": end_line,
+                "replacement": "",
+                "expected_hash": expected_hash,
+            },
+        )
+        elapsed = time.monotonic() - started
+        phase = "error" if "error" in result else "done"
+        detail = (
+            _safe_value_preview(result.get("error"))
+            if "error" in result
+            else f"ok ({elapsed:.2f}s)"
+        )
+        emit_tool_event(
+            "dragonglass_delete_lines",
+            phase,
+            f"Deleting: {_safe_value_preview(path, 60)} lines {start_line}-{end_line}",
             detail,
         )
         return result
