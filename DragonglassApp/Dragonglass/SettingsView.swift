@@ -361,6 +361,7 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
