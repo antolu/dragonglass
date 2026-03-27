@@ -293,14 +293,17 @@ class DragonglassServer:
             except Exception:
                 logger.exception("server: failed to connect to vault")
 
+        async def _init_shielded() -> None:
+            await asyncio.shield(asyncio.ensure_future(_init()))
+
         logger.info("server: starting websocket server on %s:%d", self.host, self.port)
         async with websockets.serve(
             self._handle_client, self.host, self.port, process_request=process_request
         ):
-            init_task = asyncio.create_task(_init())
+            init_task = asyncio.create_task(_init_shielded())
             await self._stop_event.wait()
             init_task.cancel()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception, asyncio.CancelledError):
                 await init_task
 
         logger.info("server: shutting down")
