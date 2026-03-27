@@ -69,7 +69,7 @@ struct ContentView: View {
                 client.refreshState()
             }
         }
-        .onChange(of: backend.phase) { phase in
+        .onChange(of: backend.phase) { _, phase in
             if phase == .ready || ({
                 if case .needsPluginReload = phase { return true }
                 return false
@@ -202,7 +202,7 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .onChange(of: client.events.count) { _ in
+            .onChange(of: client.events.count) { _, _ in
                 if let last = client.events.indices.last {
                     proxy.scrollTo(last)
 

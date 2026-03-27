@@ -197,7 +197,7 @@ struct SettingsView: View {
                         .help(opencodeDisabledReason ?? "OpenCode is unavailable")
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: config.llmBackend.wrappedValue) { newBackend in
+                .onChange(of: config.llmBackend.wrappedValue) { _, newBackend in
                     config.selectedModel.wrappedValue = ""
                     client.setBackend(newBackend)
                 }
