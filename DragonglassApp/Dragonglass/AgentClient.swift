@@ -1,6 +1,15 @@
 import Foundation
 import Combine
 
+struct ApprovalRequest: Identifiable {
+    let id: String
+    let tool: String
+    let permission: String
+    let path: String
+    let diff: String
+    let description: String
+}
+
 enum AgentEvent: Codable {
     case status(String)
     case assistantMessage(String)
@@ -13,6 +22,7 @@ enum AgentEvent: Codable {
     case conversationsList([ConversationMetadata])
     case conversationLoaded(String, [AgentEvent])
     case mcpTool(String, String, String, String)
+    case approvalRequest(ApprovalRequest)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -31,6 +41,11 @@ enum AgentEvent: Codable {
         case history
         case phase
         case detail
+        case requestId = "request_id"
+        case permission
+        case path
+        case diff
+        case description
     }
 
     init(from decoder: Decoder) throws {
@@ -70,6 +85,15 @@ enum AgentEvent: Codable {
                 try container.decode(String.self, forKey: .message),
                 (try? container.decode(String.self, forKey: .detail)) ?? ""
             )
+        case "ApprovalRequestEvent":
+            self = .approvalRequest(ApprovalRequest(
+                id: try container.decode(String.self, forKey: .requestId),
+                tool: try container.decode(String.self, forKey: .tool),
+                permission: try container.decode(String.self, forKey: .permission),
+                path: try container.decode(String.self, forKey: .path),
+                diff: try container.decode(String.self, forKey: .diff),
+                description: try container.decode(String.self, forKey: .description)
+            ))
         default:
             self = .unknown(type)
         }
@@ -118,6 +142,8 @@ enum AgentEvent: Codable {
             try container.encode(phase, forKey: .phase)
             try container.encode(message, forKey: .message)
             try container.encode(detail, forKey: .detail)
+        case .approvalRequest:
+            break
         }
     }
 }
@@ -154,6 +180,7 @@ class AgentClient: ObservableObject {
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
     @Published var llmBackend: String = "litellm"
+    @Published var pendingApproval: ApprovalRequest? = nil
     @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
         didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
     }
@@ -258,8 +285,10 @@ class AgentClient: ObservableObject {
                                     self.availableModels = models
                                 case .userMessage:
                                     self.events.append(event)
+                                case .approvalRequest(let req):
+                                    self.events.append(event)
+                                    self.pendingApproval = req
                                 case .unknown, .usage, .configAck:
-                                    // These are system events or unknown, don't show in chat
                                     break
                                 }
                             } catch {
@@ -328,6 +357,22 @@ class AgentClient: ObservableObject {
 
     func stopChat() {
         send(["command": "stop"])
+        isThinking = false
+    }
+
+    func approveRequest(_ req: ApprovalRequest, forSession: Bool) {
+        var payload: [String: Any] = [
+            "command": forSession ? "approve_session" : "approve",
+            "request_id": req.id,
+        ]
+        if forSession { payload["permission"] = req.permission }
+        send(payload)
+        pendingApproval = nil
+    }
+
+    func rejectRequest(_ req: ApprovalRequest) {
+        send(["command": "reject", "request_id": req.id])
+        pendingApproval = nil
         isThinking = false
     }
 
