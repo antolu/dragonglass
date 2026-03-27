@@ -30,11 +30,16 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
+            env_settings,
             TomlConfigSettingsSource(settings_cls),
         )
 
     obsidian_dir: str = ""
     llm_model: str = "ollama/llama3.2"
+    llm_backend: str = "litellm"
+    opencode_url: str = "http://localhost:4096"
+    mcp_http_port: int = 51364
+    spawn_opencode: bool = True
     llm_temperature: float | None = None
     llm_top_p: float | None = None
     llm_top_k: int | None = None

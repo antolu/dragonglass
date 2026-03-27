@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var newEnvKey = ""
     @State private var newEnvValue = ""
     @State private var envFilter = ""
+    @AppStorage("closePopoverOnFocusLoss") private var closePopoverOnFocusLoss = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +30,9 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         vaultSection(config)
                         modelSection(config)
+                        backendSection(config)
                         permissionsSection(config)
+                        uiSection()
                         advancedSection(config)
                     }
                     .padding(.horizontal)
@@ -180,6 +183,39 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
+    private func backendSection(_ config: Binding<DragonglassConfig>) -> some View {
+        settingsSection("LLM Backend") {
+            VStack(alignment: .leading, spacing: 8) {
+                let opencodeAvailable = config.opencodeAvailable.wrappedValue ?? true
+                let opencodeDisabledReason = config.opencodeDisabledReason.wrappedValue
+
+                Picker("Backend", selection: config.llmBackend) {
+                    Text("LiteLLM").tag("litellm")
+                    Text("OpenCode")
+                        .tag("opencode")
+                        .disabled(!opencodeAvailable)
+                        .help(opencodeDisabledReason ?? "OpenCode is unavailable")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: config.llmBackend.wrappedValue) { _, newBackend in
+                    config.selectedModel.wrappedValue = ""
+                    client.setBackend(newBackend)
+                }
+
+                if !opencodeAvailable {
+                    Text(opencodeDisabledReason ?? "OpenCode is unavailable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if config.llmBackend.wrappedValue == "opencode" {
+                    Toggle("Spawn Managed Server", isOn: config.spawnOpencode)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func permissionsSection(_ config: Binding<DragonglassConfig>) -> some View {
         settingsSection("Permissions") {
             VStack(alignment: .leading, spacing: 8) {
@@ -256,6 +292,15 @@ struct SettingsView: View {
         }
     }
 
+    private func uiSection() -> some View {
+        settingsSection("Interface") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Detailed tool events", isOn: $client.detailedToolEvents)
+                Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
+            }
+        }
+    }
+
     private func advancedSection(_ config: Binding<DragonglassConfig>) -> some View {
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 12) {
@@ -325,6 +370,7 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))

@@ -9,7 +9,7 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from dragonglass.agent.agent import (
     DoneEvent,
-    FileAccessEvent,
+    MCPToolEvent,
     StatusEvent,
     TextChunk,
     ToolErrorEvent,
@@ -167,8 +167,10 @@ class DragonglassApp(App[None]):
                         session_total=st,
                     ):
                         self._update_tokens(pt, ct, tt, st)
-                    case FileAccessEvent():
-                        pass
+                    case MCPToolEvent(tool=tool, phase=phase, message=message):
+                        log.write(
+                            f"\n[bold yellow]mcp[/bold yellow] {tool} [{phase}]: {message}\n"
+                        )
                     case DoneEvent():
                         break
         except Exception as exc:

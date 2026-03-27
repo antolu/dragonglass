@@ -5,7 +5,7 @@ description = "LLM-powered Obsidian vault agent with TUI"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-  "litellm >= 1.81.13",
+  "litellm >= 1.81.13, < 1.82.6",
   "textual >= 8.0.0",
   "httpx >= 0.28.1",
   "pydantic >= 2.12.5",
@@ -16,6 +16,7 @@ dependencies = [
   "click >= 8.1",
   "websockets >= 12.0",
   "tomli-w >= 1.0.0",
+  "opencode-ai == 0.1.0a36",
 ]
 
 [[project.authors]]
@@ -27,7 +28,7 @@ repository = "https://github.com/antolu/dragonglass"
 
 [project.optional-dependencies]
 dev = ["pre-commit", "ruff", "mypy"]
-test = ["pytest"]
+test = ["pytest", "pytest-timeout >= 2.1"]
 
 [project.scripts]
 dragonglass = "dragonglass.cli:cli"
@@ -84,8 +85,12 @@ disallow_untyped_defs = true
 python_version = "3.11"
 
 [[tool.mypy.overrides]]
-module = ["litellm.*", "textual.*", "fastmcp.*"]
+module = ["litellm.*", "textual.*", "fastmcp.*", "opencode_ai.*"]
 ignore_missing_imports = true
 
 [tool.pyright]
 reportPrivateImportUsage = "none"
+
+[tool.pytest.ini_options]
+timeout = 30
+timeout_method = "signal"

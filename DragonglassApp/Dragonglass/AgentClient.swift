@@ -6,7 +6,6 @@ enum AgentEvent: Codable {
     case assistantMessage(String)
     case error(String, String)
     case done
-    case fileAccess(String, String)
     case config(DragonglassConfig)
     case configAck
     case modelsList([String])
@@ -14,6 +13,7 @@ enum AgentEvent: Codable {
     case userMessage(String)
     case conversationsList([ConversationMetadata])
     case conversationLoaded(String, [AgentEvent])
+    case mcpTool(String, String, String, String)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -22,8 +22,6 @@ enum AgentEvent: Codable {
         case text
         case tool
         case error
-        case path
-        case operation
         case models
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
@@ -32,6 +30,8 @@ enum AgentEvent: Codable {
         case conversations
         case id
         case history
+        case phase
+        case detail
     }
 
     init(from decoder: Decoder) throws {
@@ -47,8 +47,6 @@ enum AgentEvent: Codable {
             self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
         case "DoneEvent", "doneevent":
             self = .done
-        case "FileAccessEvent", "fileaccessevent":
-            self = .fileAccess(try container.decode(String.self, forKey: .path), try container.decode(String.self, forKey: .operation))
         case "config":
             self = .config(try DragonglassConfig(from: decoder))
         case "config_ack":
@@ -68,13 +66,20 @@ enum AgentEvent: Codable {
             self = .conversationLoaded(try container.decode(String.self, forKey: .id), try container.decode([AgentEvent].self, forKey: .history))
         case "UserMessageEvent", "user_message":
             self = .userMessage(try container.decode(String.self, forKey: .message))
+        case "MCPToolEvent", "mcptoolevent":
+            self = .mcpTool(
+                try container.decode(String.self, forKey: .tool),
+                try container.decode(String.self, forKey: .phase),
+                try container.decode(String.self, forKey: .message),
+                (try? container.decode(String.self, forKey: .detail)) ?? ""
+            )
         default:
             self = .unknown(type)
         }
     }
 
     func encode(to encoder: Encoder) throws {
-        var container = try encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .status(let msg):
             try container.encode("StatusEvent", forKey: .type)
@@ -88,10 +93,6 @@ enum AgentEvent: Codable {
             try container.encode(err, forKey: .error)
         case .done:
             try container.encode("DoneEvent", forKey: .type)
-        case .fileAccess(let path, let op):
-            try container.encode("FileAccessEvent", forKey: .type)
-            try container.encode(path, forKey: .path)
-            try container.encode(op, forKey: .operation)
         case .config(let config):
             try container.encode("config", forKey: .type)
             try config.encode(to: encoder)
@@ -118,6 +119,12 @@ enum AgentEvent: Codable {
             try container.encode(history, forKey: .history)
         case .unknown(let type):
             try container.encode(type, forKey: .type)
+        case .mcpTool(let tool, let phase, let message, let detail):
+            try container.encode("MCPToolEvent", forKey: .type)
+            try container.encode(tool, forKey: .tool)
+            try container.encode(phase, forKey: .phase)
+            try container.encode(message, forKey: .message)
+            try container.encode(detail, forKey: .detail)
         }
     }
 }
@@ -144,6 +151,10 @@ class AgentClient: ObservableObject {
     @Published var selectedModel: String = ""
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
+    @Published var llmBackend: String = "litellm"
+    @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
+        didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
+    }
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let url = URL(string: "ws://localhost:51363")!
@@ -180,7 +191,9 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                case .status, .error, .fileAccess:
+                                case .status, .error:
+                                    self.events.append(event)
+                                case .mcpTool:
                                     self.events.append(event)
                                 case .done:
                                     self.events.append(event)
@@ -188,6 +201,11 @@ class AgentClient: ObservableObject {
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
+                                    self.llmBackend = config.llmBackend
+                                    if (config.opencodeAvailable ?? true) == false,
+                                       self.llmBackend == "opencode" {
+                                        self.llmBackend = "litellm"
+                                    }
                                     self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list
@@ -283,6 +301,13 @@ class AgentClient: ObservableObject {
 
     func saveModel(_ name: String) {
         send(["command": "save_model", "name": name])
+    }
+
+    func setBackend(_ backend: String) {
+        availableModels = []
+        selectedModel = ""
+        llmBackend = backend
+        send(["command": "set_config", "config": ["llm_backend": backend]])
     }
 
     func setSelectedModel(_ model: String) {

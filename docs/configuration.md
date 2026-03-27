@@ -20,14 +20,19 @@ Active chats are persisted in `XDG_DATA_HOME/dragonglass/conversations/` as JSON
 The backend behavior can be customized via a config.toml file in the configuration directory.
 
 ```toml
-# Obsidian REST API settings
-obsidian_api_url = "http://localhost:27123"
-obsidian_api_key = "my-secret-key"
+# Obsidian vault directory
+obsidian_dir = "/Users/you/Documents/ObsidianVault"
 
-# LLM & Ollama settings
+# LLM backend settings
 llm_model = "ollama/llama3.2"        # Default provider/model
+llm_backend = "litellm"               # or "opencode"
+opencode_url = "http://localhost:4096"
+spawn_opencode = true
+
+# Model and search endpoints
 ollama_url = "http://localhost:11434"
 vector_search_url = "http://localhost:51362"
+mcp_http_port = 51364
 
 # Agent behavior settings
 llm_temperature = 0.4
@@ -37,6 +42,9 @@ llm_min_p = 0.05
 
 # Search & Context settings
 agents_note_path = "AGENTS.md"       # Relative to vault root
+
+# Additional environment variables passed to subprocesses
+env_vars = { OPENAI_API_KEY = "..." }
 
 # Tool permission settings
 auto_allow_edit = true               # Patch and Update without asking
@@ -56,5 +64,5 @@ Any setting in the table above can be overridden by setting an environment varia
 
 Example:
 ```bash
-OBSIDIAN_API_KEY="override-key" DRAGON_LLM_MODEL="gemini/gemini-1.5-flash"
+LLM_MODEL="gemini/gemini-1.5-flash" OLLAMA_URL="http://localhost:11434"
 ```

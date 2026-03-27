@@ -32,6 +32,7 @@ struct ContentView: View {
             Spacer()
 
             Button(action: {
+                guard !client.isThinking else { return }
                 showingSettings = false
                 showingConversations = true
             }) {
@@ -39,12 +40,14 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .disabled(client.isThinking)
             .popover(isPresented: $showingConversations, arrowEdge: .top) {
                 ConversationManagerView(isPresented: $showingConversations)
                     .environmentObject(client)
             }
 
             Button(action: {
+                guard !client.isThinking else { return }
                 showingConversations = false
                 showingSettings = true
             }) {
@@ -52,6 +55,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .disabled(client.isThinking)
             .popover(isPresented: $showingSettings, arrowEdge: .top) {
                 SettingsView(isPresented: $showingSettings)
                     .environmentObject(client)
@@ -65,7 +69,7 @@ struct ContentView: View {
                 client.refreshState()
             }
         }
-        .onChange(of: backend.phase) { phase in
+        .onChange(of: backend.phase) { _, phase in
             if phase == .ready || ({
                 if case .needsPluginReload = phase { return true }
                 return false
@@ -84,7 +88,7 @@ struct ContentView: View {
 
             if !client.availableModels.isEmpty {
                 Divider()
-                Text("Ollama Models")
+                Text(client.llmBackend == "opencode" ? "OpenCode Models" : "Ollama Models")
                 ForEach(client.availableModels, id: \.self) { model in
                     Button(model) {
                         client.setSelectedModel(model)
@@ -189,7 +193,7 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(0..<client.events.count, id: \.self) { index in
-                        EventRow(event: client.events[index])
+                        EventRow(event: client.events[index], detailed: client.detailedToolEvents)
                     }
 
                     if client.isThinking {
@@ -198,7 +202,7 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .onChange(of: client.events.count) { _ in
+            .onChange(of: client.events.count) { _, _ in
                 if let last = client.events.indices.last {
                     proxy.scrollTo(last)
 
@@ -290,6 +294,7 @@ struct ContentView: View {
 
 struct EventRow: View {
     let event: AgentEvent
+    var detailed: Bool = false
 
     var body: some View {
         switch event {
@@ -303,18 +308,25 @@ struct EventRow: View {
         case .error(let tool, let err):
             Text("\(tool): \(err)")
                 .foregroundColor(.red)
-        case .fileAccess(let path, let op):
-            HStack {
-                if op == "search" {
-                    Image(systemName: "magnifyingglass")
-                } else {
-                    Image(systemName: "filemenu.and.cursorarrow")
+        case .mcpTool(let tool, let phase, let message, let detail):
+            HStack(alignment: .top, spacing: 6) {
+                if phase == "error" {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundColor(.red)
                 }
-                Text("\(op): \(path)")
+                if detailed {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(tool) [\(phase)]")
+                            .foregroundColor(.secondary)
+                        Text(message + (detail.isEmpty ? "" : " — \(detail)"))
+                    }
+                } else {
+                    Text(message)
+                }
             }
             .font(.caption)
             .padding(4)
-            .background(Color.blue.opacity(0.1))
+            .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
             .cornerRadius(4)
         case .config:
             EmptyView()

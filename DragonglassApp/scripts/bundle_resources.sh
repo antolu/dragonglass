@@ -13,6 +13,16 @@ find_python() {
   return 1
 }
 
+ensure_pip() {
+  py="$1"
+  if "$py" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  "$py" -m ensurepip --upgrade >/dev/null 2>&1 || return 1
+  "$py" -m pip --version >/dev/null 2>&1
+}
+
 find_pnpm_runner() {
   if command -v pnpm >/dev/null 2>&1; then
     echo "pnpm"
@@ -38,9 +48,33 @@ find_pnpm_runner() {
   return 1
 }
 
+find_uv_runner() {
+  if command -v uv >/dev/null 2>&1; then
+    echo "uv"
+    return 0
+  fi
+
+  for path in \
+    /opt/homebrew/bin/uv \
+    /usr/local/bin/uv \
+    "$HOME/.local/bin/uv"; do
+    if [ -x "$path" ]; then
+      echo "$path"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 FORCED_PYTHON="$(find_python || true)"
 if [ -z "$FORCED_PYTHON" ]; then
   echo "Error: Could not find Python 3.11+" >&2
+  exit 1
+fi
+
+if ! ensure_pip "$FORCED_PYTHON"; then
+  echo "Error: Selected Python has no pip and ensurepip failed: $FORCED_PYTHON" >&2
   exit 1
 fi
 
@@ -48,25 +82,39 @@ fi
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 _PY="$FORCED_PYTHON"
+UV_RUNNER="$(find_uv_runner || true)"
 RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 WHEELS_DIR="$RESOURCES_DIR/wheels"
 CACHE_DIR="$SRCROOT/../build/python_wheels"
 mkdir -p "$CACHE_DIR" "$RESOURCES_DIR"
 
 # 1) Populate/update wheel cache.
-"$_PY" -c "import subprocess, sys, tomllib; d=tomllib.load(open('$SRCROOT/../pyproject.toml', 'rb')); build_reqs=d['build-system']['requires']; subprocess.run([sys.executable, '-m', 'pip', 'download', '$SRCROOT/../'] + build_reqs + ['--dest', '$CACHE_DIR', '--exists-action', 'i'], check=True)" || echo "Offline or download failed, using cached wheels"
+if [ -n "$UV_RUNNER" ]; then
+  "$UV_RUNNER" run --no-project --python "$_PY" python -c "import subprocess, sys, tomllib; d=tomllib.load(open('$SRCROOT/../pyproject.toml', 'rb')); build_reqs=d['build-system']['requires']; subprocess.run([sys.executable, '-m', 'pip', 'download', '$SRCROOT/../'] + build_reqs + ['--dest', '$CACHE_DIR', '--exists-action', 'i'], check=True)" || echo "Offline or download failed, using cached wheels"
+else
+  "$_PY" -c "import subprocess, sys, tomllib; d=tomllib.load(open('$SRCROOT/../pyproject.toml', 'rb')); build_reqs=d['build-system']['requires']; subprocess.run([sys.executable, '-m', 'pip', 'download', '$SRCROOT/../'] + build_reqs + ['--dest', '$CACHE_DIR', '--exists-action', 'i'], check=True)" || echo "Offline or download failed, using cached wheels"
+fi
 
 # 2) Build wheel bundle for app resources.
 rm -rf "$WHEELS_DIR"
 mkdir -p "$WHEELS_DIR"
-"$_PY" -m pip wheel "$SRCROOT/../" \
-  --wheel-dir "$WHEELS_DIR" \
-  --no-index \
-  --find-links "$CACHE_DIR"
+if [ -n "$UV_RUNNER" ]; then
+  "$UV_RUNNER" run --no-project --python "$_PY" python -m pip wheel "$SRCROOT/../" \
+    --wheel-dir "$WHEELS_DIR" \
+    --no-index \
+    --find-links "$CACHE_DIR"
+else
+  "$_PY" -m pip wheel "$SRCROOT/../" \
+    --wheel-dir "$WHEELS_DIR" \
+    --no-index \
+    --find-links "$CACHE_DIR"
+fi
 
 VERSION="$("$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)")"
 printf "%s\n" "$VERSION" > "$RESOURCES_DIR/version.txt"
 "$_PY" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" > "$RESOURCES_DIR/python_version.txt"
+
+cp "$SRCROOT/opencode/package.json" "$RESOURCES_DIR/opencode_package.json"
 
 # 3) Build and bundle Obsidian plugin.
 PLUGIN_DIR="$SRCROOT/../obsidian-plugin"

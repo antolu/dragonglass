@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import collections.abc
 import contextlib
-import dataclasses
 import json
 import logging
 import os
@@ -15,119 +14,32 @@ import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
+from opencode_ai import AsyncOpencode
 
+from dragonglass.agent.opencode import run_opencode_turn
 from dragonglass.agent.prompts import load_system_prompt
+from dragonglass.agent.types import (
+    AgentEvent,
+    DoneEvent,
+    JsonValue,
+    MCPToolEvent,
+    StatusEvent,
+    TextChunk,
+    ToolErrorEvent,
+    UsageEvent,
+    UserMessageEvent,
+    _FallbackFunction,
+    _FallbackToolCall,
+    _FunctionCall,
+    _Message,
+    _Tool,
+    _ToolCallMsg,
+    _ToolFunction,
+)
 from dragonglass.config import Settings, get_settings
 from dragonglass.mcp.search import create_search_server
 
 logger = logging.getLogger(__name__)
-
-JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
-
-
-class _ToolFunction(typing.TypedDict):
-    name: str
-    description: str
-    parameters: dict[str, JsonValue]
-
-
-class _Tool(typing.TypedDict):
-    type: str
-    function: _ToolFunction
-
-
-class _FunctionCall(typing.TypedDict):
-    name: str
-    arguments: str
-
-
-@dataclasses.dataclass
-class _FallbackFunction:
-    name: str
-    arguments: str
-
-
-@dataclasses.dataclass
-class _FallbackToolCall:
-    id: str
-    function: _FallbackFunction
-
-
-class _ToolCallMsg(typing.TypedDict):
-    id: str
-    type: str
-    function: _FunctionCall
-
-
-class _Message(typing.TypedDict, total=False):
-    role: str
-    content: str
-    tool_calls: list[_ToolCallMsg]
-    tool_call_id: str
-
-
-@dataclasses.dataclass
-class StatusEvent:
-    message: str
-
-
-@dataclasses.dataclass
-class ToolErrorEvent:
-    tool: str
-    error: str
-
-
-@dataclasses.dataclass
-class TextChunk:
-    text: str
-
-
-@dataclasses.dataclass
-class DoneEvent:
-    pass
-
-
-@dataclasses.dataclass
-class UsageEvent:
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    session_total: int
-
-
-@dataclasses.dataclass
-class FileAccessEvent:
-    path: str
-    operation: str  # "read" | "write" | "delete"
-
-
-@dataclasses.dataclass
-class UserMessageEvent:
-    message: str
-
-
-@dataclasses.dataclass
-class ConversationsListEvent:
-    conversations: list[dict[str, typing.Any]]
-
-
-@dataclasses.dataclass
-class ConversationLoadedEvent:
-    id: str
-    history: list[AgentEvent]
-
-
-AgentEvent = (
-    StatusEvent
-    | ToolErrorEvent
-    | TextChunk
-    | UsageEvent
-    | DoneEvent
-    | FileAccessEvent
-    | ConversationsListEvent
-    | ConversationLoadedEvent
-    | UserMessageEvent
-)
 
 
 def history_to_events(history: list[_Message]) -> list[AgentEvent]:
@@ -139,6 +51,16 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
             events.append(UserMessageEvent(message=content))
         elif role == "assistant" and content:
             events.append(TextChunk(text=content))
+        elif role == "tool":
+            tool_name = str(msg.get("tool_call_id") or "tool")
+            if content:
+                events.append(
+                    MCPToolEvent(
+                        tool=tool_name,
+                        phase="done",
+                        message=content,
+                    )
+                )
         # Tool messages and tool_calls are currently omitted from UI history
         # as they are intermediate steps.
     return events
@@ -170,8 +92,10 @@ def _is_error_result(result: str) -> bool:
 _TOOL_STATUS: dict[str, str] = {
     "fetch": "fetching",
     "sequentialthinking": "thinking",
-    "open_note": "opening",
-    "run_command": "running command",
+    "dragonglass_open_note": "opening",
+    "dragonglass_run_command": "running command",
+    "dragonglass_manage_frontmatter": "updating frontmatter",
+    "dragonglass_manage_tags": "updating tags",
 }
 
 
@@ -277,19 +201,7 @@ def resolve_model_name(model_override: str | None, default_model: str) -> str:
     return override
 
 
-_EXCLUDED_MCP_TOOLS = frozenset({
-    "obsidian_read_note",
-    "obsidian_global_search",
-    "obsidian_search_replace",
-})
-
-_FILE_READ_TOOLS = frozenset({
-    "read_note_with_hash",
-})
-_FILE_WRITE_TOOLS = frozenset({
-    "patch_note_lines",
-})
-_FILE_DELETE_TOOLS: frozenset[str] = frozenset()
+_EXCLUDED_MCP_TOOLS: frozenset[str] = frozenset()
 
 
 def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -408,6 +320,7 @@ class VaultAgent:
         self._search = create_search_server(get_settings())
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
+        self._opencode_session_id: str | None = None
 
     async def initialise(self) -> None:
         self._system_prompt, self.agents_note_found = await load_system_prompt(
@@ -418,6 +331,7 @@ class VaultAgent:
     def clear_history(self) -> None:
         self._history = []
         self._total_tokens = 0
+        self._opencode_session_id = None
 
     def get_history(self) -> list[_Message]:
         return list(self._history)
@@ -511,10 +425,74 @@ class VaultAgent:
             settings = get_settings()
             litellm.drop_params = True
             model_name = resolve_model_name(model_override, settings.llm_model)
+
+            if settings.llm_backend == "opencode":
+                if not self._opencode_session_id:
+                    # We create session lazily on first turn
+                    client = AsyncOpencode(base_url=settings.opencode_url)
+                    try:
+                        model_name_for_session = resolve_model_name(
+                            model_override, settings.llm_model
+                        )
+                        session_provider_id = "copilot"
+                        session_model_id = model_name_for_session
+                        if "/" in model_name_for_session:
+                            session_provider_id, session_model_id = (
+                                model_name_for_session.split("/", 1)
+                            )
+
+                        session = await client.session.create(
+                            extra_body={
+                                "agent": "dragonglass",
+                                "model": {
+                                    "providerID": session_provider_id,
+                                    "modelID": session_model_id,
+                                },
+                            }
+                        )
+                        logger.info(
+                            "created OpenCode session id=%s provider=%s model=%s",
+                            session.id,
+                            session_provider_id,
+                            session_model_id,
+                        )
+                        self._opencode_session_id = session.id
+                    except Exception:
+                        logger.exception("failed to create OpenCode session")
+                        yield StatusEvent(message="Failed to connect to OpenCode")
+                        yield DoneEvent()
+                        return
+
+                provider_id = "copilot"
+                model_id = model_name
+                if "/" in model_name:
+                    provider_id, model_id = model_name.split("/", 1)
+
+                logger.debug(
+                    "Switching to OpenCode backend  session=%s  provider=%s  model=%s",
+                    self._opencode_session_id,
+                    provider_id,
+                    model_id,
+                )
+                async for event in run_opencode_turn(
+                    self._opencode_session_id,
+                    messages[-1]["content"],  # Raw user message
+                    model_id,
+                    provider_id,
+                    settings,
+                    system_prompt=self._system_prompt,
+                    agent="dragonglass",
+                ):
+                    yield event
+                return
+
+            if model_name.startswith("ollama/"):
+                model_name = "ollama_chat/" + model_name[len("ollama/") :]
+
             kwargs: dict[str, typing.Any] = {
                 "model": model_name,
                 "messages": messages,
-                "stream": False,
+                "stream": True,
                 "temperature": settings.llm_temperature,
                 "top_p": settings.llm_top_p,
                 "top_k": settings.llm_top_k,
@@ -550,37 +528,88 @@ class VaultAgent:
                 else:
                     logger.debug("  msg[%d] %s  %s", i, role, str(content)[:2000])
 
-            response = await litellm.acompletion(**kwargs)
-            logger.debug(
-                "LLM raw response: %s",
-                json.dumps(response.model_dump(), indent=2, default=str),
-            )
+            stream = await litellm.acompletion(**kwargs)
+            full_text = ""
+            accumulated_tool_calls: dict[str, _ToolCallMsg] = {}
+            usage_emitted = False
+            final_reasoning = ""
 
-            # Log the full assistant response to make it easier to follow the chain
-            choice = response.choices[0]
-            msg = choice.message
-            if msg.content:
-                logger.debug("Assistant response content: %s", msg.content)
+            async for chunk in stream:
+                usage = getattr(chunk, "usage", None)
+                if usage and not usage_emitted:
+                    pt = getattr(usage, "prompt_tokens", 0) or 0
+                    ct = getattr(usage, "completion_tokens", 0) or 0
+                    self._total_tokens += pt + ct
+                    yield UsageEvent(
+                        prompt_tokens=pt,
+                        completion_tokens=ct,
+                        total_tokens=pt + ct,
+                        session_total=self._total_tokens,
+                    )
+                    usage_emitted = True
 
-            usage = getattr(response, "usage", None)
-            if usage:
-                pt = getattr(usage, "prompt_tokens", 0) or 0
-                ct = getattr(usage, "completion_tokens", 0) or 0
-                self._total_tokens += pt + ct
-                yield UsageEvent(
-                    prompt_tokens=pt,
-                    completion_tokens=ct,
-                    total_tokens=pt + ct,
-                    session_total=self._total_tokens,
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+
+                delta = getattr(choices[0], "delta", None)
+                if delta is None:
+                    continue
+
+                content_delta = getattr(delta, "content", None)
+                if isinstance(content_delta, str) and content_delta:
+                    full_text += content_delta
+                    yield TextChunk(text=content_delta)
+
+                reasoning_delta = getattr(delta, "reasoning_content", None)
+                if isinstance(reasoning_delta, str) and reasoning_delta:
+                    final_reasoning += reasoning_delta
+
+                chunk_tool_calls = getattr(delta, "tool_calls", None) or []
+                for tc in chunk_tool_calls:
+                    tc_id = getattr(tc, "id", None)
+                    if not isinstance(tc_id, str) or not tc_id:
+                        continue
+                    function = getattr(tc, "function", None)
+                    name_delta = getattr(function, "name", None) if function else None
+                    args_delta = (
+                        getattr(function, "arguments", None) if function else None
+                    )
+
+                    existing = accumulated_tool_calls.get(tc_id)
+                    if existing is None:
+                        accumulated_tool_calls[tc_id] = _ToolCallMsg(
+                            id=tc_id,
+                            type="function",
+                            function=_FunctionCall(
+                                name=name_delta or "",
+                                arguments=args_delta or "",
+                            ),
+                        )
+                    else:
+                        if isinstance(name_delta, str) and name_delta:
+                            existing["function"]["name"] = (
+                                existing["function"].get("name", "") + name_delta
+                            )
+                        if isinstance(args_delta, str) and args_delta:
+                            existing["function"]["arguments"] = (
+                                existing["function"].get("arguments", "") + args_delta
+                            )
+
+            msg_content = full_text
+            tool_calls = [
+                _FallbackToolCall(
+                    id=tc["id"],
+                    function=_FallbackFunction(
+                        name=tc["function"].get("name", ""),
+                        arguments=tc["function"].get("arguments", ""),
+                    ),
                 )
-
-            choice = response.choices[0]
-            msg = choice.message
-            tool_calls = getattr(msg, "tool_calls", None)
+                for tc in accumulated_tool_calls.values()
+            ]
 
             if not tool_calls:
-                reasoning = getattr(msg, "reasoning_content", None) or ""
-                fallback = parse_tool_calls_from_text(reasoning)
+                fallback = parse_tool_calls_from_text(final_reasoning)
                 if fallback:
                     logger.warning(
                         "tool calls found in reasoning_content, not in tool_calls — "
@@ -601,10 +630,10 @@ class VaultAgent:
             logger.debug(
                 "LLM response  tool_calls=%s  content=%s",
                 [tc.function.name for tc in tool_calls] if tool_calls else None,
-                msg.content,
+                msg_content,
             )
 
-            assistant_msg = _Message(role="assistant", content=msg.content or "")
+            assistant_msg = _Message(role="assistant", content=msg_content)
             if tool_calls:
                 assistant_msg["tool_calls"] = [
                     _ToolCallMsg(
@@ -620,8 +649,6 @@ class VaultAgent:
             messages.append(assistant_msg)
 
             if not tool_calls:
-                if msg.content:
-                    yield TextChunk(text=msg.content)
                 yield DoneEvent()
                 return
 
@@ -642,29 +669,6 @@ class VaultAgent:
                 status = _status_for_tool(tool_name, args)
                 if status:
                     yield StatusEvent(message=status)
-
-                if tool_name in {"keyword_search", "vector_search"}:
-                    queries = args.get("queries")
-                    detail = (
-                        ", ".join(str(q) for q in queries)
-                        if isinstance(queries, list) and queries
-                        else args.get("query")
-                    )
-                    if detail:
-                        yield FileAccessEvent(path=str(detail), operation="search")
-
-                file_path = str(
-                    args.get("filePath")
-                    or args.get("dirPath")
-                    or args.get("path")
-                    or ""
-                )
-                if file_path and tool_name in _FILE_READ_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="read")
-                elif file_path and tool_name in _FILE_WRITE_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="write")
-                elif file_path and tool_name in _FILE_DELETE_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="delete")
 
                 call_key = (tool_name, json.dumps(args, sort_keys=True))
                 if call_key in seen_calls:
@@ -688,13 +692,14 @@ class VaultAgent:
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
         search_tools = {
-            "new_search_session",
-            "keyword_search",
-            "vector_search",
-            "open_note",
-            "run_command",
-            "read_note_with_hash",
-            "patch_note_lines",
+            "dragonglass_new_search_session",
+            "dragonglass_keyword_search",
+            "dragonglass_vector_search",
+            "dragonglass_run_command",
+            "dragonglass_read_note_with_hash",
+            "dragonglass_patch_note_lines",
+            "dragonglass_manage_frontmatter",
+            "dragonglass_manage_tags",
         }
         if name in search_tools:
             try:

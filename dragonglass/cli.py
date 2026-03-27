@@ -11,7 +11,9 @@ import dotenv
 
 from dragonglass import paths
 from dragonglass.agent.headless import run_headless
+from dragonglass.config import get_settings
 from dragonglass.log import LOG_FILE, setup_logging
+from dragonglass.mcp.search import create_search_server
 from dragonglass.server.main import DEFAULT_PORT, run, start_server_daemon
 
 _PID_FILE = paths.DATA_DIR / "dragonglass.pid"
@@ -68,6 +70,14 @@ def stop() -> None:
     except ProcessLookupError:
         click.echo("process not running, removing stale pid file")
         os.remove(_PID_FILE)
+
+
+@cli.command()
+def mcp() -> None:
+    """Run the MCP server (STDIO)."""
+    setup_logging(rollover=False)
+    server = create_search_server(get_settings())
+    server.run()
 
 
 @cli.command()
