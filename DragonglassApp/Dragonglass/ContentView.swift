@@ -87,6 +87,7 @@ struct ContentView: View {
         .onChange(of: backend.phase) { _, phase in
             if phase == .ready || ({
                 if case .needsPluginReload = phase { return true }
+                if case .needsPluginUpdate = phase { return true }
                 return false
             }()) {
                 if !client.isConnected { client.connect() }
@@ -175,11 +176,22 @@ struct ContentView: View {
                 ProgressView("Installing dependencies...")
             case .starting:
                 ProgressView("Starting backend...")
-            case .needsPluginReload(let message):
+            case .needsPluginUpdate(let from, let to):
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.largeTitle)
                     .foregroundColor(.orange)
-                Text(message)
+                Text("A plugin update is available (\(from) → \(to)). Update now?")
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Button("Update Plugin") {
+                    backend.applyPluginUpdate()
+                }
+                .buttonStyle(.borderedProminent)
+            case .needsPluginReload:
+                Image(systemName: "checkmark.circle")
+                    .font(.largeTitle)
+                    .foregroundColor(.green)
+                Text("Plugin updated. Toggle it off and on in Obsidian → Settings → Community plugins to apply.")
                     .multilineTextAlignment(.center)
                     .padding()
                 Button("Done") {
