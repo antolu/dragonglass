@@ -83,6 +83,8 @@ class MenuBarManager: NSObject, ObservableObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            let closeOnFocusLoss = UserDefaults.standard.bool(forKey: "closePopoverOnFocusLoss")
+            popover.behavior = closeOnFocusLoss ? .semitransient : .transient
             NSApplication.shared.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()

@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var newEnvKey = ""
     @State private var newEnvValue = ""
     @State private var envFilter = ""
+    @AppStorage("closePopoverOnFocusLoss") private var closePopoverOnFocusLoss = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -293,6 +294,7 @@ struct SettingsView: View {
     private func advancedSection(_ config: Binding<DragonglassConfig>) -> some View {
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 12) {
+                Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
                 environmentSection(config)
             }
             .padding(.top, 8)
