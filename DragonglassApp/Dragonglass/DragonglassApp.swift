@@ -6,16 +6,14 @@ struct DragonglassApp: App {
     @StateObject private var backend = BackendManager()
     @StateObject private var client = AgentClient()
     @StateObject private var menuBarManager = MenuBarManager()
-    @State private var showingSettings = false
 
     var body: some Scene {
+        let _ = menuBarManager.setup(backend: backend, client: client)
+
         Settings {
-            SettingsView(isPresented: $showingSettings)
+            SettingsView(isPresented: .constant(false))
                 .environmentObject(backend)
                 .environmentObject(client)
-                .onAppear {
-                    menuBarManager.setup(backend: backend, client: client)
-                }
         }
     }
 }

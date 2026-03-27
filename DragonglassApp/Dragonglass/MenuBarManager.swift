@@ -11,6 +11,7 @@ class MenuBarManager: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     func setup(backend: BackendManager, client: AgentClient) {
+        guard self.backend == nil else { return }
         self.backend = backend
         self.client = client
 
