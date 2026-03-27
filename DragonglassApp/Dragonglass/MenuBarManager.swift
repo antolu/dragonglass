@@ -48,13 +48,15 @@ class MenuBarManager: NSObject, ObservableObject {
                 }
                 updateIcon()
 
-                let p = NSPopover()
-                p.contentViewController = NSHostingController(rootView:
+                let hostingController = NSHostingController(rootView:
                     ContentView()
                         .environmentObject(backend)
                         .environmentObject(client)
-                        .frame(width: 400, height: 600)
+                        .frame(width: 400, height: 500)
                 )
+                hostingController.safeAreaRegions = []
+                let p = NSPopover()
+                p.contentViewController = hostingController
                 p.behavior = .transient
                 self.popover = p
             }
