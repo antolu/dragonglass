@@ -211,8 +211,14 @@ struct SettingsView: View {
                 }
 
                 if config.llmBackend.wrappedValue == "opencode" {
-                    Toggle("Spawn Managed Server", isOn: config.spawnOpencode)
-                        .toggleStyle(.switch)
+                    HStack {
+                        Text("Spawn Managed Server")
+                        Spacer()
+                        Toggle("", isOn: config.spawnOpencode)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                    }
                 }
             }
         }
@@ -221,13 +227,31 @@ struct SettingsView: View {
     @ViewBuilder
     private func permissionsSection(_ config: Binding<DragonglassConfig>) -> some View {
         settingsSection("Permissions") {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Auto-allow Edits", isOn: config.autoAllowEdit)
-                    .toggleStyle(.switch)
-                Toggle("Auto-allow Create", isOn: config.autoAllowCreate)
-                    .toggleStyle(.switch)
-                Toggle("Auto-allow Delete", isOn: config.autoAllowDelete)
-                    .toggleStyle(.switch)
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Auto-allow Edits")
+                    Spacer()
+                    Toggle("", isOn: config.autoAllowEdit)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                HStack {
+                    Text("Auto-allow Create")
+                    Spacer()
+                    Toggle("", isOn: config.autoAllowCreate)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                HStack {
+                    Text("Auto-allow Delete")
+                    Spacer()
+                    Toggle("", isOn: config.autoAllowDelete)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
             }
         }
     }
@@ -300,12 +324,25 @@ struct SettingsView: View {
 
     private func uiSection() -> some View {
         settingsSection("Interface") {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Detailed tool events", isOn: $client.detailedToolEvents)
-                    .toggleStyle(.switch)
-                Toggle("Close popover when clicking another window", isOn: $closePopoverOnFocusLoss)
-                    .toggleStyle(.switch)
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Detailed tool events")
+                    Spacer()
+                    Toggle("", isOn: $client.detailedToolEvents)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                HStack {
+                    Text("Close popover when clicking another window")
+                    Spacer()
+                    Toggle("", isOn: $closePopoverOnFocusLoss)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
