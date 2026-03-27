@@ -129,6 +129,15 @@ enum AgentEvent: Codable {
     }
 }
 
+struct ChatTurn: Identifiable {
+    let id: Int
+    let userMessageIndex: Int
+    var toolCallIndices: [Int] = []
+    var assistantMessageIndex: Int?
+    var doneIndex: Int?
+    var isCompleted: Bool { doneIndex != nil }
+}
+
 struct ConversationMetadata: Codable, Identifiable {
     let id: String
     let title: String
@@ -154,6 +163,45 @@ class AgentClient: ObservableObject {
     @Published var llmBackend: String = "litellm"
     @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
         didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
+    }
+
+    var turns: [ChatTurn] {
+        var result: [ChatTurn] = []
+        var current: ChatTurn? = nil
+
+        for (index, event) in events.enumerated() {
+            switch event {
+            case .userMessage:
+                if let c = current { result.append(c) }
+                current = ChatTurn(id: index, userMessageIndex: index)
+            case .mcpTool:
+                current?.toolCallIndices.append(index)
+            case .assistantMessage:
+                if current?.assistantMessageIndex == nil {
+                    current?.assistantMessageIndex = index
+                }
+            case .done:
+                current?.doneIndex = index
+            default:
+                break
+            }
+        }
+        if let c = current { result.append(c) }
+        return result
+    }
+
+    var prefixEventIndices: [Int] {
+        var result: [Int] = []
+        for (index, event) in events.enumerated() {
+            if case .userMessage = event { break }
+            switch event {
+            case .status, .error, .configAck:
+                result.append(index)
+            default:
+                break
+            }
+        }
+        return result
     }
 
     private var webSocketTask: URLSessionWebSocketTask?

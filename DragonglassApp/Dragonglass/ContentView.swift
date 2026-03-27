@@ -203,8 +203,33 @@ struct ContentView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(0..<client.events.count, id: \.self) { index in
+                    ForEach(client.prefixEventIndices, id: \.self) { index in
                         EventRow(event: client.events[index], detailed: client.detailedToolEvents)
+                    }
+
+                    ForEach(client.turns) { turn in
+                        EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents)
+
+                        if turn.isCompleted {
+                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents)
+                            if let doneIdx = turn.doneIndex {
+                                EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents)
+                            }
+                        } else {
+                            if let idx = turn.toolCallIndices.last,
+                               case .mcpTool(let t, let p, let m, let d) = client.events[idx] {
+                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents)
+                                    .id(idx)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                                        removal: .move(edge: .top).combined(with: .opacity)
+                                    ))
+                            }
+                        }
+
+                        if let aIdx = turn.assistantMessageIndex {
+                            EventRow(event: client.events[aIdx], detailed: client.detailedToolEvents)
+                        }
                     }
 
                     if client.isThinking {
@@ -234,6 +259,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: client.events.count) { _, _ in
+                withAnimation(.easeInOut(duration: 0.3)) {}
                 if let last = client.events.indices.last {
                     if isAtBottom {
                         proxy.scrollTo("bottom")
@@ -340,26 +366,8 @@ struct EventRow: View {
         case .error(let tool, let err):
             Text("\(tool): \(err)")
                 .foregroundColor(.red)
-        case .mcpTool(let tool, let phase, let message, let detail):
-            HStack(alignment: .top, spacing: 6) {
-                if phase == "error" {
-                    Image(systemName: "exclamationmark.circle")
-                        .foregroundColor(.red)
-                }
-                if detailed {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(tool) [\(phase)]")
-                            .foregroundColor(.secondary)
-                        Text(message + (detail.isEmpty ? "" : " — \(detail)"))
-                    }
-                } else {
-                    Text(message)
-                }
-            }
-            .font(.caption)
-            .padding(4)
-            .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
-            .cornerRadius(4)
+        case .mcpTool:
+            EmptyView()
         case .config:
             EmptyView()
         case .configAck:
@@ -388,6 +396,64 @@ struct EventRow: View {
             Text("Unknown event: \(type)")
                 .font(.caption)
         }
+    }
+}
+
+struct ToolCallBadge: View {
+    let tool: String
+    let phase: String
+    let message: String
+    let detail: String
+    var detailed: Bool = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            if phase == "error" {
+                Image(systemName: "exclamationmark.circle")
+                    .foregroundColor(.red)
+            }
+            if detailed {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(tool) [\(phase)]")
+                        .foregroundColor(.secondary)
+                    Text(message + (detail.isEmpty ? "" : " — \(detail)"))
+                }
+            } else {
+                Text(message)
+            }
+        }
+        .font(.caption)
+        .padding(4)
+        .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
+        .cornerRadius(4)
+    }
+}
+
+struct CollapsedToolSummary: View {
+    let turn: ChatTurn
+    let events: [AgentEvent]
+    var detailed: Bool = false
+    @State private var isExpanded = false
+
+    var body: some View {
+        if turn.toolCallIndices.isEmpty { return AnyView(EmptyView()) }
+        return AnyView(
+            DisclosureGroup(isExpanded: $isExpanded) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(turn.toolCallIndices, id: \.self) { idx in
+                        if case .mcpTool(let t, let p, let m, let d) = events[idx] {
+                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed)
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            } label: {
+                let count = turn.toolCallIndices.count
+                Text("\(count) tool call\(count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        )
     }
 }
 
