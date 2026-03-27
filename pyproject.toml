@@ -5,7 +5,7 @@ description = "LLM-powered Obsidian vault agent with TUI"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-  "litellm >= 1.81.13, < 1.82.6",
+  "litellm >= 1.81.13, < 1.82.7",
   "textual >= 8.0.0",
   "httpx >= 0.28.1",
   "pydantic >= 2.12.5",
