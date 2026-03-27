@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # dragonglass — agent instructions
 
 ## Project overview
@@ -5,6 +9,53 @@
 dragonglass is an LLM-powered Obsidian vault agent. A Python WebSocket server (`dragonglass/server/`) acts as the backend, with a Textual TUI (`dragonglass/tui/`) and a Swift/SwiftUI macOS app (`DragonglassApp/`) as frontends. External MCP servers are spawned at runtime via `npx`/`uvx`.
 
 Python ≥ 3.11 is required. Everything is wired through `pyproject.toml`.
+
+---
+
+## Architecture
+
+### Components
+
+- **`dragonglass/agent/`** — `VaultAgent` runs the multi-turn LLM loop (max 20 iterations). It holds message history, dispatches tool calls, and emits typed `AgentEvent` objects as an async generator.
+- **`dragonglass/server/`** — `DragonglassServer` is a WebSocket + HTTP server (default port 51363). It owns the `VaultAgent` instance, serialises `AgentEvent` objects to JSON, and handles commands from clients.
+- **`dragonglass/mcp/`** — An HTTP/SSE MCP server (port 51364) exposing search and other tools. Also manages stdio MCP processes (`mcp-server-fetch` via `uvx`).
+- **`dragonglass/search/`** — Search session backed by the Obsidian Vector Search plugin (separate HTTP server on port 51362).
+- **`dragonglass/tui/`** — Textual TUI client; uses `AgentClient` (Python WebSocket) to talk to the server.
+- **`DragonglassApp/`** — Swift/SwiftUI macOS app. `BackendManager` manages the Python venv lifecycle; `AgentClient.swift` owns the WebSocket connection.
+- **`obsidian-plugin/`** — TypeScript Obsidian plugin providing the vector search HTTP server.
+
+### WebSocket protocol
+
+Clients send JSON commands; the server streams back newline-delimited JSON events.
+
+**Inbound commands:** `chat`, `stop`, `ping`, `get_config`, `set_config`, `list_models`, `save_model`, `new_chat`, `list_conversations`, `load_conversation`, `delete_conversation`, `get_version`.
+
+**Outbound events** (the `AgentEvent` union): `StatusEvent`, `TextChunk`, `ToolErrorEvent`, `UsageEvent`, `DoneEvent`, `FileAccessEvent`, `MCPToolEvent`, `ConversationsListEvent`, `ConversationLoadedEvent`, `UserMessageEvent`.
+
+### Agent loop
+
+```
+chat command → VaultAgent.run(text)
+  → _agent_loop: LLM call (litellm or OpenCode HTTP)
+    → parse text + tool_calls
+    → _call_tool: search tools → local; others → stdio MCP session
+    → append tool result to history (truncated at 4000 chars)
+  → loop until no tool_calls or max iterations
+  → save conversation JSON → yield DoneEvent
+```
+
+### LLM backends
+
+- **litellm** (default) — direct async completions; temperature/top-p/top-k from settings.
+- **opencode** — external Node.js process spawned on startup; dragonglass writes its config, health-checks it, then proxies messages via HTTP. Falls back to litellm if startup fails.
+
+Backend is selected by `llm_backend` in settings (`"litellm"` or `"opencode"`).
+
+### Config & persistence
+
+- **Settings:** `~/.config/dragonglass/config.toml` — loaded via Pydantic `BaseSettings`; singleton invalidated and reloaded on `set_config`.
+- **Conversations:** `~/.cache/dragonglass/data/conversations/{uuid}.json` — auto-saved after each turn.
+- **Extra models:** `~/.config/dragonglass/extra_models.json`.
 
 ---
 
