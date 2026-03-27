@@ -11,7 +11,6 @@ import websockets
 from dragonglass.agent.agent import (
     AgentEvent,
     DoneEvent,
-    FileAccessEvent,
     MCPToolEvent,
     StatusEvent,
     TextChunk,
@@ -27,7 +26,6 @@ _EVENT_MAP: dict[str, type[AgentEvent]] = {
     "TextChunk": TextChunk,
     "UsageEvent": UsageEvent,
     "DoneEvent": DoneEvent,
-    "FileAccessEvent": FileAccessEvent,
     "MCPToolEvent": MCPToolEvent,
 }
 

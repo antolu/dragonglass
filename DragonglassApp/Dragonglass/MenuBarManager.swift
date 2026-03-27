@@ -45,6 +45,7 @@ class MenuBarManager: NSObject, ObservableObject {
                 if let button = statusItem?.button {
                     button.action = #selector(togglePopover)
                     button.target = self
+                    button.sendAction(on: .leftMouseDown)
                 }
                 updateIcon()
 

@@ -6,7 +6,6 @@ enum AgentEvent: Codable {
     case assistantMessage(String)
     case error(String, String)
     case done
-    case fileAccess(String, String)
     case config(DragonglassConfig)
     case configAck
     case modelsList([String])
@@ -23,8 +22,6 @@ enum AgentEvent: Codable {
         case text
         case tool
         case error
-        case path
-        case operation
         case models
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
@@ -50,8 +47,6 @@ enum AgentEvent: Codable {
             self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
         case "DoneEvent", "doneevent":
             self = .done
-        case "FileAccessEvent", "fileaccessevent":
-            self = .fileAccess(try container.decode(String.self, forKey: .path), try container.decode(String.self, forKey: .operation))
         case "config":
             self = .config(try DragonglassConfig(from: decoder))
         case "config_ack":
@@ -98,10 +93,6 @@ enum AgentEvent: Codable {
             try container.encode(err, forKey: .error)
         case .done:
             try container.encode("DoneEvent", forKey: .type)
-        case .fileAccess(let path, let op):
-            try container.encode("FileAccessEvent", forKey: .type)
-            try container.encode(path, forKey: .path)
-            try container.encode(op, forKey: .operation)
         case .config(let config):
             try container.encode("config", forKey: .type)
             try config.encode(to: encoder)
@@ -200,7 +191,7 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                case .status, .error, .fileAccess:
+                                case .status, .error:
                                     self.events.append(event)
                                 case .mcpTool:
                                     self.events.append(event)

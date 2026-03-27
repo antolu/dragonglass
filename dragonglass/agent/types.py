@@ -77,12 +77,6 @@ class UsageEvent:
 
 
 @dataclasses.dataclass
-class FileAccessEvent:
-    path: str
-    operation: str  # "read" | "write" | "delete"
-
-
-@dataclasses.dataclass
 class UserMessageEvent:
     message: str
 
@@ -112,7 +106,6 @@ AgentEvent = (
     | TextChunk
     | UsageEvent
     | DoneEvent
-    | FileAccessEvent
     | MCPToolEvent
     | ConversationsListEvent
     | ConversationLoadedEvent

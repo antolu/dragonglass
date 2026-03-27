@@ -308,23 +308,12 @@ struct EventRow: View {
         case .error(let tool, let err):
             Text("\(tool): \(err)")
                 .foregroundColor(.red)
-        case .fileAccess(let path, let op):
-            HStack {
-                if op == "search" {
-                    Image(systemName: "magnifyingglass")
-                } else {
-                    Image(systemName: "filemenu.and.cursorarrow")
-                }
-                Text("\(op): \(path)")
-            }
-            .font(.caption)
-            .padding(4)
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(4)
         case .mcpTool(let tool, let phase, let message, let detail):
             HStack(alignment: .top, spacing: 6) {
-                Image(systemName: phase == "error" ? "exclamationmark.circle" : "bolt.fill")
-                    .foregroundColor(phase == "error" ? .red : .orange)
+                if phase == "error" {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundColor(.red)
+                }
                 if detailed {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(tool) [\(phase)]")

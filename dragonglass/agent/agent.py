@@ -21,7 +21,6 @@ from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.agent.types import (
     AgentEvent,
     DoneEvent,
-    FileAccessEvent,
     JsonValue,
     MCPToolEvent,
     StatusEvent,
@@ -203,17 +202,6 @@ def resolve_model_name(model_override: str | None, default_model: str) -> str:
 
 
 _EXCLUDED_MCP_TOOLS: frozenset[str] = frozenset()
-
-_FILE_READ_TOOLS = frozenset({
-    "dragonglass_read_note_with_hash",
-})
-
-_FILE_WRITE_TOOLS = frozenset({
-    "dragonglass_patch_note_lines",
-    "dragonglass_manage_frontmatter",
-    "dragonglass_manage_tags",
-})
-_FILE_DELETE_TOOLS: frozenset[str] = frozenset()
 
 
 def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -681,32 +669,6 @@ class VaultAgent:
                 status = _status_for_tool(tool_name, args)
                 if status:
                     yield StatusEvent(message=status)
-
-                if tool_name in {
-                    "dragonglass_keyword_search",
-                    "dragonglass_vector_search",
-                }:
-                    queries = args.get("queries")
-                    detail = (
-                        ", ".join(str(q) for q in queries)
-                        if isinstance(queries, list) and queries
-                        else args.get("query")
-                    )
-                    if detail:
-                        yield FileAccessEvent(path=str(detail), operation="search")
-
-                file_path = str(
-                    args.get("filePath")
-                    or args.get("dirPath")
-                    or args.get("path")
-                    or ""
-                )
-                if file_path and tool_name in _FILE_READ_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="read")
-                elif file_path and tool_name in _FILE_WRITE_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="write")
-                elif file_path and tool_name in _FILE_DELETE_TOOLS:
-                    yield FileAccessEvent(path=file_path, operation="delete")
 
                 call_key = (tool_name, json.dumps(args, sort_keys=True))
                 if call_key in seen_calls:
