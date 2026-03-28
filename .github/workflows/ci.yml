@@ -79,4 +79,12 @@ jobs:
                      -scheme Dragonglass \
                      -configuration Release \
                      CODE_SIGNING_ALLOWED=NO \
-                     build
+                     build 2>&1 | tee xcodebuild.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
