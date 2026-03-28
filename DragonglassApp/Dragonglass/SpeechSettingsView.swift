@@ -31,34 +31,41 @@ struct SpeechSettingsView: View {
 
             Divider()
 
-            Text("Models")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            if sttManager.availableModels.isEmpty {
-                ProgressView("Loading models…")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(sttManager.availableModels, id: \.self) { model in
-                        ModelRowView(modelName: model)
-                            .environmentObject(sttManager)
-                    }
-                }
-            }
-
             if !sttManager.localModels.isEmpty {
-                Picker("Active model", selection: Binding(
-                    get: { sttManager.selectedModel },
-                    set: { sttManager.switchModel(to: $0) }
-                )) {
-                    ForEach(sttManager.localModels, id: \.self) { m in
-                        Text(m).tag(m)
+                HStack {
+                    Text("Active model")
+                        .font(.caption)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { sttManager.selectedModel },
+                        set: { sttManager.switchModel(to: $0) }
+                    )) {
+                        ForEach(sttManager.localModels, id: \.self) { m in
+                            Text(m).tag(m)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
             }
+
+            DisclosureGroup("Manage models") {
+                if sttManager.availableModels.isEmpty {
+                    ProgressView("Loading…")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(sttManager.availableModels, id: \.self) { model in
+                            ModelRowView(modelName: model)
+                                .environmentObject(sttManager)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
         }
         .onAppear {
             sttManager.refreshLocalModels()
