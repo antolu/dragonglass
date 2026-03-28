@@ -393,11 +393,25 @@ class BackendManager: ObservableObject {
         let binaries = ["python3", "python3.14", "python3.13", "python3.12", "python3.11"]
         var candidatePaths = Set<String>()
 
-        // 1. Try which -a for common names
+        // 1. Try which -a for common names, with an augmented PATH
+        let extraPaths = [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pyenv/shims").path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pyenv/bin").path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".conda/bin").path,
+        ]
+        let augmentedPath = (extraPaths + [(ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .components(separatedBy: ":")]).joined(separator: ":")
+
         for bin in binaries {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["which", "-a", bin]
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+            process.arguments = ["-a", bin]
+            process.environment = ["PATH": augmentedPath]
             let pipe = Pipe()
             process.standardOutput = pipe
             try? process.run()
@@ -414,13 +428,21 @@ class BackendManager: ObservableObject {
             }
         }
 
-        // 2. Add some hardcoded defaults just in case
-        let defaults = [
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
+        // 2. Add hardcoded paths covering common install locations
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        var defaults = [
             "/usr/bin/python3",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".conda/bin/python3").path
+            "/opt/homebrew/bin/python3",   // Apple Silicon homebrew
+            "/usr/local/bin/python3",       // Intel homebrew
+            homeDir.appendingPathComponent(".conda/bin/python3").path,
+            homeDir.appendingPathComponent(".pyenv/shims/python3").path,
         ]
+        // Versioned binaries for both homebrew prefixes
+        for bin in binaries where bin != "python3" {
+            defaults.append("/opt/homebrew/bin/\(bin)")
+            defaults.append("/usr/local/bin/\(bin)")
+            defaults.append(homeDir.appendingPathComponent(".pyenv/shims/\(bin)").path)
+        }
         candidatePaths.formUnion(defaults)
 
         var candidates: [(path: String, version: String)] = []
