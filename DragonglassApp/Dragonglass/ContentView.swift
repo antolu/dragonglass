@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var backend: BackendManager
     @EnvironmentObject var client: AgentClient
+    @EnvironmentObject var sttManager: STTManager
+    @EnvironmentObject var hotkeyManager: HotkeyManager
     @State private var inputText = ""
     @State private var showingSettings = false
     @State private var showingCustomModel = false
@@ -11,6 +13,7 @@ struct ContentView: View {
     @State private var lastRequestStartIndex: Int?
     @State private var showingConversations = false
     @State private var isAtBottom = true
+    @State private var escapeMonitor: Any?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,6 +77,8 @@ struct ContentView: View {
             .popover(isPresented: $showingSettings, arrowEdge: .top) {
                 SettingsView(isPresented: $showingSettings)
                     .environmentObject(client)
+                    .environmentObject(sttManager)
+                    .environmentObject(hotkeyManager)
             }
         }
         .padding()
@@ -314,10 +319,14 @@ struct ContentView: View {
 
     private var inputArea: some View {
         HStack {
-            TextField("Ask anything...", text: $inputText)
+            TextField(sttPendingPrompt, text: $inputText)
                 .textFieldStyle(.plain)
                 .onSubmit(sendMessage)
                 .disabled(client.isThinking)
+
+            MicButton()
+                .environmentObject(sttManager)
+                .environmentObject(client)
 
             if client.isThinking && client.pendingApproval == nil {
                 Button(action: { client.stopChat() }) {
@@ -338,6 +347,52 @@ struct ContentView: View {
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
+        .onChange(of: sttManager.pendingText) { _, text in
+            if let text { inputText = text }
+        }
+        .onChange(of: sttManager.readyToFire) { _, ready in
+            guard ready, let text = sttManager.pendingText, !text.isEmpty else { return }
+            sttManager.clearFireFlag()
+            let toSend = text
+            inputText = ""
+            sendSTT(toSend)
+        }
+        .onAppear { installEscapeMonitor() }
+        .onDisappear { removeEscapeMonitor() }
+    }
+
+    private var sttPendingPrompt: String {
+        if sttManager.isRecording { return "Recording…" }
+        if sttManager.isTranscribing { return "Transcribing…" }
+        if sttManager.pendingText != nil { return "Press Esc to cancel" }
+        return "Ask anything..."
+    }
+
+    private func sendSTT(_ text: String) {
+        guard !text.isEmpty, !client.isThinking else { return }
+        if !client.isConnected { client.connect() }
+        let model = client.selectedModel.isEmpty ? nil : client.selectedModel
+        lastModelSent = model
+        lastRequestStartIndex = client.events.count
+        client.sendChat(text: text, model: model)
+    }
+
+    private func installEscapeMonitor() {
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 && self.sttManager.pendingText != nil {
+                self.sttManager.cancelPending()
+                self.inputText = ""
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let mon = escapeMonitor {
+            NSEvent.removeMonitor(mon)
+            escapeMonitor = nil
+        }
     }
 
     private func sendMessage() {
@@ -593,6 +648,52 @@ struct ApprovalView: View {
         }
         .padding()
         .frame(width: 420, height: 340)
+    }
+}
+
+struct MicButton: View {
+    @EnvironmentObject var sttManager: STTManager
+    @EnvironmentObject var client: AgentClient
+    @State private var isHolding = false
+    @State private var pulsing = false
+
+    var body: some View {
+        ZStack {
+            if sttManager.isRecording {
+                Circle()
+                    .fill(Color.red.opacity(0.25))
+                    .scaleEffect(pulsing ? 1.5 : 1.0)
+                    .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulsing)
+                    .frame(width: 30, height: 30)
+                    .onAppear { pulsing = true }
+                    .onDisappear { pulsing = false }
+            }
+            if sttManager.isTranscribing {
+                ProgressView()
+                    .scaleEffect(0.6)
+                    .frame(width: 30, height: 30)
+            } else {
+                Image(systemName: sttManager.isRecording ? "microphone.fill" : "microphone")
+                    .foregroundColor(sttManager.isRecording ? .red : .secondary)
+                    .frame(width: 30, height: 30)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !isHolding else { return }
+                    isHolding = true
+                    sttManager.startRecording()
+                }
+                .onEnded { _ in
+                    guard isHolding else { return }
+                    isHolding = false
+                    sttManager.stopAndTranscribe()
+                }
+        )
+        .disabled(!sttManager.micPermissionGranted || client.isThinking)
+        .opacity(sttManager.micPermissionGranted ? 1.0 : 0.3)
+        .help(sttManager.micPermissionGranted ? "Hold to dictate" : "Microphone permission required")
     }
 }
 

@@ -1,19 +1,30 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 class MenuBarManager: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var backend: BackendManager?
     private var client: AgentClient?
+    private var sttManager: STTManager?
+    private var hotkeyManager: HotkeyManager?
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
 
-    func setup(backend: BackendManager, client: AgentClient) {
+    func setup(
+        backend: BackendManager,
+        client: AgentClient,
+        sttManager: STTManager,
+        hotkeyManager: HotkeyManager
+    ) {
         guard self.backend == nil else { return }
         self.backend = backend
         self.client = client
+        self.sttManager = sttManager
+        self.hotkeyManager = hotkeyManager
+
+        hotkeyManager.setup(sttManager: sttManager, menuBarManager: self)
 
         backend.$phase
             .receive(on: RunLoop.main)
@@ -29,7 +40,8 @@ class MenuBarManager: NSObject, ObservableObject {
     }
 
     func refresh() {
-        guard let backend = backend, let client = client else { return }
+        guard let backend = backend, let client = client,
+              let sttManager = sttManager, let hotkeyManager = hotkeyManager else { return }
 
         let isReady: Bool
         switch backend.phase {
@@ -53,6 +65,8 @@ class MenuBarManager: NSObject, ObservableObject {
                     ContentView()
                         .environmentObject(backend)
                         .environmentObject(client)
+                        .environmentObject(sttManager)
+                        .environmentObject(hotkeyManager)
                         .frame(width: 400, height: 500)
                 )
                 hostingController.safeAreaRegions = []
@@ -65,6 +79,15 @@ class MenuBarManager: NSObject, ObservableObject {
             statusItem = nil
             popover = nil
         }
+    }
+
+    func showPopover() {
+        guard let statusButton = statusItem?.button, let popover, !popover.isShown else { return }
+        let closeOnFocusLoss = UserDefaults.standard.bool(forKey: "closePopoverOnFocusLoss")
+        popover.behavior = closeOnFocusLoss ? .semitransient : .transient
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: statusButton.bounds, of: statusButton, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     private func updateIcon() {
@@ -80,15 +103,11 @@ class MenuBarManager: NSObject, ObservableObject {
     }
 
     @objc func togglePopover(_ sender: AnyObject?) {
-        guard let button = statusItem?.button, let popover = popover else { return }
+        guard let popover else { return }
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            let closeOnFocusLoss = UserDefaults.standard.bool(forKey: "closePopoverOnFocusLoss")
-            popover.behavior = closeOnFocusLoss ? .semitransient : .transient
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            showPopover()
         }
     }
 }
