@@ -60,6 +60,7 @@ jobs:
                      -scheme Dragonglass \
                      -configuration Release \
                      -derivedDataPath build/derivedData \
+                     -clonedSourcePackagesDirPath build/derivedData/SourcePackages \
                      clean build
 
       - name: Prepare Artifact

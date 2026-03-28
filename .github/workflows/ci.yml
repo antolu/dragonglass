@@ -79,5 +79,6 @@ jobs:
                      -scheme Dragonglass \
                      -configuration Release \
                      -derivedDataPath /tmp/dragonglass-derivedData \
+                     -clonedSourcePackagesDirPath /tmp/dragonglass-derivedData/SourcePackages \
                      CODE_SIGNING_ALLOWED=NO \
                      build
