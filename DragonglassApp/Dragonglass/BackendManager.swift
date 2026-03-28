@@ -404,8 +404,8 @@ class BackendManager: ObservableObject {
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pyenv/bin").path,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".conda/bin").path,
         ]
-        let augmentedPath = (extraPaths + [(ProcessInfo.processInfo.environment["PATH"] ?? "")
-            .components(separatedBy: ":")]).joined(separator: ":")
+        let augmentedPath = (extraPaths + (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .components(separatedBy: ":")).joined(separator: ":")
 
         for bin in binaries {
             let process = Process()
@@ -652,8 +652,8 @@ class BackendManager: ObservableObject {
             homeDir.appendingPathComponent(".volta/bin").path,
             homeDir.appendingPathComponent(".fnm").path,
         ]
-        let augmentedPath = (extraPaths + [(ProcessInfo.processInfo.environment["PATH"] ?? "")
-            .components(separatedBy: ":")]).joined(separator: ":")
+        let augmentedPath = (extraPaths + (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .components(separatedBy: ":")).joined(separator: ":")
 
         // which -a to collect all npm binaries on the augmented PATH
         let process = Process()
