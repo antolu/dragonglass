@@ -640,28 +640,59 @@ class BackendManager: ObservableObject {
     }
 
     private func findNpm() -> String? {
-        let candidates = [
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+
+        // Augment PATH so which can find node version manager installs
+        let extraPaths = [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            homeDir.appendingPathComponent(".volta/bin").path,
+            homeDir.appendingPathComponent(".fnm").path,
+        ]
+        let augmentedPath = (extraPaths + [(ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .components(separatedBy: ":")]).joined(separator: ":")
+
+        // which -a to collect all npm binaries on the augmented PATH
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["-a", "npm"]
+        process.environment = ["PATH": augmentedPath]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if let output = String(data: data, encoding: .utf8) {
+            let found = output.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if let first = found.first {
+                return first
+            }
+        }
+
+        // Hardcoded fallbacks including nvm (pick the highest node version available)
+        var hardcoded = [
             "/opt/homebrew/bin/npm",
             "/usr/local/bin/npm",
             "/usr/bin/npm",
-            "npm"
+            homeDir.appendingPathComponent(".volta/bin/npm").path,
         ]
-        for candidate in candidates {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["which", candidate]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            try? process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if let output = String(data: data, encoding: .utf8) {
-                    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        return trimmed
-                    }
-                }
+        // nvm: glob for installed node versions, pick the last (typically highest)
+        let nvmBase = homeDir.appendingPathComponent(".nvm/versions/node")
+        if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmBase.path).sorted() {
+            for v in versions.reversed() {
+                hardcoded.insert(nvmBase.appendingPathComponent("\(v)/bin/npm").path, at: 0)
+            }
+        }
+
+        for candidate in hardcoded {
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
             }
         }
         return nil
