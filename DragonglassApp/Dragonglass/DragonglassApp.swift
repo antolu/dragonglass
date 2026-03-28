@@ -11,13 +11,13 @@ struct DragonglassApp: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
 
     var body: some Scene {
-        let _ = menuBarManager.setup(
+        _ = menuBarManager.setup(
             backend: backend,
             client: client,
             sttManager: sttManager,
             hotkeyManager: hotkeyManager
         )
-        let _ = appDelegate.backend = backend
+        _ = appDelegate.backend = backend
 
         Settings {
             SettingsView(isPresented: .constant(false))

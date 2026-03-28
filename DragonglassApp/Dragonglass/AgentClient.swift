@@ -180,14 +180,14 @@ class AgentClient: ObservableObject {
     @Published var conversations: [ConversationMetadata] = []
     @Published var activeConversationId: String?
     @Published var llmBackend: String = "litellm"
-    @Published var pendingApproval: ApprovalRequest? = nil
+    @Published var pendingApproval: ApprovalRequest?
     @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
         didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
     }
 
     var turns: [ChatTurn] {
         var result: [ChatTurn] = []
-        var current: ChatTurn? = nil
+        var current: ChatTurn?
 
         for (index, event) in events.enumerated() {
             switch event {
@@ -363,7 +363,7 @@ class AgentClient: ObservableObject {
     func approveRequest(_ req: ApprovalRequest, forSession: Bool) {
         var payload: [String: Any] = [
             "command": forSession ? "approve_session" : "approve",
-            "request_id": req.id,
+            "request_id": req.id
         ]
         if forSession { payload["permission"] = req.permission }
         send(payload)

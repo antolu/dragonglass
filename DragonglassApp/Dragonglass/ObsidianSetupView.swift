@@ -149,7 +149,7 @@ class ObsidianSetupViewModel: ObservableObject {
 
 struct ObsidianSetupView: View {
     @Binding var isPresented: Bool
-    var onComplete: ((String) -> Void)? = nil
+    var onComplete: ((String) -> Void)?
     @StateObject private var vm = ObsidianSetupViewModel()
 
     var body: some View {
