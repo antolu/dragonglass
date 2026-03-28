@@ -73,6 +73,9 @@ jobs:
         with:
           version: latest
 
+      - name: Check build system default
+        run: defaults read com.apple.dt.Xcode UseModernBuildSystem
+
       - name: Build
         run: |
           xcodebuild -workspace DragonglassApp/Dragonglass.xcodeproj/project.xcworkspace \
