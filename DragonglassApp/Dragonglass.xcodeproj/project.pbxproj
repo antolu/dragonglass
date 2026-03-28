@@ -105,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				29D2027E2F78014200A0B14C /* XCRemoteSwiftPackageReference "whisperkit" */,
+				29D201F12F775B0400A0B14C /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 292A4A572F51C89500E0A96B /* Products */;
@@ -394,6 +395,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 0.17.0;
+			};
+		};
+		29D201F12F775B0400A0B14C /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SimplyDanny/SwiftLintPlugins";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.63.2;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
