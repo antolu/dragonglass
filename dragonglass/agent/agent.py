@@ -25,7 +25,6 @@ from dragonglass.agent.types import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
-    ToolErrorEvent,
     UsageEvent,
     UserMessageEvent,
     _FallbackFunction,
@@ -683,8 +682,10 @@ class VaultAgent:
                     logger.debug(
                         "tool %r  args=%s  result=%s", tool_name, args, result[:300]
                     )
-                if result.startswith(("Search server error:", "Tool '")):
-                    yield ToolErrorEvent(tool=tool_name, error=result)
+                if _is_error_result(result):
+                    yield MCPToolEvent(
+                        tool=tool_name, phase="error", message=tool_name, detail=result
+                    )
 
                 messages.append(
                     _Message(role="tool", tool_call_id=tc.id, content=result)

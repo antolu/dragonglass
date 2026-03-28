@@ -4,7 +4,6 @@ import Combine
 enum AgentEvent: Codable {
     case status(String)
     case assistantMessage(String)
-    case error(String, String)
     case done
     case config(DragonglassConfig)
     case configAck
@@ -43,8 +42,6 @@ enum AgentEvent: Codable {
             self = .status(try container.decode(String.self, forKey: .message))
         case "TextChunk", "textchunk":
             self = .assistantMessage(try container.decode(String.self, forKey: .text))
-        case "ToolErrorEvent", "toolerrorevent":
-            self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
         case "DoneEvent", "doneevent":
             self = .done
         case "config":
@@ -87,10 +84,6 @@ enum AgentEvent: Codable {
         case .assistantMessage(let msg):
             try container.encode("TextChunk", forKey: .type)
             try container.encode(msg, forKey: .text)
-        case .error(let tool, let err):
-            try container.encode("ToolErrorEvent", forKey: .type)
-            try container.encode(tool, forKey: .tool)
-            try container.encode(err, forKey: .error)
         case .done:
             try container.encode("DoneEvent", forKey: .type)
         case .config(let config):
@@ -195,7 +188,7 @@ class AgentClient: ObservableObject {
         for (index, event) in events.enumerated() {
             if case .userMessage = event { break }
             switch event {
-            case .status, .error, .configAck:
+            case .status, .configAck:
                 result.append(index)
             default:
                 break
@@ -239,7 +232,7 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                case .status, .error:
+                                case .status:
                                     self.events.append(event)
                                 case .mcpTool:
                                     self.events.append(event)

@@ -53,12 +53,6 @@ class StatusEvent:
 
 
 @dataclasses.dataclass
-class ToolErrorEvent:
-    tool: str
-    error: str
-
-
-@dataclasses.dataclass
 class TextChunk:
     text: str
 
@@ -102,7 +96,6 @@ class ConversationLoadedEvent:
 
 AgentEvent = (
     StatusEvent
-    | ToolErrorEvent
     | TextChunk
     | UsageEvent
     | DoneEvent

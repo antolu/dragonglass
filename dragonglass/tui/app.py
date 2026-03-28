@@ -12,7 +12,6 @@ from dragonglass.agent.agent import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
-    ToolErrorEvent,
     UsageEvent,
 )
 from dragonglass.agent.client import AgentClient
@@ -158,7 +157,7 @@ class DragonglassApp(App[None]):
                         status_widget.update(f"⟳ {msg}...")
                     case TextChunk(text=chunk):
                         log.write(chunk, scroll_end=True)
-                    case ToolErrorEvent(tool=tool, error=err):
+                    case MCPToolEvent(tool=tool, phase="error", detail=err):
                         log.write(f"\n[bold red]error ({tool})[/bold red]: {err}\n")
                     case UsageEvent(
                         prompt_tokens=pt,

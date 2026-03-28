@@ -335,7 +335,7 @@ struct ContentView: View {
                 if !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     hasText = true
                 }
-            case .error:
+            case .mcpTool(_, let phase, _, _) where phase == "error":
                 return false
             case .status(let message):
                 if message.lowercased().hasPrefix("error:") {
@@ -363,9 +363,6 @@ struct EventRow: View {
                 .italic()
         case .assistantMessage(let msg):
             Text(LocalizedStringKey(msg))
-        case .error(let tool, let err):
-            Text("\(tool): \(err)")
-                .foregroundColor(.red)
         case .mcpTool:
             EmptyView()
         case .config:
@@ -405,6 +402,7 @@ struct ToolCallBadge: View {
     let message: String
     let detail: String
     var detailed: Bool = false
+    @State private var showingError = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -419,13 +417,25 @@ struct ToolCallBadge: View {
                     Text(message + (detail.isEmpty ? "" : " — \(detail)"))
                 }
             } else {
-                Text(message)
+                Text(phase == "error" ? tool : message)
             }
         }
         .font(.caption)
         .padding(4)
         .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
         .cornerRadius(4)
+        .onTapGesture {
+            if phase == "error" { showingError = true }
+        }
+        .popover(isPresented: $showingError) {
+            ScrollView {
+                Text(detail.isEmpty ? "No error detail available." : detail)
+                    .font(.caption)
+                    .padding()
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
+            .frame(maxHeight: 200)
+        }
     }
 }
 

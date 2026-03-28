@@ -14,7 +14,6 @@ from dragonglass.agent.agent import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
-    ToolErrorEvent,
     UsageEvent,
 )
 
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 _EVENT_MAP: dict[str, type[AgentEvent]] = {
     "StatusEvent": StatusEvent,
-    "ToolErrorEvent": ToolErrorEvent,
     "TextChunk": TextChunk,
     "UsageEvent": UsageEvent,
     "DoneEvent": DoneEvent,
@@ -67,9 +65,11 @@ class AgentClient:
                 await self.connect()
             except Exception:
                 logger.exception("client: connection error")
-                yield ToolErrorEvent(
+                yield MCPToolEvent(
                     tool="connection",
-                    error=f"Could not connect to dragonglass server at {self.uri}",
+                    phase="error",
+                    message="connection",
+                    detail=f"Could not connect to dragonglass server at {self.uri}",
                 )
                 yield DoneEvent()
                 return
