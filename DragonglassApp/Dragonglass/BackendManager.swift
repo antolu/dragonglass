@@ -6,6 +6,8 @@ enum BackendPhase: Equatable {
     case starting
     case ready
     case needsPluginReload(String)
+    case obsidianUnreachable
+    case obsidianVersionMismatch(String)
     case failed(String)
 }
 
@@ -96,7 +98,16 @@ class BackendManager: ObservableObject {
                 }
                 if ready {
                     print("[BackendManager] Backend is ready and healthy.")
-                    phase = .ready
+                    switch await checkObsidian() {
+                    case .ready:
+                        phase = .ready
+                    case .unreachable:
+                        phase = .obsidianUnreachable
+                        Task { await pollUntilObsidianReady() }
+                    case .versionMismatch(let msg):
+                        phase = .obsidianVersionMismatch(msg)
+                        Task { await pollUntilObsidianReady() }
+                    }
                 } else {
                     phase = .failed("Backend started but health check failed (timeout).")
                 }
@@ -118,6 +129,56 @@ class BackendManager: ObservableObject {
         } catch {
             return false
         }
+    }
+
+    private enum ObsidianStatus {
+        case ready
+        case unreachable
+        case versionMismatch(String)
+    }
+
+    private func checkObsidian() async -> ObsidianStatus {
+        let url = URL(string: "http://localhost:51362/health")!
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 1.0
+        let session = URLSession(configuration: .ephemeral)
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .unreachable }
+            if let bundledVersion = getBundledPluginVersion(),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let runningVersion = json["version"] as? String,
+               runningVersion != bundledVersion {
+                return .versionMismatch("Plugin version mismatch: Obsidian is running \(runningVersion) but \(bundledVersion) is required. Reload the Vector Search plugin in Obsidian.")
+            }
+            return .ready
+        } catch {
+            return .unreachable
+        }
+    }
+
+    private func pollUntilObsidianReady() async {
+        while true {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            switch await checkObsidian() {
+            case .ready:
+                phase = .ready
+                return
+            case .unreachable:
+                if case .obsidianUnreachable = phase { } else { phase = .obsidianUnreachable }
+            case .versionMismatch(let msg):
+                if case .obsidianVersionMismatch = phase { } else { phase = .obsidianVersionMismatch(msg) }
+            }
+        }
+    }
+
+    private func getBundledPluginVersion() -> String? {
+        guard let url = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: "ObsidianPlugin"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String else { return nil }
+        return version
     }
 
     private func getBundledVersion() -> String? {

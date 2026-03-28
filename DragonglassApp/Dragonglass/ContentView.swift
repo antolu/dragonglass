@@ -182,6 +182,22 @@ struct ContentView: View {
                     backend.phase = .ready
                 }
                 .buttonStyle(.borderedProminent)
+            case .obsidianUnreachable:
+                Image(systemName: "app.connected.to.app.below.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.orange)
+                Text("Waiting for Obsidian…\nOpen Obsidian with the Vector Search plugin enabled.")
+                    .multilineTextAlignment(.center)
+                    .padding()
+                ProgressView()
+            case .obsidianVersionMismatch(let message):
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.largeTitle)
+                    .foregroundColor(.orange)
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                ProgressView()
             case .failed(let error):
                 Image(systemName: "exclamationmark.triangle")
                     .font(.largeTitle)
