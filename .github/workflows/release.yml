@@ -56,7 +56,7 @@ jobs:
           #
           # The Xcode build script in project.pbxproj already handles downloading dependencies,
           # building the Python wheels, and bundling them into the resources.
-          xcodebuild -project DragonglassApp/Dragonglass.xcodeproj \
+          xcodebuild -workspace DragonglassApp/Dragonglass.xcodeproj/project.xcworkspace \
                      -scheme Dragonglass \
                      -configuration Release \
                      clean build

@@ -75,7 +75,7 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild -project DragonglassApp/Dragonglass.xcodeproj \
+          xcodebuild -workspace DragonglassApp/Dragonglass.xcodeproj/project.xcworkspace \
                      -scheme Dragonglass \
                      -configuration Release \
                      CODE_SIGNING_ALLOWED=NO \
