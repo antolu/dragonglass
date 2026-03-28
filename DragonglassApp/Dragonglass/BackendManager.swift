@@ -448,23 +448,59 @@ class BackendManager: ObservableObject {
             }
         }
 
-        // Sort candidates by version (descending)
-        candidates.sort { a, b in
-            let va = a.version.split(separator: ".").compactMap { Int($0) }
-            let vb = b.version.split(separator: ".").compactMap { Int($0) }
-            for i in 0..<min(va.count, vb.count) {
-                if va[i] != vb[i] { return va[i] > vb[i] }
+        if candidates.isEmpty {
+            print("[BackendManager] No compatible Python 3.11+ found, falling back to /usr/bin/python3")
+            return "/usr/bin/python3"
+        }
+
+        // Build a lookup: minor version → best path for that version
+        var byMinor: [Int: (path: String, version: String)] = [:]
+        for c in candidates {
+            let parts = c.version.split(separator: ".").compactMap { Int($0) }
+            guard parts.count >= 2 else { continue }
+            let minor = parts[1]
+            if byMinor[minor] == nil {
+                byMinor[minor] = c
             }
-            return va.count > vb.count
         }
 
-        if let best = candidates.first {
-            print("[BackendManager] Selected \(best.path) (highest compatible version \(best.version))")
-            return best.path
+        // Determine the bundled minor version as the preferred starting point
+        let bundledMinor: Int
+        if let required = requiredVersion,
+           let m = required.split(separator: ".").compactMap({ Int($0) }).dropFirst().first {
+            bundledMinor = m
+        } else {
+            bundledMinor = 11
         }
 
-        print("[BackendManager] No compatible Python 3.11+ found, falling back to /usr/bin/python3")
-        return "/usr/bin/python3"
+        let supportedMinors = binaries.compactMap { bin -> Int? in
+            guard bin.hasPrefix("python3."), let m = Int(bin.dropFirst("python3.".count)) else { return nil }
+            return m
+        }
+        let minMinor = supportedMinors.min() ?? bundledMinor
+        let maxMinor = byMinor.keys.max() ?? bundledMinor
+
+        // Search order: same → up → down (all relative to bundledMinor, within [minMinor, maxMinor])
+        var searchOrder: [Int] = [bundledMinor]
+        let upperBound = max(bundledMinor, maxMinor)
+        for v in (bundledMinor + 1)...max(bundledMinor + 1, upperBound) {
+            searchOrder.append(v)
+        }
+        for v in stride(from: bundledMinor - 1, through: minMinor, by: -1) {
+            searchOrder.append(v)
+        }
+
+        for minor in searchOrder {
+            if let match = byMinor[minor] {
+                print("[BackendManager] Selected \(match.path) (version \(match.version), bundled minor was \(bundledMinor))")
+                return match.path
+            }
+        }
+
+        // Shouldn't reach here, but just in case
+        let best = candidates.first!
+        print("[BackendManager] Selected \(best.path) (fallback, version \(best.version))")
+        return best.path
     }
 
     private func getPythonVersion(at path: String) -> String? {
