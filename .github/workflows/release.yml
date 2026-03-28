@@ -56,18 +56,17 @@ jobs:
           #
           # The Xcode build script in project.pbxproj already handles downloading dependencies,
           # building the Python wheels, and bundling them into the resources.
-          xcodebuild -project DragonglassApp/Dragonglass.xcodeproj \
+          xcodebuild -workspace DragonglassApp/Dragonglass.xcodeproj/project.xcworkspace \
                      -scheme Dragonglass \
                      -configuration Release \
-                     -derivedDataPath build/derivedData \
                      clean build
 
       - name: Prepare Artifact
         run: |
-          APP_PATH="build/derivedData/Build/Products/Release/Dragonglass.app"
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Dragonglass.app" -path "*/Release/*" | head -1)
           ZIP_NAME="Dragonglass-${{ github.ref_name }}.zip"
-          cd $(dirname "$APP_PATH")
-          zip -r "../../../../$ZIP_NAME" "Dragonglass.app"
+          cd "$(dirname "$APP_PATH")"
+          zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" "Dragonglass.app"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

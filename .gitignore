@@ -43,7 +43,7 @@ node_modules/
 
 # Swift / Xcode
 DerivedData/
-*.xcworkspace
+/*.xcworkspace
 *.xcuserstate
 DragonglassApp/Resources/wheels/
 DragonglassApp/Resources/version.txt

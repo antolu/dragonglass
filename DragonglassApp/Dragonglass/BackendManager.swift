@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "BackendManager")
 
 enum BackendPhase: Equatable {
     case installing
@@ -15,7 +18,9 @@ enum BackendPhase: Equatable {
 @MainActor
 class BackendManager: ObservableObject {
     @Published var phase: BackendPhase = .starting
+    @Published var obsidianWarning: String? = nil
     private var process: Process?
+    private var obsidianPollTask: Task<Void, Never>?
 
     private let appSupportDir: URL = {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -84,7 +89,7 @@ class BackendManager: ObservableObject {
             try launchProcess()
             if needsUserConfirm { } else {
                 // Wait for the backend to be actually responsive before setting .ready
-                print("[BackendManager] Waiting for health check...")
+                logger.info("Waiting for health check...")
                 try await Task.sleep(nanoseconds: 6_000_000_000) // 6s initial delay for Python startup
                 let start = Date()
                 var ready = false
@@ -96,16 +101,19 @@ class BackendManager: ObservableObject {
                     try await Task.sleep(nanoseconds: 500_000_000) // 500ms
                 }
                 if ready {
-                    print("[BackendManager] Backend is ready and healthy.")
+                    logger.info("Backend is ready and healthy.")
+                    obsidianPollTask?.cancel()
+                    obsidianPollTask = nil
+                    phase = .ready
                     switch await checkObsidian() {
                     case .ready:
-                        phase = .ready
+                        obsidianWarning = nil
                     case .unreachable:
-                        phase = .obsidianUnreachable
-                        Task { await pollUntilObsidianReady() }
+                        obsidianWarning = "Obsidian is not reachable. Open Obsidian with the Vector Search plugin enabled."
+                        obsidianPollTask = Task { await self.pollUntilObsidianReady() }
                     case .versionMismatch(let msg):
-                        phase = .obsidianVersionMismatch(msg)
-                        Task { await pollUntilObsidianReady() }
+                        obsidianWarning = msg
+                        obsidianPollTask = Task { await self.pollUntilObsidianReady() }
                     }
                 } else {
                     phase = .failed("Backend started but health check failed (timeout).")
@@ -148,7 +156,7 @@ class BackendManager: ObservableObject {
             if let bundledVersion = getBundledPluginVersion(),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let runningVersion = json["version"] as? String,
-               runningVersion != bundledVersion {
+               runningVersion.compare(bundledVersion, options: .numeric) == .orderedAscending {
                 return .versionMismatch("Plugin version mismatch: Obsidian is running \(runningVersion) but \(bundledVersion) is required. Reload the Vector Search plugin in Obsidian.")
             }
             return .ready
@@ -158,18 +166,29 @@ class BackendManager: ObservableObject {
     }
 
     private func pollUntilObsidianReady() async {
-        while true {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        logger.info("Starting Obsidian poll loop")
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            } catch {
+                logger.info("Obsidian poll cancelled during sleep")
+                return
+            }
+            logger.debug("Obsidian poll checking...")
             switch await checkObsidian() {
             case .ready:
-                phase = .ready
+                obsidianWarning = nil
+                logger.info("Obsidian became available")
                 return
             case .unreachable:
-                if case .obsidianUnreachable = phase { } else { phase = .obsidianUnreachable }
+                if obsidianWarning == nil {
+                    obsidianWarning = "Obsidian is not reachable. Open Obsidian with the Vector Search plugin enabled."
+                }
             case .versionMismatch(let msg):
-                if case .obsidianVersionMismatch = phase { } else { phase = .obsidianVersionMismatch(msg) }
+                obsidianWarning = msg
             }
         }
+        logger.info("Obsidian poll loop exited (cancelled)")
     }
 
     private func getBundledPluginVersion() -> String? {
@@ -811,7 +830,13 @@ class BackendManager: ObservableObject {
         try p.run()
     }
 
+    func cancelObsidianPoll() {
+        obsidianPollTask?.cancel()
+        obsidianPollTask = nil
+    }
+
     deinit {
+        obsidianPollTask?.cancel()
         process?.terminate()
     }
 }

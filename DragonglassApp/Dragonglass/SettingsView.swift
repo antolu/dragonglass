@@ -4,6 +4,8 @@ import AppKit
 struct SettingsView: View {
     @Binding var isPresented: Bool
     @EnvironmentObject var client: AgentClient
+    @EnvironmentObject var sttManager: STTManager
+    @EnvironmentObject var hotkeyManager: HotkeyManager
 
     @State private var config: DragonglassConfig?
     @State private var baselineConfig: DragonglassConfig?
@@ -33,6 +35,7 @@ struct SettingsView: View {
                         backendSection(config)
                         permissionsSection(config)
                         uiSection()
+                        speechSection()
                         advancedSection(config)
                     }
                     .padding(.horizontal)
@@ -343,6 +346,14 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func speechSection() -> some View {
+        settingsSection("Speech to Text") {
+            SpeechSettingsView()
+                .environmentObject(sttManager)
+                .environmentObject(hotkeyManager)
         }
     }
 
