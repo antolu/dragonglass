@@ -42,12 +42,13 @@ final class STTManager: ObservableObject {
     // MARK: - Permissions
 
     func checkMicPermission() {
-        micPermissionGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        micPermissionGranted = AVAudioApplication.shared.recordPermission == .granted
     }
 
     func requestMicPermission() {
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            Task { @MainActor in self.micPermissionGranted = granted }
+        Task {
+            let granted = await AVAudioApplication.requestRecordPermission()
+            micPermissionGranted = granted
         }
     }
 

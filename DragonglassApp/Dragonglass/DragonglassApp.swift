@@ -8,6 +8,7 @@ struct DragonglassApp: App {
     @StateObject private var menuBarManager = MenuBarManager()
     @StateObject private var sttManager = STTManager()
     @StateObject private var hotkeyManager = HotkeyManager()
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
 
     var body: some Scene {
         let _ = menuBarManager.setup(
@@ -16,6 +17,7 @@ struct DragonglassApp: App {
             sttManager: sttManager,
             hotkeyManager: hotkeyManager
         )
+        let _ = appDelegate.backend = backend
 
         Settings {
             SettingsView(isPresented: .constant(false))
@@ -24,5 +26,13 @@ struct DragonglassApp: App {
                 .environmentObject(sttManager)
                 .environmentObject(hotkeyManager)
         }
+    }
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var backend: BackendManager?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        backend?.cancelObsidianPoll()
     }
 }

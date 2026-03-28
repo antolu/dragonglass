@@ -203,22 +203,6 @@ struct ContentView: View {
                     backend.phase = .ready
                 }
                 .buttonStyle(.borderedProminent)
-            case .obsidianUnreachable:
-                Image(systemName: "app.connected.to.app.below.fill")
-                    .font(.largeTitle)
-                    .foregroundColor(.orange)
-                Text("Waiting for Obsidian…\nOpen Obsidian with the Vector Search plugin enabled.")
-                    .multilineTextAlignment(.center)
-                    .padding()
-                ProgressView()
-            case .obsidianVersionMismatch(let message):
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.largeTitle)
-                    .foregroundColor(.orange)
-                Text(message)
-                    .multilineTextAlignment(.center)
-                    .padding()
-                ProgressView()
             case .failed(let error):
                 Image(systemName: "exclamationmark.triangle")
                     .font(.largeTitle)
@@ -240,6 +224,20 @@ struct ContentView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    if let warning = backend.obsidianWarning {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text(warning)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08))
+                        .cornerRadius(6)
+                    }
                     ForEach(client.prefixEventIndices, id: \.self) { index in
                         EventRow(event: client.events[index], detailed: client.detailedToolEvents)
                     }
