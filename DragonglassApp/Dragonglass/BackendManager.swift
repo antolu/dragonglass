@@ -5,7 +5,8 @@ enum BackendPhase: Equatable {
     case installing
     case starting
     case ready
-    case needsPluginReload(String)
+    case needsPluginUpdate(String, String)  // (installedVersion, bundledVersion)
+    case needsPluginReload
     case obsidianUnreachable
     case obsidianVersionMismatch(String)
     case failed(String)
@@ -79,11 +80,9 @@ class BackendManager: ObservableObject {
         phase = .starting
         do {
             try await ensureOpencodeInstalled()
-            if let reloadMessage = await deployObsidianPlugin() {
-                phase = .needsPluginReload(reloadMessage)
-            }
+            let needsUserConfirm = await deployObsidianPlugin()
             try launchProcess()
-            if case .needsPluginReload = phase { } else {
+            if needsUserConfirm { } else {
                 // Wait for the backend to be actually responsive before setting .ready
                 print("[BackendManager] Waiting for health check...")
                 try await Task.sleep(nanoseconds: 6_000_000_000) // 6s initial delay for Python startup
@@ -213,12 +212,14 @@ class BackendManager: ObservableObject {
         return version
     }
 
-    /// Returns a non-nil reload message if the plugin was updated and Obsidian needs to reload it.
-    private func deployObsidianPlugin() async -> String? {
-        guard let pluginDir = obsidianPluginDir() else { return nil }
+    /// Checks if the bundled plugin differs from the installed one.
+    /// If versions differ, sets phase to needsPluginUpdate and returns true.
+    /// If not installed at all, copies silently and returns false.
+    private func deployObsidianPlugin() async -> Bool {
+        guard let pluginDir = obsidianPluginDir() else { return false }
         guard let bundledManifestUrl = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: "ObsidianPlugin"),
               let mainJsUrl = Bundle.main.url(forResource: "main", withExtension: "js", subdirectory: "ObsidianPlugin") else {
-            return nil
+            return false
         }
 
         let bundledVersion = readManifestVersion(at: bundledManifestUrl)
@@ -226,8 +227,14 @@ class BackendManager: ObservableObject {
         let installedVersion = readManifestVersion(at: installedManifestUrl)
         let alreadyInstalled = FileManager.default.fileExists(atPath: installedManifestUrl.path)
 
-        guard bundledVersion != installedVersion else { return nil }
+        guard bundledVersion != installedVersion else { return false }
 
+        if alreadyInstalled {
+            phase = .needsPluginUpdate(installedVersion ?? "?", bundledVersion ?? "?")
+            return true
+        }
+
+        // First install — copy silently
         do {
             try FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
             let destMain = pluginDir.appendingPathComponent("main.js")
@@ -236,16 +243,32 @@ class BackendManager: ObservableObject {
             if FileManager.default.fileExists(atPath: destManifest.path) { try FileManager.default.removeItem(at: destManifest) }
             try FileManager.default.copyItem(at: mainJsUrl, to: destMain)
             try FileManager.default.copyItem(at: bundledManifestUrl, to: destManifest)
-
             writeDragonglassConfig(to: pluginDir)
-
-            if alreadyInstalled {
-                return "The Vector Search plugin was updated (\(installedVersion ?? "?") → \(bundledVersion ?? "?")). Please toggle it off and on in Obsidian → Settings → Community plugins."
-            }
         } catch {
             print("[BackendManager] Plugin deploy failed: \(error)")
         }
-        return nil
+        return false
+    }
+
+    func applyPluginUpdate() {
+        guard let pluginDir = obsidianPluginDir(),
+              let bundledManifestUrl = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: "ObsidianPlugin"),
+              let mainJsUrl = Bundle.main.url(forResource: "main", withExtension: "js", subdirectory: "ObsidianPlugin") else {
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+            let destMain = pluginDir.appendingPathComponent("main.js")
+            let destManifest = pluginDir.appendingPathComponent("manifest.json")
+            if FileManager.default.fileExists(atPath: destMain.path) { try FileManager.default.removeItem(at: destMain) }
+            if FileManager.default.fileExists(atPath: destManifest.path) { try FileManager.default.removeItem(at: destManifest) }
+            try FileManager.default.copyItem(at: mainJsUrl, to: destMain)
+            try FileManager.default.copyItem(at: bundledManifestUrl, to: destManifest)
+            writeDragonglassConfig(to: pluginDir)
+            phase = .needsPluginReload
+        } catch {
+            print("[BackendManager] Plugin update failed: \(error)")
+        }
     }
 
     private func writeDragonglassConfig(to pluginDir: URL) {

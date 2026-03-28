@@ -44,17 +44,20 @@ Link related notes using `[[wikilinks]]` for any notes encountered during search
 
 Always inform the user when the edit has finished with what has been added.
 
-### In-file Edits (Patching)
-For edits inside an existing file, prefer the hash-gated flow below over text search/replace.
-1. Call `dragonglass_read_note_with_hash(path)`.
-2. Compute exact line numbers to change from the returned content (prefixed with `LX:`).
-3. Call `dragonglass_patch_note_lines(path, start_line, end_line, replacement)`.
-4. **Verify your edit**: Immediately call `dragonglass_read_note_with_hash(path, start_line, end_line)` on the affected range. This confirms the write and captures the new hash.
+### In-file Edits
+For edits inside an existing file, follow this flow:
+1. Call `dragonglass_read_note_with_hash(path)` — content is returned with line numbers prefixed as `LX:`.
+2. Identify the exact line numbers you need to change from the returned content.
+3. Call the appropriate tool:
+   - **`dragonglass_replace_lines(path, start_line, end_line, replacement)`** — rewrites existing lines. Use when modifying existing content (e.g. updating a sentence). Do NOT use this to insert new content.
+   - **`dragonglass_insert_after_line(path, line, text)`** — inserts new lines after the given line without touching existing content. Use for adding new sentences, items, or paragraphs. To append to the end of the file, use the last line number.
+   - **`dragonglass_delete_lines(path, start_line, end_line)`** — removes lines entirely.
+4. **Verify your edit**: Immediately call `dragonglass_read_note_with_hash(path, start_line, end_line)` on the affected range to confirm the write and capture the new hash.
 5. If `hash_mismatch`, re-read the note, recompute line numbers, and retry once.
 
-### Appending or Creating Notes
-- **`dragonglass_patch_note_lines`**: Use line-based patching for edits. For appends, read the file to get its last line and patch at the end.
-- **New Notes**: Create a new note only if necessary. Choose a descriptive title and appropriate folder. Keep the note focused on one topic.
+### Creating Notes
+- **New Notes**: Create a new note only if necessary. Keep the note focused on one topic.
+- **Inbox**: Place new notes in the inbox directory specified in the vault instructions. If no inbox is defined and you cannot confidently infer the correct folder from context, tell the user you don't know where to put the note and ask them to specify a folder or define an inbox in their vault instructions.
 
 ### Write Mode Ambiguity
 
@@ -70,7 +73,11 @@ For edits inside an existing file, prefer the hash-gated flow below over text se
 
 **`dragonglass_read_note_with_hash`** — returns content with line numbers (e.g., `L10: content`) and captures the hash of the ENTIRE file. Use optional `start_line` and `end_line` for targeted reading or verification.
 
-**`dragonglass_patch_note_lines`** — replace a 1-based inclusive line range. Enforces hash checks for atomicity.
+**`dragonglass_replace_lines`** — replace a 1-based inclusive line range. Use only for modifying existing content, not for insertion.
+
+**`dragonglass_insert_after_line`** — insert text after a given line without overwriting anything.
+
+**`dragonglass_delete_lines`** — delete a 1-based inclusive line range.
 
 **`dragonglass_manage_frontmatter`** — get, set, or delete YAML frontmatter keys.
 

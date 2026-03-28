@@ -25,6 +25,10 @@ struct ContentView: View {
             inputArea
         }
         .frame(width: 400, height: 500)
+        .sheet(item: $client.pendingApproval) { req in
+            ApprovalView(request: req)
+                .environmentObject(client)
+        }
     }
 
     private var header: some View {
@@ -83,6 +87,7 @@ struct ContentView: View {
         .onChange(of: backend.phase) { _, phase in
             if phase == .ready || ({
                 if case .needsPluginReload = phase { return true }
+                if case .needsPluginUpdate = phase { return true }
                 return false
             }()) {
                 if !client.isConnected { client.connect() }
@@ -171,11 +176,22 @@ struct ContentView: View {
                 ProgressView("Installing dependencies...")
             case .starting:
                 ProgressView("Starting backend...")
-            case .needsPluginReload(let message):
+            case .needsPluginUpdate(let from, let to):
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.largeTitle)
                     .foregroundColor(.orange)
-                Text(message)
+                Text("A plugin update is available (\(from) → \(to)). Update now?")
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Button("Update Plugin") {
+                    backend.applyPluginUpdate()
+                }
+                .buttonStyle(.borderedProminent)
+            case .needsPluginReload:
+                Image(systemName: "checkmark.circle")
+                    .font(.largeTitle)
+                    .foregroundColor(.green)
+                Text("Plugin updated. Toggle it off and on in Obsidian → Settings → Community plugins to apply.")
                     .multilineTextAlignment(.center)
                     .padding()
                 Button("Done") {
@@ -303,7 +319,7 @@ struct ContentView: View {
                 .onSubmit(sendMessage)
                 .disabled(client.isThinking)
 
-            if client.isThinking {
+            if client.isThinking && client.pendingApproval == nil {
                 Button(action: { client.stopChat() }) {
                     Image(systemName: "stop.fill")
                         .font(.body)
@@ -313,7 +329,7 @@ struct ContentView: View {
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
-            } else {
+            } else if !client.isThinking {
                 Button(action: sendMessage) {
                     Image(systemName: "paperplane.fill")
                 }
@@ -405,6 +421,17 @@ struct EventRow: View {
                     .background(Color.accentColor.opacity(0.1))
                     .cornerRadius(8)
             }
+        case .approvalRequest(let req):
+            HStack(spacing: 6) {
+                Image(systemName: "pencil.circle")
+                    .foregroundColor(.orange)
+                Text("Pending approval: \(req.description)")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+            .padding(4)
+            .background(Color.orange.opacity(0.08))
+            .cornerRadius(4)
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)
@@ -487,6 +514,85 @@ private struct BottomVisibilityKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+struct DiffView: View {
+    let diff: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(diff.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                Text(line.isEmpty ? " " : line)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(lineColor(line))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(lineBackground(line))
+            }
+        }
+    }
+
+    private func lineColor(_ line: String) -> Color {
+        if line.hasPrefix("+") { return .green }
+        if line.hasPrefix("-") { return .red }
+        if line.hasPrefix("@") { return .blue }
+        return .primary
+    }
+
+    private func lineBackground(_ line: String) -> Color {
+        if line.hasPrefix("+") { return Color.green.opacity(0.08) }
+        if line.hasPrefix("-") { return Color.red.opacity(0.08) }
+        return .clear
+    }
+}
+
+struct ApprovalView: View {
+    @EnvironmentObject var client: AgentClient
+    let request: ApprovalRequest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Approve Edit?")
+                .font(.headline)
+
+            Text(request.description)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            if !request.diff.isEmpty {
+                ScrollView {
+                    DiffView(diff: request.diff)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 200)
+                .background(Color(NSColor.textBackgroundColor))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+            }
+
+            HStack {
+                Button("Reject") {
+                    client.rejectRequest(request)
+                }
+                .foregroundColor(.red)
+
+                Spacer()
+
+                Button("Approve for Session") {
+                    client.approveRequest(request, forSession: true)
+                }
+
+                Button("Approve") {
+                    client.approveRequest(request, forSession: false)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+        .frame(width: 420, height: 340)
     }
 }
 

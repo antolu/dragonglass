@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import contextlib
+import difflib
 import json
 import logging
 import os
@@ -10,6 +12,7 @@ import subprocess
 import typing
 import uuid
 
+import httpx
 import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -20,6 +23,7 @@ from dragonglass.agent.opencode import run_opencode_turn
 from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.agent.types import (
     AgentEvent,
+    ApprovalRequestEvent,
     DoneEvent,
     JsonValue,
     MCPToolEvent,
@@ -36,7 +40,14 @@ from dragonglass.agent.types import (
     _ToolFunction,
 )
 from dragonglass.config import Settings, get_settings
-from dragonglass.mcp.search import create_search_server
+from dragonglass.mcp.search import (
+    _delete_frontmatter_key_lines,
+    _rebuild_note_with_frontmatter,
+    _remove_inline_tags,
+    _set_frontmatter_key_lines,
+    _split_frontmatter_block,
+    create_search_server,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +98,14 @@ def _is_error_result(result: str) -> bool:
     except json.JSONDecodeError:
         return False
 
+
+_TOOL_PERMISSIONS: dict[str, str] = {
+    "dragonglass_replace_lines": "edit",
+    "dragonglass_insert_after_line": "edit",
+    "dragonglass_delete_lines": "delete",
+    "dragonglass_manage_frontmatter": "edit",
+    "dragonglass_manage_tags": "edit",
+}
 
 _TOOL_STATUS: dict[str, str] = {
     "fetch": "fetching",
@@ -320,6 +339,9 @@ class VaultAgent:
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
         self._opencode_session_id: str | None = None
+        self._approval_gates: dict[str, asyncio.Event] = {}
+        self._approval_results: dict[str, bool] = {}
+        self._session_approved: set[str] = set()
 
     async def initialise(self) -> None:
         self._system_prompt, self.agents_note_found = await load_system_prompt(
@@ -331,6 +353,7 @@ class VaultAgent:
         self._history = []
         self._total_tokens = 0
         self._opencode_session_id = None
+        self._session_approved.clear()
 
     def get_history(self) -> list[_Message]:
         return list(self._history)
@@ -409,6 +432,158 @@ class VaultAgent:
 
         new_messages = messages[2 + history_len_before :]
         self._history.extend(new_messages)
+
+    def _needs_approval(  # noqa: PLR0911
+        self,
+        tool_name: str,
+        args: dict[str, JsonValue],
+        settings: Settings,
+    ) -> str | None:
+        perm = _TOOL_PERMISSIONS.get(tool_name)
+        if perm is None:
+            return None
+        if (
+            tool_name == "dragonglass_manage_frontmatter"
+            and args.get("operation") == "get"
+        ):
+            return None
+        if tool_name == "dragonglass_manage_tags" and args.get("operation") == "list":
+            return None
+        if perm == "edit" and settings.auto_allow_edit:
+            return None
+        if perm == "delete" and settings.auto_allow_delete:
+            return None
+        if perm == "create" and settings.auto_allow_create:
+            return None
+        if perm in self._session_approved:
+            return None
+        return perm
+
+    @staticmethod
+    async def _compute_diff(  # noqa: PLR0912, PLR0914, PLR0915
+        tool_name: str,
+        args: dict[str, JsonValue],
+    ) -> tuple[str, str, str]:
+        settings = get_settings()
+        path = str(args.get("path", ""))
+        if not path:
+            return "", "", tool_name
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{settings.vector_search_url}/notes/read",
+                    params={"path": path},
+                )
+            if resp.status_code != 200:  # noqa: PLR2004
+                return path, "", f"{tool_name} on {path}"
+            data = resp.json()
+            original = str(data.get("content", ""))
+        except Exception:
+            logger.warning("approval gate: failed to fetch %r for diff", path)
+            return path, "", f"{tool_name} on {path}"
+
+        original_lines = original.splitlines(keepends=True)
+
+        try:
+            if tool_name == "dragonglass_replace_lines":
+                start = int(typing.cast(int, args.get("start_line", 1)))
+                end = int(typing.cast(int, args.get("end_line", start)))
+                replacement = str(args.get("replacement", ""))
+                new_lines = list(original_lines)
+                new_lines[start - 1 : end] = [
+                    ln if ln.endswith("\n") else ln + "\n"
+                    for ln in replacement.splitlines()
+                ]
+                description = f"Replace lines {start}-{end} in {path}"
+
+            elif tool_name == "dragonglass_insert_after_line":
+                line = int(typing.cast(int, args.get("line", 0)))
+                text = str(args.get("text", ""))
+                new_lines = list(original_lines)
+                insert_lines = [
+                    ln if ln.endswith("\n") else ln + "\n" for ln in text.splitlines()
+                ]
+                new_lines[line:line] = insert_lines
+                description = f"Insert after line {line} in {path}"
+
+            elif tool_name == "dragonglass_delete_lines":
+                start = int(typing.cast(int, args.get("start_line", 1)))
+                end = int(typing.cast(int, args.get("end_line", start)))
+                new_lines = list(original_lines)
+                del new_lines[start - 1 : end]
+                description = f"Delete lines {start}-{end} in {path}"
+
+            elif tool_name == "dragonglass_manage_frontmatter":
+                op = str(args.get("operation", ""))
+                key = str(args.get("key", ""))
+                value = args.get("value")
+                fm_lines, rest, had = _split_frontmatter_block(original)
+                if op == "set":
+                    fm_lines = _set_frontmatter_key_lines(fm_lines, key, value)
+                elif op == "delete":
+                    fm_lines, _ = _delete_frontmatter_key_lines(fm_lines, key)
+                new_content = _rebuild_note_with_frontmatter(fm_lines, rest, had)
+                new_lines = new_content.splitlines(keepends=True)
+                description = f"Frontmatter {op} '{key}' in {path}"
+
+            elif tool_name == "dragonglass_manage_tags":
+                op = str(args.get("operation", ""))
+                tags = args.get("tags", [])
+                tags_list = tags if isinstance(tags, list) else []
+                fm_lines, rest, had = _split_frontmatter_block(original)
+                if op == "remove":
+                    body = rest.lstrip("\n")
+                    updated_body = _remove_inline_tags(
+                        body, {str(t) for t in tags_list}
+                    )
+                    new_content = _rebuild_note_with_frontmatter(
+                        fm_lines,
+                        f"\n{updated_body}" if rest.startswith("\n") else updated_body,
+                        had,
+                    )
+                    new_lines = new_content.splitlines(keepends=True)
+                else:
+                    new_lines = original_lines
+                description = f"Tags {op} {tags_list!r} in {path}"
+
+            else:
+                return path, "", f"{tool_name} on {path}"
+
+        except Exception:
+            logger.warning(
+                "approval gate: diff computation failed for %r",
+                tool_name,
+                exc_info=True,
+            )
+            return path, "", f"{tool_name} on {path}"
+
+        diff_lines = list(
+            difflib.unified_diff(
+                original_lines,
+                new_lines,
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                n=3,
+            )
+        )
+        return path, "".join(diff_lines), description
+
+    def resolve_approval(
+        self,
+        request_id: str,
+        approved: bool,
+        session: bool = False,
+        permission: str | None = None,
+    ) -> None:
+        self._approval_results[request_id] = approved
+        if session and permission and approved:
+            self._session_approved.add(permission)
+        gate = self._approval_gates.get(request_id)
+        if gate:
+            gate.set()
+        else:
+            logger.warning("resolve_approval: no pending gate for %r", request_id)
 
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
         self,
@@ -669,6 +844,36 @@ class VaultAgent:
                 if status:
                     yield StatusEvent(message=status)
 
+                perm = self._needs_approval(tool_name, args, settings)
+                if perm is not None:
+                    request_id = uuid.uuid4().hex
+                    path, diff_text, description = await VaultAgent._compute_diff(
+                        tool_name, args
+                    )
+                    gate = asyncio.Event()
+                    self._approval_gates[request_id] = gate
+                    yield ApprovalRequestEvent(
+                        request_id=request_id,
+                        tool=tool_name,
+                        permission=perm,
+                        path=path,
+                        diff=diff_text,
+                        description=description,
+                    )
+                    try:
+                        await asyncio.wait_for(gate.wait(), timeout=120.0)
+                    except TimeoutError:
+                        self._approval_gates.pop(request_id, None)
+                        yield StatusEvent(message="Approval timed out — edit cancelled")
+                        yield DoneEvent()
+                        return
+                    finally:
+                        self._approval_gates.pop(request_id, None)
+                    if not self._approval_results.pop(request_id, False):
+                        yield StatusEvent(message="Edit rejected")
+                        yield DoneEvent()
+                        return
+
                 call_key = (tool_name, json.dumps(args, sort_keys=True))
                 if call_key in seen_calls:
                     result = seen_calls[call_key]
@@ -698,7 +903,9 @@ class VaultAgent:
             "dragonglass_vector_search",
             "dragonglass_run_command",
             "dragonglass_read_note_with_hash",
-            "dragonglass_patch_note_lines",
+            "dragonglass_replace_lines",
+            "dragonglass_insert_after_line",
+            "dragonglass_delete_lines",
             "dragonglass_manage_frontmatter",
             "dragonglass_manage_tags",
         }

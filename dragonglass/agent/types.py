@@ -84,6 +84,16 @@ class MCPToolEvent:
 
 
 @dataclasses.dataclass
+class ApprovalRequestEvent:
+    request_id: str
+    tool: str
+    permission: str
+    path: str
+    diff: str
+    description: str
+
+
+@dataclasses.dataclass
 class ConversationsListEvent:
     conversations: list[dict[str, typing.Any]]
 
@@ -103,4 +113,5 @@ AgentEvent = (
     | ConversationsListEvent
     | ConversationLoadedEvent
     | UserMessageEvent
+    | ApprovalRequestEvent
 )

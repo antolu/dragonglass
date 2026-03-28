@@ -699,7 +699,7 @@ class DragonglassServer:
 
         return True
 
-    async def _handle_client(  # noqa: PLR0912
+    async def _handle_client(  # noqa: PLR0912, PLR0915
         self, websocket: typing.Any
     ) -> None:
         logger.info("server: client connected")
@@ -723,6 +723,18 @@ class DragonglassServer:
                 elif command == "stop":
                     if self._chat_task and not self._chat_task.done():
                         self._chat_task.cancel()
+                elif command in {"approve", "reject", "approve_session"}:
+                    request_id = str(data.get("request_id", ""))
+                    permission = str(data.get("permission", ""))
+                    if not request_id or self.agent is None:
+                        continue
+                    approved = command in {"approve", "approve_session"}
+                    self.agent.resolve_approval(
+                        request_id=request_id,
+                        approved=approved,
+                        session=(command == "approve_session"),
+                        permission=permission or None,
+                    )
                 elif command == "ping":
                     await websocket.send(json.dumps({"type": "pong"}))
                 elif command == "get_config":
