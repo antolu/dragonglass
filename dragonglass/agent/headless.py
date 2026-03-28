@@ -11,7 +11,6 @@ from dragonglass.agent.agent import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
-    ToolErrorEvent,
 )
 from dragonglass.agent.client import AgentClient
 
@@ -48,11 +47,13 @@ async def run_headless() -> None:
                     case TextChunk(text=chunk):
                         sys.stdout.write(chunk)
                         sys.stdout.flush()
-                    case ToolErrorEvent(tool=tool, error=err):
-                        sys.stdout.write(f"\n[error] {tool}: {err}\n")
-                        sys.stdout.flush()
-                    case MCPToolEvent(tool=tool, phase=phase, message=message):
-                        sys.stdout.write(f"\n[mcp] {tool} [{phase}] {message}\n")
+                    case MCPToolEvent(
+                        tool=tool, phase=phase, message=message, detail=detail
+                    ):
+                        if phase == "error":
+                            sys.stdout.write(f"\n[error] {tool}: {detail}\n")
+                        else:
+                            sys.stdout.write(f"\n[mcp] {tool} [{phase}] {message}\n")
                         sys.stdout.flush()
                     case DoneEvent():
                         sys.stdout.write("\n")

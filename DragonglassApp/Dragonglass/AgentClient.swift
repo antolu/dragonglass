@@ -4,7 +4,6 @@ import Combine
 enum AgentEvent: Codable {
     case status(String)
     case assistantMessage(String)
-    case error(String, String)
     case done
     case config(DragonglassConfig)
     case configAck
@@ -43,8 +42,6 @@ enum AgentEvent: Codable {
             self = .status(try container.decode(String.self, forKey: .message))
         case "TextChunk", "textchunk":
             self = .assistantMessage(try container.decode(String.self, forKey: .text))
-        case "ToolErrorEvent", "toolerrorevent":
-            self = .error(try container.decode(String.self, forKey: .tool), try container.decode(String.self, forKey: .error))
         case "DoneEvent", "doneevent":
             self = .done
         case "config":
@@ -87,10 +84,6 @@ enum AgentEvent: Codable {
         case .assistantMessage(let msg):
             try container.encode("TextChunk", forKey: .type)
             try container.encode(msg, forKey: .text)
-        case .error(let tool, let err):
-            try container.encode("ToolErrorEvent", forKey: .type)
-            try container.encode(tool, forKey: .tool)
-            try container.encode(err, forKey: .error)
         case .done:
             try container.encode("DoneEvent", forKey: .type)
         case .config(let config):
@@ -129,6 +122,15 @@ enum AgentEvent: Codable {
     }
 }
 
+struct ChatTurn: Identifiable {
+    let id: Int
+    let userMessageIndex: Int
+    var toolCallIndices: [Int] = []
+    var assistantMessageIndex: Int?
+    var doneIndex: Int?
+    var isCompleted: Bool { doneIndex != nil }
+}
+
 struct ConversationMetadata: Codable, Identifiable {
     let id: String
     let title: String
@@ -154,6 +156,45 @@ class AgentClient: ObservableObject {
     @Published var llmBackend: String = "litellm"
     @Published var detailedToolEvents: Bool = UserDefaults.standard.bool(forKey: "detailedToolEvents") {
         didSet { UserDefaults.standard.set(detailedToolEvents, forKey: "detailedToolEvents") }
+    }
+
+    var turns: [ChatTurn] {
+        var result: [ChatTurn] = []
+        var current: ChatTurn? = nil
+
+        for (index, event) in events.enumerated() {
+            switch event {
+            case .userMessage:
+                if let c = current { result.append(c) }
+                current = ChatTurn(id: index, userMessageIndex: index)
+            case .mcpTool:
+                current?.toolCallIndices.append(index)
+            case .assistantMessage:
+                if current?.assistantMessageIndex == nil {
+                    current?.assistantMessageIndex = index
+                }
+            case .done:
+                current?.doneIndex = index
+            default:
+                break
+            }
+        }
+        if let c = current { result.append(c) }
+        return result
+    }
+
+    var prefixEventIndices: [Int] {
+        var result: [Int] = []
+        for (index, event) in events.enumerated() {
+            if case .userMessage = event { break }
+            switch event {
+            case .status, .configAck:
+                result.append(index)
+            default:
+                break
+            }
+        }
+        return result
     }
 
     private var webSocketTask: URLSessionWebSocketTask?
@@ -191,7 +232,7 @@ class AgentClient: ObservableObject {
                                     } else {
                                         self.events.append(event)
                                     }
-                                case .status, .error:
+                                case .status:
                                     self.events.append(event)
                                 case .mcpTool:
                                     self.events.append(event)
