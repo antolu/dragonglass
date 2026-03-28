@@ -45,7 +45,7 @@ class MenuBarManager: NSObject, ObservableObject {
 
         let isReady: Bool
         switch backend.phase {
-        case .ready, .needsPluginReload:
+        case .ready, .needsPluginReload, .needsPluginUpdate:
             isReady = true
         default:
             isReady = false
