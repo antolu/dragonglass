@@ -83,7 +83,7 @@ struct SpeechSettingsView: View {
                 .font(.caption)
             Spacer()
             if !sttManager.micPermissionGranted {
-                Button("Grant") { sttManager.requestMicPermission() }
+                Button("Grant") { Task { await sttManager.requestMicPermission() } }
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
                     .font(.caption)

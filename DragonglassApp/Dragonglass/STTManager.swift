@@ -27,7 +27,7 @@ final class STTManager: ObservableObject {
     private static let repoName = "argmaxinc/whisperkit-coreml"
 
     private var whisperKit: WhisperKit?
-    private var audioEngine = AVAudioEngine()
+    private var audioEngine: AVAudioEngine!
     private var audioSamples: [Float] = []
     private var converter: AVAudioConverter?
     private var autoSendTask: Task<Void, Never>?
@@ -45,11 +45,9 @@ final class STTManager: ObservableObject {
         micPermissionGranted = AVAudioApplication.shared.recordPermission == .granted
     }
 
-    func requestMicPermission() {
-        Task {
-            let granted = await AVAudioApplication.requestRecordPermission()
-            micPermissionGranted = granted
-        }
+    func requestMicPermission() async {
+        let granted = await AVAudioApplication.requestRecordPermission()
+        micPermissionGranted = granted
     }
 
     func checkAccessibilityPermission() {
@@ -156,6 +154,7 @@ final class STTManager: ObservableObject {
             audioEngine = AVAudioEngine()
             let inputNode = audioEngine.inputNode
             let hwFormat = inputNode.outputFormat(forBus: 0)
+            guard hwFormat.sampleRate > 0 else { return }
             let targetFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: 16000,
