@@ -307,9 +307,9 @@ final class STTManager: ObservableObject {
             try await ensureLoaded()
             guard let wk = whisperKit else { throw STTError.notLoaded }
             logger.debug("Calling WhisperKit.transcribe")
-            let results = await wk.transcribe(audioArrays: [samples])
+            let results = try await wk.transcribe(audioArray: samples)
             let text = results
-                .compactMap { $0?.first?.text }
+                .map { $0.text }
                 .joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             logger.info("Transcription result: \"\(text)\"")
