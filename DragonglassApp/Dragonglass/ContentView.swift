@@ -689,9 +689,13 @@ struct MicButton: View {
                     sttManager.stopAndTranscribe()
                 }
         )
-        .disabled(!sttManager.micPermissionGranted || client.isThinking)
-        .opacity(sttManager.micPermissionGranted ? 1.0 : 0.3)
-        .help(sttManager.micPermissionGranted ? "Hold to dictate" : "Microphone permission required")
+        .disabled(!sttManager.micPermissionGranted || !sttManager.isModelReady || client.isThinking)
+        .opacity(sttManager.micPermissionGranted && sttManager.isModelReady ? 1.0 : 0.3)
+        .help(
+            !sttManager.micPermissionGranted ? "Microphone permission required" :
+            !sttManager.isModelReady ? "Download a Whisper model in Settings first" :
+            "Hold to dictate"
+        )
     }
 }
 

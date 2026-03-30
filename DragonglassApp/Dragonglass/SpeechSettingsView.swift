@@ -31,41 +31,33 @@ struct SpeechSettingsView: View {
 
             Divider()
 
-            if !sttManager.localModels.isEmpty {
-                HStack {
-                    Text("Active model")
-                        .font(.caption)
-                    Spacer()
-                    Picker("", selection: Binding(
-                        get: { sttManager.selectedModel },
-                        set: { sttManager.switchModel(to: $0) }
-                    )) {
-                        ForEach(sttManager.localModels, id: \.self) { m in
-                            Text(m).tag(m)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+            HStack {
+                Text("Whisper model")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if sttManager.isModelLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(height: 14)
+                    Text("Loading…")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
 
-            DisclosureGroup("Manage models") {
-                if sttManager.availableModels.isEmpty {
-                    ProgressView("Loading…")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
-                } else {
-                    VStack(spacing: 2) {
-                        ForEach(sttManager.availableModels, id: \.self) { model in
-                            ModelRowView(modelName: model)
-                                .environmentObject(sttManager)
-                        }
+            if sttManager.availableModels.isEmpty {
+                ProgressView("Fetching model list…")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(sttManager.availableModels, id: \.self) { model in
+                        ModelRowView(modelName: model)
+                            .environmentObject(sttManager)
                     }
-                    .padding(.top, 4)
                 }
             }
-            .font(.caption)
-            .foregroundColor(.secondary)
         }
         .onAppear {
             sttManager.refreshLocalModels()
@@ -83,7 +75,7 @@ struct SpeechSettingsView: View {
                 .font(.caption)
             Spacer()
             if !sttManager.micPermissionGranted {
-                Button("Grant") { sttManager.requestMicPermission() }
+                Button("Grant") { Task { await sttManager.requestMicPermission() } }
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
                     .font(.caption)
@@ -187,7 +179,7 @@ struct ModelRowView: View {
     }
 
     private func diskSize() -> String {
-        let folder = URL(fileURLWithPath: sttManager.localModelPath).appendingPathComponent(modelName)
+        let folder = URL(fileURLWithPath: sttManager.modelRepoPath).appendingPathComponent(modelName)
         guard let enumerator = FileManager.default.enumerator(
             at: folder,
             includingPropertiesForKeys: [.fileSizeKey],
