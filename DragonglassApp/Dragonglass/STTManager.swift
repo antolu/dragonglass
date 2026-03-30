@@ -6,6 +6,7 @@ import WhisperKit
 final class STTManager: ObservableObject {
     @Published var isRecording = false
     @Published var isTranscribing = false
+    @Published var isModelLoading = false
     @Published var pendingText: String?
     @Published var readyToFire = false
     @Published var downloadProgress: [String: Double] = [:]
@@ -27,6 +28,7 @@ final class STTManager: ObservableObject {
     private static let repoName = "argmaxinc/whisperkit-coreml"
 
     private var whisperKit: WhisperKit?
+    private var loadTask: Task<WhisperKit, Error>?
     private var audioEngine: AVAudioEngine!
     private var audioSamples: [Float] = []
     private var converter: AVAudioConverter?
@@ -37,6 +39,7 @@ final class STTManager: ObservableObject {
         checkAccessibilityPermission()
         refreshLocalModels()
         Task { await fetchAvailableModels() }
+        Task { try? await ensureLoaded() }
     }
 
     // MARK: - Permissions
@@ -98,7 +101,10 @@ final class STTManager: ObservableObject {
                     self.downloadProgress.removeValue(forKey: modelName)
                     self.refreshLocalModels()
                     if self.selectedModel == modelName {
+                        self.loadTask?.cancel()
+                        self.loadTask = nil
                         self.whisperKit = nil
+                        Task { try? await self.ensureLoaded() }
                     }
                 }
             } catch {
@@ -120,14 +126,21 @@ final class STTManager: ObservableObject {
     func switchModel(to modelName: String) {
         guard modelName != selectedModel else { return }
         selectedModel = modelName
+        loadTask?.cancel()
+        loadTask = nil
         Task { await self.whisperKit?.unloadModels() }
         whisperKit = nil
+        Task { try? await ensureLoaded() }
     }
 
     // MARK: - WhisperKit loading
 
     private func ensureLoaded() async throws {
-        guard whisperKit == nil else { return }
+        if whisperKit != nil { return }
+        if let task = loadTask {
+            whisperKit = try await task.value
+            return
+        }
         let model = selectedModel.isEmpty ? "openai_whisper-large-v3" : selectedModel
         let base = URL(fileURLWithPath: localModelPath)
         let config = WhisperKitConfig(
@@ -137,7 +150,14 @@ final class STTManager: ObservableObject {
             load: true,
             download: false
         )
-        whisperKit = try await WhisperKit(config)
+        let task = Task<WhisperKit, Error> { try await WhisperKit(config) }
+        loadTask = task
+        isModelLoading = true
+        defer {
+            loadTask = nil
+            isModelLoading = false
+        }
+        whisperKit = try await task.value
     }
 
     // MARK: - Recording
@@ -153,8 +173,8 @@ final class STTManager: ObservableObject {
         do {
             audioEngine = AVAudioEngine()
             let inputNode = audioEngine.inputNode
-            let hwFormat = inputNode.outputFormat(forBus: 0)
-            guard hwFormat.sampleRate > 0 else { return }
+            let hwFormat = inputNode.inputFormat(forBus: 0)
+            guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else { return }
             let targetFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: 16000,
@@ -169,17 +189,21 @@ final class STTManager: ObservableObject {
                 let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
                 guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outFrames),
                       let channelData = converted.floatChannelData else { return }
+                var done = false
                 var error: NSError?
-                let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+                converter.convert(to: converted, error: &error) { _, outStatus in
+                    if done {
+                        outStatus.pointee = .endOfStream
+                        return nil
+                    }
+                    done = true
                     outStatus.pointee = .haveData
                     return buffer
                 }
-                converter.convert(to: converted, error: &error, withInputFrom: inputBlock)
-                if error == nil {
-                    let count = Int(converted.frameLength)
-                    let samples = Array(UnsafeBufferPointer(start: channelData[0], count: count))
-                    DispatchQueue.main.async { self.audioSamples.append(contentsOf: samples) }
-                }
+                guard error == nil, converted.frameLength > 0 else { return }
+                let count = Int(converted.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: channelData[0], count: count))
+                DispatchQueue.main.async { self.audioSamples.append(contentsOf: samples) }
             }
 
             try audioEngine.start()
