@@ -16,9 +16,11 @@ final class STTManager: ObservableObject {
     @Published var accessibilityGranted = false
 
     var selectedModel: String {
-        get { UserDefaults.standard.string(forKey: "sttSelectedModel") ?? "openai_whisper-large-v3" }
+        get { UserDefaults.standard.string(forKey: "sttSelectedModel") ?? "openai_whisper-large-v3-v20240930_turbo" }
         set { UserDefaults.standard.set(newValue, forKey: "sttSelectedModel") }
     }
+
+    var isModelReady: Bool { localModels.contains(selectedModel) }
 
     var autoSend: Bool {
         get { UserDefaults.standard.object(forKey: "sttAutoSend") as? Bool ?? true }
@@ -65,10 +67,15 @@ final class STTManager: ObservableObject {
         return appSupport.appendingPathComponent("dragonglass/whisperkit-models").path
     }
 
+    var modelRepoPath: String {
+        URL(fileURLWithPath: localModelPath)
+            .appendingPathComponent("argmaxinc/whisperkit-coreml")
+            .path
+    }
+
     func refreshLocalModels() {
-        let path = localModelPath
-        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
-        let contents = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+        try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: modelRepoPath)) ?? []
         localModels = ModelUtilities.formatModelFiles(contents)
     }
 
@@ -115,7 +122,7 @@ final class STTManager: ObservableObject {
     }
 
     func deleteModel(_ modelName: String) {
-        let folderURL = URL(fileURLWithPath: localModelPath).appendingPathComponent(modelName)
+        let folderURL = URL(fileURLWithPath: modelRepoPath).appendingPathComponent(modelName)
         try? FileManager.default.removeItem(at: folderURL)
         if selectedModel == modelName {
             whisperKit = nil
@@ -125,6 +132,7 @@ final class STTManager: ObservableObject {
 
     func switchModel(to modelName: String) {
         guard modelName != selectedModel else { return }
+        objectWillChange.send()
         selectedModel = modelName
         loadTask?.cancel()
         loadTask = nil
@@ -141,12 +149,12 @@ final class STTManager: ObservableObject {
             whisperKit = try await task.value
             return
         }
-        let model = selectedModel.isEmpty ? "openai_whisper-large-v3" : selectedModel
-        let base = URL(fileURLWithPath: localModelPath)
+        let model = selectedModel.isEmpty ? "openai_whisper-large-v3-v20240930_turbo" : selectedModel
+        let repoURL = URL(fileURLWithPath: modelRepoPath)
         let config = WhisperKitConfig(
             model: model,
-            downloadBase: base,
-            modelFolder: base.appendingPathComponent(model).path,
+            downloadBase: URL(fileURLWithPath: localModelPath),
+            modelFolder: repoURL.appendingPathComponent(model).path,
             load: true,
             download: false
         )
@@ -163,7 +171,7 @@ final class STTManager: ObservableObject {
     // MARK: - Recording
 
     func startRecording() {
-        guard !isRecording, micPermissionGranted else { return }
+        guard !isRecording, micPermissionGranted, isModelReady else { return }
         autoSendTask?.cancel()
         autoSendTask = nil
         pendingText = nil
