@@ -18,7 +18,7 @@ enum BackendPhase: Equatable {
 @MainActor
 class BackendManager: ObservableObject {
     @Published var phase: BackendPhase = .starting
-    @Published var obsidianWarning: String? = nil
+    @Published var obsidianWarning: String?
     private var process: Process?
     private var obsidianPollTask: Task<Void, Never>?
 
@@ -421,7 +421,7 @@ class BackendManager: ObservableObject {
             "/bin",
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pyenv/shims").path,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pyenv/bin").path,
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".conda/bin").path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".conda/bin").path
         ]
         let augmentedPath = (extraPaths + (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .components(separatedBy: ":")).joined(separator: ":")
@@ -454,7 +454,7 @@ class BackendManager: ObservableObject {
             "/opt/homebrew/bin/python3",   // Apple Silicon homebrew
             "/usr/local/bin/python3",       // Intel homebrew
             homeDir.appendingPathComponent(".conda/bin/python3").path,
-            homeDir.appendingPathComponent(".pyenv/shims/python3").path,
+            homeDir.appendingPathComponent(".pyenv/shims/python3").path
         ]
         // Versioned binaries for both homebrew prefixes
         for bin in binaries where bin != "python3" {
@@ -669,7 +669,7 @@ class BackendManager: ObservableObject {
             "/usr/bin",
             "/bin",
             homeDir.appendingPathComponent(".volta/bin").path,
-            homeDir.appendingPathComponent(".fnm").path,
+            homeDir.appendingPathComponent(".fnm").path
         ]
         let augmentedPath = (extraPaths + (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .components(separatedBy: ":")).joined(separator: ":")
@@ -699,7 +699,7 @@ class BackendManager: ObservableObject {
             "/opt/homebrew/bin/npm",
             "/usr/local/bin/npm",
             "/usr/bin/npm",
-            homeDir.appendingPathComponent(".volta/bin/npm").path,
+            homeDir.appendingPathComponent(".volta/bin/npm").path
         ]
         // nvm: glob for installed node versions, pick the last (typically highest)
         let nvmBase = homeDir.appendingPathComponent(".nvm/versions/node")

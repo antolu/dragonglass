@@ -53,7 +53,7 @@ class KeyRecorderNSView: NSView {
         let text = displayString()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: isRecording ? NSColor.controlAccentColor : NSColor.labelColor,
+            .foregroundColor: isRecording ? NSColor.controlAccentColor : NSColor.labelColor
         ]
         let str = NSAttributedString(string: text, attributes: attrs)
         let size = str.size()
@@ -104,7 +104,7 @@ class KeyRecorderNSView: NSView {
             123: "←", 124: "→", 125: "↓", 126: "↑",
             122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5",
             97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10",
-            103: "F11", 111: "F12",
+            103: "F11", 111: "F12"
         ]
         if let name = named[keyCode] { return name }
         if let char = characterForKeyCode(UInt16(keyCode)) { return char.uppercased() }
