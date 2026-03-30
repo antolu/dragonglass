@@ -43,6 +43,7 @@ node_modules/
 
 # Swift / Xcode
 DerivedData/
+**/.derived-data*
 /*.xcworkspace
 *.xcuserstate
 DragonglassApp/Resources/wheels/
