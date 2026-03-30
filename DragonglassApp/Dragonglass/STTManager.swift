@@ -87,9 +87,10 @@ final class STTManager: ObservableObject {
     func refreshLocalModels() {
         try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: modelRepoPath)) ?? []
-        // Using raw folder names ensures it matches what downloadModel/WhisperKit uses.
-        localModels = contents
-        logger.debug("Refreshed local models: \(contents)")
+        // Only include non-hidden directories (ignore .cache, etc.)
+        let models = contents.filter { !$0.hasPrefix(".") }
+        localModels = models
+        logger.debug("Refreshed local models: \(models)")
     }
 
     func fetchAvailableModels() async {
