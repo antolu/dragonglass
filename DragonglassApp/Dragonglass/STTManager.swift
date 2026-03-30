@@ -34,7 +34,7 @@ final class STTManager: ObservableObject {
 
     private var whisperKit: WhisperKit?
     private var loadTask: Task<WhisperKit, Error>?
-    private var audioEngine: AVAudioEngine!
+    private let audioEngine = AVAudioEngine()
     private var audioSamples: [Float] = []
     private var converter: AVAudioConverter?
     private var autoSendTask: Task<Void, Never>?
@@ -221,7 +221,6 @@ final class STTManager: ObservableObject {
         audioSamples = []
 
         do {
-            audioEngine = AVAudioEngine()
             let inputNode = audioEngine.inputNode
             let hwFormat = inputNode.inputFormat(forBus: 0)
             logger.debug("Input format: \(hwFormat)")
@@ -243,26 +242,17 @@ final class STTManager: ObservableObject {
                 let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
                 guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outFrames),
                       let channelData = converted.floatChannelData else { return }
-                var done = false
-                var error: NSError?
-                converter.convert(to: converted, error: &error) { _, outStatus in
-                    if done {
-                        outStatus.pointee = .endOfStream
-                        return nil
-                    }
-                    done = true
+                var nsError: NSError?
+                converter.convert(to: converted, error: &nsError) { _, outStatus in
                     outStatus.pointee = .haveData
                     return buffer
                 }
-                guard error == nil, converted.frameLength > 0 else { return }
+                guard nsError == nil, converted.frameLength > 0 else { return }
                 let count = Int(converted.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: channelData[0], count: count))
                 self.audioQueue.async {
                     self.audioBuffer.samples.append(contentsOf: samples)
                     self.audioBuffer.tapCount += 1
-                    if self.audioBuffer.tapCount % 50 == 0 {
-                        logger.debug("Accumulated \(self.audioBuffer.samples.count) samples (tap #\(self.audioBuffer.tapCount))")
-                    }
                 }
             }
 
@@ -278,7 +268,7 @@ final class STTManager: ObservableObject {
 
     func stopAndTranscribe() {
         guard isRecording else { return }
-        logger.info("Stopping recording and starting transcription")
+        logger.info("Stopping recording and starting transcription at \(CACurrentMediaTime())")
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false

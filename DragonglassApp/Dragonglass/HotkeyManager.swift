@@ -1,6 +1,9 @@
 import AppKit
 import Carbon
 import Combine
+import os
+
+private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "HotkeyManager")
 
 private final class HotkeyState: @unchecked Sendable {
     var keyCode: Int = 0
@@ -86,6 +89,7 @@ final class HotkeyManager: NSObject, ObservableObject {
             guard keyCode == state.keyCode, eventCarbon == state.carbonModifiers, !state.isPressed else {
                 return Unmanaged.passUnretained(event)
             }
+            logger.debug("keyDown matched at \(CACurrentMediaTime())")
             state.isPressed = true
             Task { @MainActor in self.onKeyDown() }
             return nil
@@ -94,6 +98,7 @@ final class HotkeyManager: NSObject, ObservableObject {
             guard keyCode == state.keyCode, state.isPressed else {
                 return Unmanaged.passUnretained(event)
             }
+            logger.debug("keyUp matched at \(CACurrentMediaTime())")
             state.isPressed = false
             Task { @MainActor in self.onKeyUp() }
             return nil
@@ -101,6 +106,7 @@ final class HotkeyManager: NSObject, ObservableObject {
         case .flagsChanged:
             guard state.isPressed else { return Unmanaged.passUnretained(event) }
             let requiredNSFlags = HotkeyManager.toNSModifiers(carbonModifiers: state.carbonModifiers)
+            logger.debug("flagsChanged while pressed, flags=\(nsFlags.rawValue) required=\(requiredNSFlags.rawValue) at \(CACurrentMediaTime())")
             if !nsFlags.contains(requiredNSFlags) {
                 state.isPressed = false
                 Task { @MainActor in self.onKeyUp() }
