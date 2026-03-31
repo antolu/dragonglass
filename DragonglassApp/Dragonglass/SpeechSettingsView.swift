@@ -196,6 +196,11 @@ struct ModelRowView: View {
                     .foregroundColor(.red)
                     .font(.caption2)
             } else {
+                if let bytes = sttManager.modelSizes[modelName] {
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 Button("Download") { sttManager.downloadModel(modelName) }
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)

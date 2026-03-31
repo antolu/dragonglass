@@ -1,0 +1,135 @@
+{
+  "models": [
+    {
+      "name": "openai_whisper-tiny",
+      "size_bytes": 76689408,
+      "md5": "7147518a3d68ddbea0691e04cfffa4ff"
+    },
+    {
+      "name": "openai_whisper-tiny.en",
+      "size_bytes": 153067520,
+      "md5": "e1183fd55448923b1ce43a2da67aa21f"
+    },
+    {
+      "name": "openai_whisper-base",
+      "size_bytes": 146776064,
+      "md5": "36e60501ad0f01c1a5719e83a1f63f20"
+    },
+    {
+      "name": "openai_whisper-base.en",
+      "size_bytes": 146763776,
+      "md5": "fbcfd586f15e2952251b1d3257f18471"
+    },
+    {
+      "name": "openai_whisper-small",
+      "size_bytes": 486535168,
+      "md5": "f1d21adb950bc9be5d5343bcdeccd23b"
+    },
+    {
+      "name": "openai_whisper-small_216MB",
+      "size_bytes": 217399296
+    },
+    {
+      "name": "openai_whisper-small.en",
+      "size_bytes": 486559744,
+      "md5": "38efe6a00706bbdb995795c67a836e5e"
+    },
+    {
+      "name": "openai_whisper-small.en_217MB",
+      "size_bytes": 217931776
+    },
+    {
+      "name": "openai_whisper-medium",
+      "size_bytes": 1529700352
+    },
+    {
+      "name": "openai_whisper-medium.en",
+      "size_bytes": 1529724928
+    },
+    {
+      "name": "openai_whisper-large-v2",
+      "size_bytes": 3107049472,
+      "md5": "21b86c07318aeeef54598f15b7903979"
+    },
+    {
+      "name": "openai_whisper-large-v2_949MB",
+      "size_bytes": 952213504,
+      "md5": "71bad4e1566749d1060eda42308d9fb4"
+    },
+    {
+      "name": "openai_whisper-large-v2_turbo",
+      "size_bytes": 3096498176,
+      "md5": "7734959b6550e7b5c2d732bf2b7acd23"
+    },
+    {
+      "name": "openai_whisper-large-v2_turbo_955MB",
+      "size_bytes": 1053196288,
+      "md5": "cb6411862a48ec75325572081f01e5b5"
+    },
+    {
+      "name": "openai_whisper-large-v3",
+      "size_bytes": 3106975744,
+      "md5": "a6f24dc72785722e9cea89e227856dfe"
+    },
+    {
+      "name": "openai_whisper-large-v3_947MB",
+      "size_bytes": 948158464,
+      "md5": "ef6b0e9622a046ce2361b4c72307877f"
+    },
+    {
+      "name": "openai_whisper-large-v3_turbo",
+      "size_bytes": 3211784192,
+      "md5": "c550fbdea70c5784d322c0a427f8b5cd"
+    },
+    {
+      "name": "openai_whisper-large-v3_turbo_954MB",
+      "size_bytes": 1052909568,
+      "md5": "e639c4bb98d905064ef5dd38757dd9d1"
+    },
+    {
+      "name": "openai_whisper-large-v3-v20240930",
+      "size_bytes": 1619582976,
+      "md5": "17ebd78ff7edfa59001b554e9cc4c021"
+    },
+    {
+      "name": "openai_whisper-large-v3-v20240930_547MB",
+      "size_bytes": 549605376,
+      "md5": "c945dad68449ac3c78ecb2d561ac189d"
+    },
+    {
+      "name": "openai_whisper-large-v3-v20240930_626MB",
+      "size_bytes": 626769920,
+      "md5": "578fe5a07f4eb7e4187c920bca571aa5"
+    },
+    {
+      "name": "openai_whisper-large-v3-v20240930_turbo",
+      "size_bytes": 1638526976,
+      "md5": "dfbf09ab741af1d5400ddbd07bb37dad"
+    },
+    {
+      "name": "openai_whisper-large-v3-v20240930_turbo_632MB",
+      "size_bytes": 645730304,
+      "md5": "33954440dbd785ca1828afe25514f5a5"
+    },
+    {
+      "name": "distil-whisper_distil-large-v3",
+      "size_bytes": 1514586112,
+      "md5": "9cd8271143b919402ae776c30b479565"
+    },
+    {
+      "name": "distil-whisper_distil-large-v3_594MB",
+      "size_bytes": 594587648,
+      "md5": "ca532f45ddbf8a3d241132cc5cf41639"
+    },
+    {
+      "name": "distil-whisper_distil-large-v3_turbo",
+      "size_bytes": 1527177216,
+      "md5": "b8638452c6568dfe33a33bfcc2bc6aca"
+    },
+    {
+      "name": "distil-whisper_distil-large-v3_turbo_600MB",
+      "size_bytes": 607178752,
+      "md5": "81746b4b1afbbb01a8ae9ea452460d88"
+    }
+  ]
+}
