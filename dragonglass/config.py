@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import os
 
 from pydantic_settings import (
@@ -10,6 +11,11 @@ from pydantic_settings import (
 )
 
 from dragonglass import paths
+
+
+class LLMBackend(enum.StrEnum):
+    litellm = "litellm"
+    opencode = "opencode"
 
 
 class Settings(BaseSettings):
@@ -36,7 +42,7 @@ class Settings(BaseSettings):
 
     obsidian_dir: str = ""
     llm_model: str = "ollama/llama3.2"
-    llm_backend: str = "litellm"
+    llm_backend: LLMBackend = LLMBackend.litellm
     opencode_url: str = "http://localhost:4096"
     mcp_http_port: int = 51364
     spawn_opencode: bool = True

@@ -39,7 +39,7 @@ from dragonglass.agent.types import (
     _ToolCallMsg,
     _ToolFunction,
 )
-from dragonglass.config import Settings, get_settings
+from dragonglass.config import LLMBackend, Settings, get_settings
 from dragonglass.mcp.search import (
     _delete_frontmatter_key_lines,
     _rebuild_note_with_frontmatter,
@@ -344,8 +344,9 @@ class VaultAgent:
         self._session_approved: set[str] = set()
 
     async def initialise(self) -> None:
+        settings = get_settings()
         self._system_prompt, self.agents_note_found = await load_system_prompt(
-            get_settings()
+            settings, opencode=settings.llm_backend == LLMBackend.opencode
         )
         await self._connect_mcp_servers()
 
@@ -600,7 +601,7 @@ class VaultAgent:
             litellm.drop_params = True
             model_name = resolve_model_name(model_override, settings.llm_model)
 
-            if settings.llm_backend == "opencode":
+            if settings.llm_backend == LLMBackend.opencode:
                 if not self._opencode_session_id:
                     # We create session lazily on first turn
                     client = AsyncOpencode(base_url=settings.opencode_url)

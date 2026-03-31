@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dragonglass.agent.agent import VaultAgent
 from dragonglass.agent.types import StatusEvent, TextChunk
-from dragonglass.config import get_settings
+from dragonglass.config import LLMBackend, get_settings
 from dragonglass.paths import OPENCODE_CONFIG_FILE
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -172,7 +172,7 @@ async def run_full_pipeline_test() -> None:  # noqa: PLR0912, PLR0915
         print("[3] Running agent turn...", flush=True)
         settings = get_settings()
         # Override settings for the test run
-        settings.llm_backend = "opencode"
+        settings.llm_backend = LLMBackend.opencode
         settings.opencode_url = f"http://127.0.0.1:{opencode_port}"
         # Use gpt-5-mini as requested
         test_model = "github-copilot/gpt-5-mini"
