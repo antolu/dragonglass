@@ -161,6 +161,7 @@ struct SpeechSettingsView: View {
 struct ModelRowView: View {
     let modelName: String
     @EnvironmentObject var sttManager: STTManager
+    @State private var confirmDownload = false
 
     private var isLocal: Bool { sttManager.localModels.contains(modelName) }
     private var isActive: Bool { sttManager.selectedModel == modelName }
@@ -204,7 +205,17 @@ struct ModelRowView: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isLocal { sttManager.switchModel(to: modelName) }
+            if isLocal {
+                sttManager.switchModel(to: modelName)
+            } else if progress == nil {
+                confirmDownload = true
+            }
+        }
+        .confirmationDialog("Download \(modelName)?", isPresented: $confirmDownload) {
+            Button("Download") { sttManager.downloadModel(modelName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This model is not downloaded yet.")
         }
     }
 
