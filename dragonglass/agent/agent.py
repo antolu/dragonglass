@@ -29,6 +29,7 @@ from dragonglass.agent.types import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
+    ToolPhase,
     UsageEvent,
     UserMessageEvent,
     _FallbackFunction,
@@ -76,7 +77,7 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
                 events.append(
                     MCPToolEvent(
                         tool=tool_name,
-                        phase="done",
+                        phase=ToolPhase.DONE,
                         message=args,
                         detail=result,
                     )
@@ -904,13 +905,16 @@ class VaultAgent:
                 if _is_validation_error_result(result):
                     yield MCPToolEvent(
                         tool=tool_name,
-                        phase="validation_error",
+                        phase=ToolPhase.VALIDATION_ERROR,
                         message=tool_name,
                         detail=result,
                     )
                 elif _is_error_result(result):
                     yield MCPToolEvent(
-                        tool=tool_name, phase="error", message=tool_name, detail=result
+                        tool=tool_name,
+                        phase=ToolPhase.ERROR,
+                        message=tool_name,
+                        detail=result,
                     )
 
                 messages.append(

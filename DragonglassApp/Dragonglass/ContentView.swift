@@ -420,7 +420,7 @@ struct ContentView: View {
                 if !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     hasText = true
                 }
-            case .mcpTool(_, let phase, _, _) where phase == "error" || phase == "validation_error":
+            case .mcpTool(_, let phase, _, _) where ToolPhase(rawValue: phase) == .error || ToolPhase(rawValue: phase) == .validationError:
                 return false
             case .status(let message):
                 if message.lowercased().hasPrefix("error:") {
@@ -492,6 +492,22 @@ struct EventRow: View {
     }
 }
 
+enum ToolPhase: String {
+    case done = "done"
+    case error = "error"
+    case validationError = "validation_error"
+    case unknown
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "done": self = .done
+        case "error": self = .error
+        case "validation_error": self = .validationError
+        default: self = .unknown
+        }
+    }
+}
+
 struct ToolCallBadge: View {
     let tool: String
     let phase: String
@@ -500,24 +516,26 @@ struct ToolCallBadge: View {
     var detailed: Bool = false
     @State private var showingError = false
 
+    private var toolPhase: ToolPhase { ToolPhase(rawValue: phase) }
+
     private var badgeColor: Color {
-        switch phase {
-        case "error": return .red
-        case "validation_error": return .orange
+        switch toolPhase {
+        case .error: return .red
+        case .validationError: return .orange
         default: return .blue
         }
     }
 
     private var isErrorLike: Bool {
-        phase == "error" || phase == "validation_error"
+        toolPhase == .error || toolPhase == .validationError
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            if phase == "error" {
+            if toolPhase == .error {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundColor(.red)
-            } else if phase == "validation_error" {
+            } else if toolPhase == .validationError {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundColor(.orange)
             }

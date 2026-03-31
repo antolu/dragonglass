@@ -10,6 +10,7 @@ import fastmcp
 import httpx
 import pydantic
 
+from dragonglass.agent.types import ToolPhase
 from dragonglass.config import Settings
 from dragonglass.mcp.telemetry import emit_tool_event
 from dragonglass.search.session import get_current_session, new_session
@@ -800,7 +801,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         session = new_session()
         emit_tool_event(
             "dragonglass_new_search_session",
-            "done",
+            ToolPhase.DONE,
             "New search session",
             f"id={session.id}",
         )
@@ -829,7 +830,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         result = await _do_keyword_search(settings, queries)
         elapsed = time.monotonic() - started
         terms = ", ".join(str(q) for q in queries)
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -859,7 +860,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         elapsed = time.monotonic() - started
         errs = [item.get("error") for item in result if isinstance(item, dict)]
         errs = [e for e in errs if isinstance(e, str)]
-        phase = "error" if errs else "done"
+        phase = ToolPhase.ERROR if errs else ToolPhase.DONE
         detail = (
             _safe_value_preview(errs[0])
             if errs
@@ -884,14 +885,14 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                 if resp.status_code in {httpx.codes.OK, httpx.codes.NO_CONTENT}:
                     emit_tool_event(
                         "dragonglass_run_command",
-                        "done",
+                        ToolPhase.DONE,
                         f"Run command: {_safe_value_preview(command_id)}",
                         "ok",
                     )
                     return {"status": "executed", "command_id": command_id}
                 emit_tool_event(
                     "dragonglass_run_command",
-                    "error",
+                    ToolPhase.ERROR,
                     f"Run command: {_safe_value_preview(command_id)}",
                     f"HTTP {resp.status_code}",
                 )
@@ -900,7 +901,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             logger.exception("run_command failed for %r", command_id)
             emit_tool_event(
                 "dragonglass_run_command",
-                "error",
+                ToolPhase.ERROR,
                 f"Run command: {_safe_value_preview(command_id)}",
                 _safe_value_preview(exc),
             )
@@ -924,7 +925,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         started = time.monotonic()
         result = await do_read_note_with_hash(settings, path, start_line, end_line)
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -967,7 +968,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             },
         )
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -1008,7 +1009,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             },
         )
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -1049,7 +1050,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             },
         )
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -1081,7 +1082,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             args["value"] = value
         result = await do_manage_frontmatter(settings, args)
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
@@ -1111,7 +1112,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             args["tags"] = tags
         result = await do_manage_tags(settings, args)
         elapsed = time.monotonic() - started
-        phase = "error" if "error" in result else "done"
+        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
             _safe_value_preview(result.get("error"))
             if "error" in result
