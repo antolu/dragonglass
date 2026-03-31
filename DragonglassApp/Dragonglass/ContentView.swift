@@ -514,7 +514,7 @@ struct ToolCallBadge: View {
     let message: String
     let detail: String
     var detailed: Bool = false
-    @State private var showingError = false
+    @State private var showingDetail = false
 
     private var toolPhase: ToolPhase { ToolPhase(rawValue: phase) }
 
@@ -528,6 +528,14 @@ struct ToolCallBadge: View {
 
     private var isErrorLike: Bool {
         toolPhase == .error || toolPhase == .validationError
+    }
+
+    private var badgeLabel: String {
+        switch toolPhase {
+        case .error: return "\(tool): error"
+        case .validationError: return "\(tool): validation error"
+        default: return message
+        }
     }
 
     var body: some View {
@@ -546,7 +554,7 @@ struct ToolCallBadge: View {
                     Text(message + (detail.isEmpty ? "" : " — \(detail)"))
                 }
             } else {
-                Text(isErrorLike ? tool : message)
+                Text(badgeLabel)
             }
         }
         .font(.caption)
@@ -554,11 +562,11 @@ struct ToolCallBadge: View {
         .background(badgeColor.opacity(0.08))
         .cornerRadius(4)
         .onTapGesture {
-            if isErrorLike { showingError = true }
+            if isErrorLike { showingDetail = true }
         }
-        .popover(isPresented: $showingError) {
+        .popover(isPresented: $showingDetail) {
             ScrollView {
-                Text(detail.isEmpty ? "No error detail available." : detail)
+                Text(detail.isEmpty ? "No detail available." : detail)
                     .font(.caption)
                     .padding()
                     .frame(maxWidth: 320, alignment: .leading)
