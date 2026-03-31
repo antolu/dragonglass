@@ -5,27 +5,21 @@ import os
 
 private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "HotkeyManager")
 
-private final class HotkeyState: @unchecked Sendable {
-    var keyCode: Int = 0
-    var carbonModifiers: Int = 0
-    var isPressed = false
-}
-
 @MainActor
 final class HotkeyManager: NSObject, ObservableObject {
     @Published var accessibilityGranted = false
 
     private weak var sttManager: STTManager?
     private weak var menuBarManager: MenuBarManager?
+    private weak var agentClient: AgentClient?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    nonisolated private let state = HotkeyState()
-
-    func setup(sttManager: STTManager, menuBarManager: MenuBarManager) {
+    func setup(sttManager: STTManager, menuBarManager: MenuBarManager, agentClient: AgentClient) {
         self.sttManager = sttManager
         self.menuBarManager = menuBarManager
+        self.agentClient = agentClient
         refreshAccessibility()
         registerIfPossible()
     }
@@ -41,12 +35,10 @@ final class HotkeyManager: NSObject, ObservableObject {
         let keyCode = UserDefaults.standard.integer(forKey: "sttHotkeyKeyCode")
         let modifiers = UserDefaults.standard.integer(forKey: "sttHotkeyModifiers")
         guard keyCode != 0 else { return }
-        state.keyCode = keyCode
-        state.carbonModifiers = modifiers
-        installEventTap()
+        installEventTap(keyCode: keyCode, carbonModifiers: modifiers)
     }
 
-    private func installEventTap() {
+    private func installEventTap(keyCode: Int, carbonModifiers: Int) {
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
@@ -54,9 +46,12 @@ final class HotkeyManager: NSObject, ObservableObject {
 
         let callback: CGEventTapCallBack = { _, type, event, userInfo -> Unmanaged<CGEvent>? in
             guard let userInfo else { return Unmanaged.passUnretained(event) }
-            let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
-            return manager.handleEvent(type: type, event: event)
+            let ctx = Unmanaged<TapContext>.fromOpaque(userInfo).takeUnretainedValue()
+            return ctx.handle(type: type, event: event)
         }
+
+        let ctx = TapContext(state: TapContext.TapState(keyCode: keyCode, carbonModifiers: carbonModifiers), manager: self)
+        let ctxPtr = Unmanaged.passRetained(ctx)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -64,8 +59,9 @@ final class HotkeyManager: NSObject, ObservableObject {
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+            userInfo: ctxPtr.toOpaque()
         ) else {
+            ctxPtr.release()
             print("[HotkeyManager] CGEvent.tapCreate failed — check Input Monitoring permission")
             return
         }
@@ -77,47 +73,6 @@ final class HotkeyManager: NSObject, ObservableObject {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    nonisolated private func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        let cgFlags = event.flags
-
-        let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(cgFlags.rawValue))
-        let eventCarbon = HotkeyManager.toCarbonModifiers(nsFlags)
-
-        switch type {
-        case .keyDown:
-            guard keyCode == state.keyCode, eventCarbon == state.carbonModifiers, !state.isPressed else {
-                return Unmanaged.passUnretained(event)
-            }
-            logger.debug("keyDown matched at \(CACurrentMediaTime())")
-            state.isPressed = true
-            Task { @MainActor in self.onKeyDown() }
-            return nil
-
-        case .keyUp:
-            guard keyCode == state.keyCode, state.isPressed else {
-                return Unmanaged.passUnretained(event)
-            }
-            logger.debug("keyUp matched at \(CACurrentMediaTime())")
-            state.isPressed = false
-            Task { @MainActor in self.onKeyUp() }
-            return nil
-
-        case .flagsChanged:
-            guard state.isPressed else { return Unmanaged.passUnretained(event) }
-            let requiredNSFlags = HotkeyManager.toNSModifiers(carbonModifiers: state.carbonModifiers)
-            logger.debug("flagsChanged while pressed, flags=\(nsFlags.rawValue) required=\(requiredNSFlags.rawValue) at \(CACurrentMediaTime())")
-            if !nsFlags.contains(requiredNSFlags) {
-                state.isPressed = false
-                Task { @MainActor in self.onKeyUp() }
-            }
-            return Unmanaged.passUnretained(event)
-
-        default:
-            return Unmanaged.passUnretained(event)
-        }
-    }
-
     private func unregister() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
@@ -127,16 +82,16 @@ final class HotkeyManager: NSObject, ObservableObject {
             eventTap = nil
             runLoopSource = nil
         }
-        state.isPressed = false
     }
 
     func onKeyDown() {
+        agentClient?.startNewChat()
+        menuBarManager?.showPopover()
         sttManager?.startRecording()
     }
 
     func onKeyUp() {
         sttManager?.stopAndTranscribe()
-        menuBarManager?.showPopover()
     }
 
     nonisolated static func toCarbonModifiers(_ flags: NSEvent.ModifierFlags) -> Int {
@@ -155,5 +110,66 @@ final class HotkeyManager: NSObject, ObservableObject {
         if carbonModifiers & optionKey != 0 { flags.insert(.option) }
         if carbonModifiers & controlKey != 0 { flags.insert(.control) }
         return flags
+    }
+}
+
+private final class TapContext: @unchecked Sendable {
+    final class TapState: @unchecked Sendable {
+        var isPressed = false
+        let keyCode: Int
+        let carbonModifiers: Int
+        init(keyCode: Int, carbonModifiers: Int) {
+            self.keyCode = keyCode
+            self.carbonModifiers = carbonModifiers
+        }
+    }
+
+    let state: TapState
+    weak var manager: HotkeyManager?
+
+    init(state: TapState, manager: HotkeyManager) {
+        self.state = state
+        self.manager = manager
+    }
+
+    func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+        let cgFlags = event.flags
+        let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(cgFlags.rawValue))
+        let eventCarbon = HotkeyManager.toCarbonModifiers(nsFlags)
+
+        switch type {
+        case .keyDown:
+            guard keyCode == state.keyCode, eventCarbon == state.carbonModifiers else {
+                return Unmanaged.passUnretained(event)
+            }
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            if isRepeat || state.isPressed { return nil }
+            logger.debug("keyDown matched at \(CACurrentMediaTime())")
+            state.isPressed = true
+            Task { @MainActor [weak manager] in manager?.onKeyDown() }
+            return nil
+
+        case .keyUp:
+            guard keyCode == state.keyCode, state.isPressed else {
+                return Unmanaged.passUnretained(event)
+            }
+            logger.debug("keyUp matched at \(CACurrentMediaTime())")
+            state.isPressed = false
+            Task { @MainActor [weak manager] in manager?.onKeyUp() }
+            return nil
+
+        case .flagsChanged:
+            guard state.isPressed else { return Unmanaged.passUnretained(event) }
+            let requiredNSFlags = HotkeyManager.toNSModifiers(carbonModifiers: state.carbonModifiers)
+            if !nsFlags.contains(requiredNSFlags) {
+                state.isPressed = false
+                Task { @MainActor [weak manager] in manager?.onKeyUp() }
+            }
+            return Unmanaged.passUnretained(event)
+
+        default:
+            return Unmanaged.passUnretained(event)
+        }
     }
 }

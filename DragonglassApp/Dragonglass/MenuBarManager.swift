@@ -24,7 +24,7 @@ class MenuBarManager: NSObject, ObservableObject {
         self.sttManager = sttManager
         self.hotkeyManager = hotkeyManager
 
-        hotkeyManager.setup(sttManager: sttManager, menuBarManager: self)
+        hotkeyManager.setup(sttManager: sttManager, menuBarManager: self, agentClient: client)
 
         backend.$phase
             .receive(on: RunLoop.main)

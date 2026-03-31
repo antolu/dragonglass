@@ -682,7 +682,7 @@ struct MicButton: View {
                 .onEnded { _ in sttManager.stopAndTranscribe() }
         )
         .onChange(of: isHolding) { _, holding in
-            if holding { sttManager.startRecording() }
+            if holding && !sttManager.isRecording { sttManager.startRecording() }
         }
         .disabled(!sttManager.micPermissionGranted || !sttManager.isModelReady || client.isThinking)
         .opacity(sttManager.micPermissionGranted && sttManager.isModelReady ? 1.0 : 0.3)
