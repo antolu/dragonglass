@@ -34,17 +34,9 @@ final class STTManager: ObservableObject {
 
     private var whisperKit: WhisperKit?
     private var loadTask: Task<WhisperKit, Error>?
-    private var audioEngine: AVAudioEngine!
-    private var audioSamples: [Float] = []
-    private var converter: AVAudioConverter?
+    private var streamTranscriber: AudioStreamTranscriber?
+    private var streamTask: Task<Void, Never>?
     private var autoSendTask: Task<Void, Never>?
-    private let audioQueue = DispatchQueue(label: "com.antolu.dragonglass.audio", qos: .userInteractive)
-
-    private final class AudioBuffer: @unchecked Sendable {
-        var samples: [Float] = []
-        var tapCount: Int = 0
-    }
-    private let audioBuffer = AudioBuffer()
 
     init() {
         logger.debug("Initializing STTManager")
@@ -87,7 +79,6 @@ final class STTManager: ObservableObject {
     func refreshLocalModels() {
         try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: modelRepoPath)) ?? []
-        // Only include non-hidden directories (ignore .cache, etc.)
         let models = contents.filter { !$0.hasPrefix(".") }
         localModels = models
         logger.debug("Refreshed local models: \(models)")
@@ -213,116 +204,71 @@ final class STTManager: ObservableObject {
             logger.warning("startRecording failed: isRecording=\(self.isRecording), micGranted=\(self.micPermissionGranted), isModelReady=\(self.isModelReady)")
             return
         }
+        guard let wk = whisperKit, let tokenizer = wk.tokenizer else {
+            logger.warning("startRecording failed: whisperKit not ready")
+            return
+        }
+
         logger.info("Starting recording...")
         autoSendTask?.cancel()
         autoSendTask = nil
         pendingText = nil
         readyToFire = false
-        audioSamples = []
 
-        do {
-            audioEngine = AVAudioEngine()
-            let inputNode = audioEngine.inputNode
-            let hwFormat = inputNode.inputFormat(forBus: 0)
-            logger.debug("Input format: \(hwFormat)")
-            guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
-                logger.error("Invalid hardware format: rate=\(hwFormat.sampleRate), channels=\(hwFormat.channelCount)")
-                return
-            }
-            let targetFormat = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: 16000,
-                channels: 1,
-                interleaved: false
-            )!
-            converter = AVAudioConverter(from: hwFormat, to: targetFormat)
-
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-                guard let self, let converter = self.converter else { return }
-                let ratio = 16000.0 / hwFormat.sampleRate
-                let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
-                guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outFrames),
-                      let channelData = converted.floatChannelData else { return }
-                var done = false
-                var error: NSError?
-                converter.convert(to: converted, error: &error) { _, outStatus in
-                    if done {
-                        outStatus.pointee = .endOfStream
-                        return nil
-                    }
-                    done = true
-                    outStatus.pointee = .haveData
-                    return buffer
-                }
-                guard error == nil, converted.frameLength > 0 else { return }
-                let count = Int(converted.frameLength)
-                let samples = Array(UnsafeBufferPointer(start: channelData[0], count: count))
-                self.audioQueue.async {
-                    self.audioBuffer.samples.append(contentsOf: samples)
-                    self.audioBuffer.tapCount += 1
-                    if self.audioBuffer.tapCount % 50 == 0 {
-                        logger.debug("Accumulated \(self.audioBuffer.samples.count) samples (tap #\(self.audioBuffer.tapCount))")
-                    }
-                }
-            }
-
-            try audioEngine.start()
-            isRecording = true
-            audioQueue.async { self.audioBuffer.tapCount = 0 }
-            logger.info("Recording started successfully")
-        } catch {
-            logger.error("audioEngine.start error: \(error.localizedDescription)")
-            print("[STTManager] startRecording error: \(error)")
+        let transcriber = AudioStreamTranscriber(
+            audioEncoder: wk.audioEncoder,
+            featureExtractor: wk.featureExtractor,
+            segmentSeeker: wk.segmentSeeker,
+            textDecoder: wk.textDecoder,
+            tokenizer: tokenizer,
+            audioProcessor: wk.audioProcessor,
+            decodingOptions: DecodingOptions(
+                temperature: 0.0,
+                skipSpecialTokens: true
+            ),
+            requiredSegmentsForConfirmation: 2,
+            useVAD: true
+        ) { [weak self] _, newState in
+            guard let self else { return }
+            let confirmed = newState.confirmedSegments.map { $0.text }.joined()
+            let current = newState.currentText
+            let full = (confirmed + " " + current).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !full.isEmpty, full != "Waiting for speech..." else { return }
+            Task { @MainActor in self.pendingText = full }
         }
+
+        streamTranscriber = transcriber
+        isRecording = true
+
+        streamTask = Task {
+            do {
+                try await transcriber.startStreamTranscription()
+            } catch is CancellationError {
+                // expected on stop
+            } catch {
+                logger.error("Streaming transcription error: \(error.localizedDescription)")
+            }
+            await MainActor.run { self.isRecording = false }
+        }
+
+        logger.info("Recording started successfully")
     }
 
     func stopAndTranscribe() {
         guard isRecording else { return }
-        logger.info("Stopping recording and starting transcription")
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        logger.info("Stopping recording")
+        let transcriber = streamTranscriber
+        streamTranscriber = nil
+        streamTask = nil
         isRecording = false
 
-        audioQueue.sync {
-            let samples = audioBuffer.samples
-            audioBuffer.samples = []
-            let currentTapCount = audioBuffer.tapCount
-            audioBuffer.tapCount = 0
-            logger.debug("Captured \(samples.count) samples (tap count: \(currentTapCount))")
-
-            Task { @MainActor in
-                await self.performTranscription(with: samples)
+        Task {
+            await transcriber?.stopStreamTranscription()
+            await MainActor.run {
+                guard let text = self.pendingText, !text.isEmpty else { return }
+                logger.info("Final transcription: \"\(text)\"")
+                if self.autoSend { self.scheduleAutoSend() }
             }
-        }
-    }
-
-    private func performTranscription(with samples: [Float]) async {
-        guard !samples.isEmpty else {
-            logger.warning("No samples captured, skipping transcription")
-            return
-        }
-
-        isTranscribing = true
-        do {
-            try await ensureLoaded()
-            guard let wk = whisperKit else { throw STTError.notLoaded }
-            logger.debug("Calling WhisperKit.transcribe")
-            let results = await wk.transcribe(audioArrays: [samples])
-            let text = results
-                .compactMap { $0?.first?.text }
-                .joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            logger.info("Transcription result: \"\(text)\"")
-
-            self.isTranscribing = false
-            guard !text.isEmpty else { return }
-            self.pendingText = text
-            if self.autoSend {
-                self.scheduleAutoSend()
-            }
-        } catch {
-            logger.error("Transcription failed: \(error.localizedDescription)")
-            self.isTranscribing = false
         }
     }
 

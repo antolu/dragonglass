@@ -652,7 +652,6 @@ struct ApprovalView: View {
 struct MicButton: View {
     @EnvironmentObject var sttManager: STTManager
     @EnvironmentObject var client: AgentClient
-    @State private var isHolding = false
     @State private var pulsing = false
 
     var body: some View {
@@ -676,19 +675,13 @@ struct MicButton: View {
                     .frame(width: 30, height: 30)
             }
         }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !isHolding else { return }
-                    isHolding = true
-                    sttManager.startRecording()
-                }
-                .onEnded { _ in
-                    guard isHolding else { return }
-                    isHolding = false
-                    sttManager.stopAndTranscribe()
-                }
-        )
+        .onTapGesture {
+            if sttManager.isRecording {
+                sttManager.stopAndTranscribe()
+            } else {
+                sttManager.startRecording()
+            }
+        }
         .disabled(!sttManager.micPermissionGranted || !sttManager.isModelReady || client.isThinking)
         .opacity(sttManager.micPermissionGranted && sttManager.isModelReady ? 1.0 : 0.3)
         .help(
