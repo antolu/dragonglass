@@ -420,7 +420,7 @@ struct ContentView: View {
                 if !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     hasText = true
                 }
-            case .mcpTool(_, let phase, _, _) where phase == "error":
+            case .mcpTool(_, let phase, _, _) where phase == "error" || phase == "validation_error":
                 return false
             case .status(let message):
                 if message.lowercased().hasPrefix("error:") {
@@ -500,11 +500,26 @@ struct ToolCallBadge: View {
     var detailed: Bool = false
     @State private var showingError = false
 
+    private var badgeColor: Color {
+        switch phase {
+        case "error": return .red
+        case "validation_error": return .orange
+        default: return .blue
+        }
+    }
+
+    private var isErrorLike: Bool {
+        phase == "error" || phase == "validation_error"
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             if phase == "error" {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundColor(.red)
+            } else if phase == "validation_error" {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundColor(.orange)
             }
             if detailed {
                 VStack(alignment: .leading, spacing: 2) {
@@ -513,15 +528,15 @@ struct ToolCallBadge: View {
                     Text(message + (detail.isEmpty ? "" : " — \(detail)"))
                 }
             } else {
-                Text(phase == "error" ? tool : message)
+                Text(isErrorLike ? tool : message)
             }
         }
         .font(.caption)
         .padding(4)
-        .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
+        .background(badgeColor.opacity(0.08))
         .cornerRadius(4)
         .onTapGesture {
-            if phase == "error" { showingError = true }
+            if isErrorLike { showingError = true }
         }
         .popover(isPresented: $showingError) {
             ScrollView {

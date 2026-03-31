@@ -97,7 +97,13 @@ def _truncate_result(text: str) -> str:
     )
 
 
+def _is_validation_error_result(result: str) -> bool:
+    return result.startswith("Tool '") and "called with wrong arguments" in result
+
+
 def _is_error_result(result: str) -> bool:
+    if _is_validation_error_result(result):
+        return False
     if result.startswith(("Search server error:", "Tool '")):
         return True
     try:
@@ -895,7 +901,14 @@ class VaultAgent:
                     logger.debug(
                         "tool %r  args=%s  result=%s", tool_name, args, result[:300]
                     )
-                if _is_error_result(result):
+                if _is_validation_error_result(result):
+                    yield MCPToolEvent(
+                        tool=tool_name,
+                        phase="validation_error",
+                        message=tool_name,
+                        detail=result,
+                    )
+                elif _is_error_result(result):
                     yield MCPToolEvent(
                         tool=tool_name, phase="error", message=tool_name, detail=result
                     )
