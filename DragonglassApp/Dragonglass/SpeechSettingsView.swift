@@ -31,10 +31,48 @@ struct SpeechSettingsView: View {
 
             Divider()
 
+            modelListSection
+        }
+        .onAppear {
+            sttManager.refreshLocalModels()
+            sttManager.checkAccessibilityPermission()
+            hotkeyManager.refreshAccessibility()
+            Task { await sttManager.fetchAvailableModels() }
+        }
+    }
+
+    @State private var modelsExpanded = false
+
+    private var unusedLocalModels: [String] {
+        sttManager.localModels.filter { $0 != sttManager.selectedModel }
+    }
+
+    private var modelListSection: some View {
+        DisclosureGroup(isExpanded: $modelsExpanded) {
+            VStack(spacing: 2) {
+                if sttManager.availableModels.isEmpty {
+                    ProgressView("Fetching model list…")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                } else {
+                    ForEach(sttManager.availableModels, id: \.self) { model in
+                        ModelRowView(modelName: model)
+                            .environmentObject(sttManager)
+                    }
+                }
+            }
+            .padding(.top, 4)
+        } label: {
             HStack {
                 Text("Whisper model")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if !sttManager.selectedModel.isEmpty {
+                    Text(sttManager.selectedModel)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                }
                 Spacer()
                 if sttManager.isModelLoading {
                     ProgressView()
@@ -44,27 +82,19 @@ struct SpeechSettingsView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-            }
-
-            if sttManager.availableModels.isEmpty {
-                ProgressView("Fetching model list…")
-                    .font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(sttManager.availableModels, id: \.self) { model in
-                        ModelRowView(modelName: model)
-                            .environmentObject(sttManager)
+                if !unusedLocalModels.isEmpty && !modelsExpanded {
+                    Button("Clean Up (\(unusedLocalModels.count))") {
+                        for model in unusedLocalModels {
+                            sttManager.deleteModel(model)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.orange)
+                    .font(.caption2)
                 }
             }
         }
-        .onAppear {
-            sttManager.refreshLocalModels()
-            sttManager.checkAccessibilityPermission()
-            hotkeyManager.refreshAccessibility()
-            Task { await sttManager.fetchAvailableModels() }
-        }
+        .font(.caption)
     }
 
     private var micPermissionRow: some View {
