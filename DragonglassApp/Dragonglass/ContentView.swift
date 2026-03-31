@@ -246,14 +246,14 @@ struct ContentView: View {
                         EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents)
 
                         if turn.isCompleted {
-                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents)
+                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
                             if let doneIdx = turn.doneIndex {
                                 EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents)
                             }
                         } else {
                             if let idx = turn.toolCallIndices.last,
                                case .mcpTool(let t, let p, let m, let d) = client.events[idx] {
-                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents)
+                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
                                     .id(idx)
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -514,9 +514,17 @@ struct ToolCallBadge: View {
     let message: String
     let detail: String
     var detailed: Bool = false
+    var onOpenNote: ((String) -> Void)?
     @State private var showingDetail = false
 
     private var toolPhase: ToolPhase { ToolPhase(rawValue: phase) }
+
+    private var notePath: String? {
+        guard tool == "dragonglass_read_note_with_hash",
+              toolPhase == .done,
+              message.hasPrefix("Reading: ") else { return nil }
+        return String(message.dropFirst("Reading: ".count))
+    }
 
     private var badgeColor: Color {
         switch toolPhase {
@@ -562,7 +570,11 @@ struct ToolCallBadge: View {
         .background(badgeColor.opacity(0.08))
         .cornerRadius(4)
         .onTapGesture {
-            if isErrorLike { showingDetail = true }
+            if isErrorLike {
+                showingDetail = true
+            } else if let path = notePath {
+                onOpenNote?(path)
+            }
         }
         .popover(isPresented: $showingDetail) {
             ScrollView {
@@ -580,6 +592,7 @@ struct CollapsedToolSummary: View {
     let turn: ChatTurn
     let events: [AgentEvent]
     var detailed: Bool = false
+    var onOpenNote: ((String) -> Void)?
     @State private var isExpanded = false
 
     var body: some View {
@@ -589,7 +602,7 @@ struct CollapsedToolSummary: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(turn.toolCallIndices, id: \.self) { idx in
                         if case .mcpTool(let t, let p, let m, let d) = events[idx] {
-                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed)
+                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed, onOpenNote: onOpenNote)
                         }
                     }
                 }

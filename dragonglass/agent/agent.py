@@ -72,13 +72,23 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
             for tc in msg.get("tool_calls") or []:
                 fn = tc.get("function") or {}
                 tool_name = str(fn.get("name") or "tool")
-                args = str(fn.get("arguments") or "")
+                raw_args = str(fn.get("arguments") or "")
                 result = tool_results.get(tc.get("id") or "", "")
+                try:
+                    parsed = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    parsed = {}
+                if tool_name == "dragonglass_read_note_with_hash" and parsed.get(
+                    "path"
+                ):
+                    message = f"Reading: {parsed['path']}"
+                else:
+                    message = raw_args
                 events.append(
                     MCPToolEvent(
                         tool=tool_name,
                         phase=ToolPhase.DONE,
-                        message=args,
+                        message=message,
                         detail=result,
                     )
                 )

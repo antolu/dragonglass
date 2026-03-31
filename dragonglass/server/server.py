@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import enum
 import json
 import logging
 import os
@@ -48,6 +49,27 @@ from dragonglass.paths import OPENCODE_CONFIG_FILE
 logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 40
+
+
+class Command(enum.StrEnum):
+    CHAT = "chat"
+    STOP = "stop"
+    APPROVE = "approve"
+    REJECT = "reject"
+    APPROVE_SESSION = "approve_session"
+    PING = "ping"
+    GET_CONFIG = "get_config"
+    SET_CONFIG = "set_config"
+    LIST_MODELS = "list_models"
+    SAVE_MODEL = "save_model"
+    GET_VERSION = "get_version"
+    NEW_CHAT = "new_chat"
+    LIST_CONVERSATIONS = "list_conversations"
+    LOAD_CONVERSATION = "load_conversation"
+    DELETE_CONVERSATION = "delete_conversation"
+    OPEN_NOTE = "open_note"
+
+
 _OPENCODE_PATH_PREFIX = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 _OPENCODE_CONFIG_TEMPLATE: dict[str, typing.Any] = {
@@ -713,48 +735,55 @@ class DragonglassServer:
                         json.dumps({"type": "error", "error": "malformed JSON"})
                     )
                     continue
-                command = data.get("command")
-                if command == "chat":
-                    if self._chat_task and not self._chat_task.done():
-                        self._chat_task.cancel()
-                    self._chat_task = asyncio.create_task(
-                        self._run_chat_task(websocket, data)
-                    )
-                elif command == "stop":
-                    if self._chat_task and not self._chat_task.done():
-                        self._chat_task.cancel()
-                elif command in {"approve", "reject", "approve_session"}:
-                    request_id = str(data.get("request_id", ""))
-                    permission = str(data.get("permission", ""))
-                    if not request_id or self.agent is None:
-                        continue
-                    approved = command in {"approve", "approve_session"}
-                    self.agent.resolve_approval(
-                        request_id=request_id,
-                        approved=approved,
-                        session=(command == "approve_session"),
-                        permission=permission or None,
-                    )
-                elif command == "ping":
-                    await websocket.send(json.dumps({"type": "pong"}))
-                elif command == "get_config":
-                    await self._handle_get_config(websocket)
-                elif command == "set_config":
-                    await self._handle_set_config(websocket, data)
-                elif command == "list_models":
-                    await self._handle_list_models(websocket)
-                elif command == "save_model":
-                    await self._handle_save_model(websocket, data)
-                elif command == "get_version":
-                    await self._handle_get_version(websocket)
-                elif command == "new_chat":
-                    await self._handle_new_chat(websocket)
-                elif command == "list_conversations":
-                    await self._handle_list_conversations(websocket)
-                elif command == "load_conversation":
-                    await self._handle_load_conversation(websocket, data)
-                elif command == "delete_conversation":
-                    await self._handle_delete_conversation(websocket, data)
+                try:
+                    command = Command(data.get("command"))
+                except ValueError:
+                    logger.warning("server: unknown command %r", data.get("command"))
+                    continue
+                match command:
+                    case Command.CHAT:
+                        if self._chat_task and not self._chat_task.done():
+                            self._chat_task.cancel()
+                        self._chat_task = asyncio.create_task(
+                            self._run_chat_task(websocket, data)
+                        )
+                    case Command.STOP:
+                        if self._chat_task and not self._chat_task.done():
+                            self._chat_task.cancel()
+                    case Command.APPROVE | Command.REJECT | Command.APPROVE_SESSION:
+                        request_id = str(data.get("request_id", ""))
+                        permission = str(data.get("permission", ""))
+                        if not request_id or self.agent is None:
+                            continue
+                        self.agent.resolve_approval(
+                            request_id=request_id,
+                            approved=command
+                            in {Command.APPROVE, Command.APPROVE_SESSION},
+                            session=(command == Command.APPROVE_SESSION),
+                            permission=permission or None,
+                        )
+                    case Command.PING:
+                        await websocket.send(json.dumps({"type": "pong"}))
+                    case Command.GET_CONFIG:
+                        await self._handle_get_config(websocket)
+                    case Command.SET_CONFIG:
+                        await self._handle_set_config(websocket, data)
+                    case Command.LIST_MODELS:
+                        await self._handle_list_models(websocket)
+                    case Command.SAVE_MODEL:
+                        await self._handle_save_model(websocket, data)
+                    case Command.GET_VERSION:
+                        await self._handle_get_version(websocket)
+                    case Command.NEW_CHAT:
+                        await self._handle_new_chat(websocket)
+                    case Command.LIST_CONVERSATIONS:
+                        await self._handle_list_conversations(websocket)
+                    case Command.LOAD_CONVERSATION:
+                        await self._handle_load_conversation(websocket, data)
+                    case Command.DELETE_CONVERSATION:
+                        await self._handle_delete_conversation(websocket, data)
+                    case Command.OPEN_NOTE:
+                        await self._handle_open_note(websocket, data)
         except websockets.exceptions.ConnectionClosed:
             logger.info("server: client disconnected")
         except Exception:
@@ -1099,6 +1128,36 @@ class DragonglassServer:
                 self.agent.clear_history()
 
         await self._handle_list_conversations(websocket)
+
+    @staticmethod
+    async def _handle_open_note(websocket: typing.Any, data: dict[str, object]) -> None:
+        path = data.get("path")
+        if not isinstance(path, str) or not path:
+            await websocket.send(
+                json.dumps({"type": "open_note_ack", "error": "missing path"})
+            )
+            return
+        settings = get_settings()
+        encoded = urllib.parse.quote(path, safe="")
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{settings.vector_search_url}/open/{encoded}", timeout=5
+                )
+            if resp.status_code in {204, 200}:
+                await websocket.send(json.dumps({"type": "open_note_ack"}))
+            else:
+                await websocket.send(
+                    json.dumps({
+                        "type": "open_note_ack",
+                        "error": f"HTTP {resp.status_code}",
+                    })
+                )
+        except Exception as exc:
+            logger.warning("open_note failed for %r: %s", path, exc)
+            await websocket.send(
+                json.dumps({"type": "open_note_ack", "error": str(exc)})
+            )
 
 
 async def main() -> None:
