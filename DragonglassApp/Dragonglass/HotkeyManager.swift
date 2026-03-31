@@ -85,13 +85,13 @@ final class HotkeyManager: NSObject, ObservableObject {
     }
 
     func onKeyDown() {
-        agentClient?.startNewChat()
-        menuBarManager?.showPopover()
-        sttManager?.startRecording()
-    }
-
-    func onKeyUp() {
-        sttManager?.stopAndTranscribe()
+        if sttManager?.isRecording == true {
+            sttManager?.stopAndTranscribe()
+        } else {
+            agentClient?.startNewChat()
+            menuBarManager?.showPopover()
+            sttManager?.startRecording()
+        }
     }
 
     nonisolated static func toCarbonModifiers(_ flags: NSEvent.ModifierFlags) -> Int {
@@ -154,9 +154,7 @@ private final class TapContext: @unchecked Sendable {
             guard keyCode == state.keyCode, state.isPressed else {
                 return Unmanaged.passUnretained(event)
             }
-            logger.debug("keyUp matched at \(CACurrentMediaTime())")
             state.isPressed = false
-            Task { @MainActor [weak manager] in manager?.onKeyUp() }
             return nil
 
         case .flagsChanged:
@@ -164,7 +162,6 @@ private final class TapContext: @unchecked Sendable {
             let requiredNSFlags = HotkeyManager.toNSModifiers(carbonModifiers: state.carbonModifiers)
             if !nsFlags.contains(requiredNSFlags) {
                 state.isPressed = false
-                Task { @MainActor [weak manager] in manager?.onKeyUp() }
             }
             return Unmanaged.passUnretained(event)
 
