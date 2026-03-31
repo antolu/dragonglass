@@ -233,9 +233,8 @@ final class STTManager: ObservableObject {
             let confirmed = newState.confirmedSegments.map { $0.text }.joined()
             let current = newState.currentText
             let full = (confirmed + " " + current).trimmingCharacters(in: .whitespacesAndNewlines)
-            Task { @MainActor in
-                if !full.isEmpty { self.pendingText = full }
-            }
+            guard !full.isEmpty, full != "Waiting for speech..." else { return }
+            Task { @MainActor in self.pendingText = full }
         }
 
         streamTranscriber = transcriber
@@ -244,6 +243,8 @@ final class STTManager: ObservableObject {
         streamTask = Task {
             do {
                 try await transcriber.startStreamTranscription()
+            } catch is CancellationError {
+                // expected on stop
             } catch {
                 logger.error("Streaming transcription error: \(error.localizedDescription)")
             }
@@ -258,7 +259,6 @@ final class STTManager: ObservableObject {
         logger.info("Stopping recording")
         let transcriber = streamTranscriber
         streamTranscriber = nil
-        streamTask?.cancel()
         streamTask = nil
         isRecording = false
 
