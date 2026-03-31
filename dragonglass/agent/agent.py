@@ -53,26 +53,34 @@ logger = logging.getLogger(__name__)
 
 
 def history_to_events(history: list[_Message]) -> list[AgentEvent]:
+    tool_results: dict[str, str] = {
+        msg["tool_call_id"]: str(msg.get("content") or "")
+        for msg in history
+        if msg.get("role") == "tool" and msg.get("tool_call_id")
+    }
+
     events: list[AgentEvent] = []
     for msg in history:
         role = msg.get("role")
         content = str(msg.get("content") or "")
         if role == "user":
             events.append(UserMessageEvent(message=content))
-        elif role == "assistant" and content:
-            events.append(TextChunk(text=content))
-        elif role == "tool":
-            tool_name = str(msg.get("tool_call_id") or "tool")
+        elif role == "assistant":
             if content:
+                events.append(TextChunk(text=content))
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                tool_name = str(fn.get("name") or "tool")
+                args = str(fn.get("arguments") or "")
+                result = tool_results.get(tc.get("id") or "", "")
                 events.append(
                     MCPToolEvent(
                         tool=tool_name,
                         phase="done",
-                        message=content,
+                        message=args,
+                        detail=result,
                     )
                 )
-        # Tool messages and tool_calls are currently omitted from UI history
-        # as they are intermediate steps.
     return events
 
 
