@@ -14,6 +14,8 @@ struct ContentView: View {
     @State private var showingConversations = false
     @State private var isAtBottom = true
     @State private var escapeMonitor: Any?
+    @State private var shiftMonitor: Any?
+    @State private var includeToolCallsInSelection = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +49,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
-            .disabled(client.isThinking)
+            .disabled(client.isThinking || client.turns.isEmpty)
 
             Button(action: {
                 guard !client.isThinking else { return }
@@ -239,21 +241,35 @@ struct ContentView: View {
                         .cornerRadius(6)
                     }
                     ForEach(client.prefixEventIndices, id: \.self) { index in
-                        EventRow(event: client.events[index], detailed: client.detailedToolEvents)
+                        EventRow(event: client.events[index], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
                     }
 
                     ForEach(client.turns) { turn in
-                        EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents)
+                        EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
 
                         if turn.isCompleted {
-                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
+                            CollapsedToolSummary(
+                                turn: turn,
+                                events: client.events,
+                                detailed: client.detailedToolEvents,
+                                onOpenNote: { client.openNote(path: $0) },
+                                includeToolCalls: includeToolCallsInSelection
+                            )
                             if let doneIdx = turn.doneIndex {
-                                EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents)
+                                EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
                             }
                         } else {
                             if let idx = turn.toolCallIndices.last,
                                case .mcpTool(let t, let p, let m, let d) = client.events[idx] {
-                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
+                                ToolCallBadge(
+                                    tool: t,
+                                    phase: p,
+                                    message: m,
+                                    detail: d,
+                                    detailed: client.detailedToolEvents,
+                                    onOpenNote: { client.openNote(path: $0) },
+                                    selectable: includeToolCallsInSelection
+                                )
                                     .id(idx)
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -263,7 +279,7 @@ struct ContentView: View {
                         }
 
                         if let aIdx = turn.assistantMessageIndex {
-                            EventRow(event: client.events[aIdx], detailed: client.detailedToolEvents)
+                            EventRow(event: client.events[aIdx], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
                         }
                     }
 
@@ -384,6 +400,11 @@ struct ContentView: View {
             }
             return event
         }
+
+        shiftMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
+            self.includeToolCallsInSelection = event.modifierFlags.contains(.shift)
+            return event
+        }
     }
 
     private func removeEscapeMonitor() {
@@ -391,6 +412,11 @@ struct ContentView: View {
             NSEvent.removeMonitor(mon)
             escapeMonitor = nil
         }
+        if let mon = shiftMonitor {
+            NSEvent.removeMonitor(mon)
+            shiftMonitor = nil
+        }
+        includeToolCallsInSelection = false
     }
 
     private func sendMessage() {
@@ -438,6 +464,7 @@ struct ContentView: View {
 struct EventRow: View {
     let event: AgentEvent
     var detailed: Bool = false
+    var includeToolCalls: Bool = false
 
     var body: some View {
         switch event {
@@ -446,8 +473,10 @@ struct EventRow: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .italic()
+                .textSelection(.enabled)
         case .assistantMessage(let msg):
             Text(LocalizedStringKey(msg))
+                .textSelection(.enabled)
         case .mcpTool:
             EmptyView()
         case .config:
@@ -456,6 +485,7 @@ struct EventRow: View {
             Text("Settings saved")
                 .font(.caption)
                 .foregroundColor(.green)
+                .textSelection(.enabled)
         case .done:
             Divider()
         case .modelsList:
@@ -473,9 +503,10 @@ struct EventRow: View {
                     .padding(8)
                     .background(Color.accentColor.opacity(0.1))
                     .cornerRadius(8)
+                    .textSelection(.enabled)
             }
         case .approvalRequest(let req):
-            HStack(spacing: 6) {
+            let row = HStack(spacing: 6) {
                 Image(systemName: "pencil.circle")
                     .foregroundColor(.orange)
                 Text("Pending approval: \(req.description)")
@@ -485,6 +516,11 @@ struct EventRow: View {
             .padding(4)
             .background(Color.orange.opacity(0.08))
             .cornerRadius(4)
+            if includeToolCalls {
+                row.textSelection(.enabled)
+            } else {
+                row.textSelection(.disabled)
+            }
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)
@@ -515,6 +551,7 @@ struct ToolCallBadge: View {
     let detail: String
     var detailed: Bool = false
     var onOpenNote: ((String) -> Void)?
+    var selectable: Bool = false
     @State private var showingDetail = false
 
     private var toolPhase: ToolPhase { ToolPhase(rawValue: phase) }
@@ -547,7 +584,7 @@ struct ToolCallBadge: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        let badge = HStack(alignment: .top, spacing: 6) {
             if toolPhase == .error {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundColor(.red)
@@ -585,6 +622,11 @@ struct ToolCallBadge: View {
             }
             .frame(maxHeight: 200)
         }
+        if selectable {
+            badge.textSelection(.enabled)
+        } else {
+            badge.textSelection(.disabled)
+        }
     }
 }
 
@@ -593,6 +635,7 @@ struct CollapsedToolSummary: View {
     let events: [AgentEvent]
     var detailed: Bool = false
     var onOpenNote: ((String) -> Void)?
+    var includeToolCalls: Bool = false
     @State private var isExpanded = false
 
     var body: some View {
@@ -602,7 +645,15 @@ struct CollapsedToolSummary: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(turn.toolCallIndices, id: \.self) { idx in
                         if case .mcpTool(let t, let p, let m, let d) = events[idx] {
-                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed, onOpenNote: onOpenNote)
+                            ToolCallBadge(
+                                tool: t,
+                                phase: p,
+                                message: m,
+                                detail: d,
+                                detailed: detailed,
+                                onOpenNote: onOpenNote,
+                                selectable: includeToolCalls
+                            )
                         }
                     }
                 }
@@ -612,6 +663,7 @@ struct CollapsedToolSummary: View {
                 Text("\(count) tool call\(count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .textSelection(.disabled)
             }
         )
     }
