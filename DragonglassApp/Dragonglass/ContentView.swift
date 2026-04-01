@@ -49,7 +49,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
-            .disabled(client.isThinking)
+            .disabled(client.isThinking || client.turns.isEmpty)
 
             Button(action: {
                 guard !client.isThinking else { return }
