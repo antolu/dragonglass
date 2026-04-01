@@ -252,8 +252,8 @@ struct ContentView: View {
                                 turn: turn,
                                 events: client.events,
                                 detailed: client.detailedToolEvents,
-                                includeToolCalls: includeToolCallsInSelection,
-                                onOpenNote: { client.openNote(path: $0) }
+                                onOpenNote: { client.openNote(path: $0) },
+                                includeToolCalls: includeToolCallsInSelection
                             )
                             if let doneIdx = turn.doneIndex {
                                 EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
@@ -267,8 +267,8 @@ struct ContentView: View {
                                     message: m,
                                     detail: d,
                                     detailed: client.detailedToolEvents,
-                                    selectable: includeToolCallsInSelection,
-                                    onOpenNote: { client.openNote(path: $0) }
+                                    onOpenNote: { client.openNote(path: $0) },
+                                    selectable: includeToolCallsInSelection
                                 )
                                     .id(idx)
                                     .transition(.asymmetric(
@@ -651,8 +651,8 @@ struct CollapsedToolSummary: View {
                                 message: m,
                                 detail: d,
                                 detailed: detailed,
-                                selectable: includeToolCalls,
-                                onOpenNote: onOpenNote
+                                onOpenNote: onOpenNote,
+                                selectable: includeToolCalls
                             )
                         }
                     }
