@@ -1007,7 +1007,7 @@ class DragonglassServer:
         )
         await websocket.send(json.dumps({"type": "config_ack"}))
         await self._handle_get_config(websocket)
-        if backend_changed:
+        if "llm_backend" in new_config:
             await self._handle_list_models(websocket)
 
     @staticmethod
