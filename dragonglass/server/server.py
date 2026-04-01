@@ -791,7 +791,7 @@ class DragonglassServer:
         finally:
             logger.info("server: request done")
 
-    async def _run_chat_task(
+    async def _run_chat_task(  # noqa: PLR0915
         self, websocket: typing.Any, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
@@ -799,6 +799,34 @@ class DragonglassServer:
         model_override = resolve_chat_model(data.get("model"), settings.selected_model)
 
         logger.info("server: chat message: %r (model=%s)", text, model_override)
+
+        provisional_history: list[typing.Any] | None = None
+        if text:
+            if not self._current_conversation_id:
+                self._current_conversation_id = str(uuid.uuid4())
+            if self.agent:
+                provisional_history = [
+                    *self.agent.get_history(),
+                    {"role": "user", "content": text},
+                ]
+            else:
+                provisional_history = [{"role": "user", "content": text}]
+            self._save_conversation(self._current_conversation_id, provisional_history)
+
+        def persist_history() -> None:
+            if not self._current_conversation_id:
+                return
+            latest_history: list[typing.Any] = []
+            if self.agent:
+                latest_history = self.agent.get_history()
+            if provisional_history is not None and len(latest_history) < len(
+                provisional_history
+            ):
+                self._save_conversation(
+                    self._current_conversation_id, provisional_history
+                )
+                return
+            self._save_conversation(self._current_conversation_id, latest_history)
 
         try:
             if not self._agent_ready:
@@ -812,8 +840,6 @@ class DragonglassServer:
                 await websocket.send(serialize_event(DoneEvent()))
                 return
             if self.agent:
-                if not self._current_conversation_id:
-                    self._current_conversation_id = str(uuid.uuid4())
 
                 async def flush_mcp_telemetry() -> None:
                     for telemetry_event in drain_tool_events():
@@ -863,11 +889,10 @@ class DragonglassServer:
                 await flush_mcp_telemetry()
 
                 # Auto-save after response
-                self._save_conversation(
-                    self._current_conversation_id, self.agent.get_history()
-                )  # type: ignore
+                persist_history()
         except asyncio.CancelledError:
             logger.info("server: chat task cancelled")
+            persist_history()
             with contextlib.suppress(Exception):
                 await websocket.send(serialize_event(DoneEvent()))
 
