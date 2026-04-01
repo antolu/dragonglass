@@ -424,6 +424,10 @@ class AgentClient: ObservableObject {
         send(["command": "delete_conversation", "id": id])
     }
 
+    func openNote(path: String) {
+        send(["command": "open_note", "path": path])
+    }
+
     private func send(_ dict: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let string = String(data: data, encoding: .utf8) else { return }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import typing
 
 JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
@@ -73,6 +74,12 @@ class UsageEvent:
 @dataclasses.dataclass
 class UserMessageEvent:
     message: str
+
+
+class ToolPhase(enum.StrEnum):
+    DONE = "done"
+    ERROR = "error"
+    VALIDATION_ERROR = "validation_error"
 
 
 @dataclasses.dataclass

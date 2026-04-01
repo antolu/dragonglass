@@ -246,14 +246,14 @@ struct ContentView: View {
                         EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents)
 
                         if turn.isCompleted {
-                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents)
+                            CollapsedToolSummary(turn: turn, events: client.events, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
                             if let doneIdx = turn.doneIndex {
                                 EventRow(event: client.events[doneIdx], detailed: client.detailedToolEvents)
                             }
                         } else {
                             if let idx = turn.toolCallIndices.last,
                                case .mcpTool(let t, let p, let m, let d) = client.events[idx] {
-                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents)
+                                ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: client.detailedToolEvents, onOpenNote: { client.openNote(path: $0) })
                                     .id(idx)
                                     .transition(.asymmetric(
                                         insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -420,7 +420,7 @@ struct ContentView: View {
                 if !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     hasText = true
                 }
-            case .mcpTool(_, let phase, _, _) where phase == "error":
+            case .mcpTool(_, let phase, _, _) where ToolPhase(rawValue: phase) == .error || ToolPhase(rawValue: phase) == .validationError:
                 return false
             case .status(let message):
                 if message.lowercased().hasPrefix("error:") {
@@ -492,19 +492,68 @@ struct EventRow: View {
     }
 }
 
+enum ToolPhase: String {
+    case done = "done"
+    case error = "error"
+    case validationError = "validation_error"
+    case unknown
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "done": self = .done
+        case "error": self = .error
+        case "validation_error": self = .validationError
+        default: self = .unknown
+        }
+    }
+}
+
 struct ToolCallBadge: View {
     let tool: String
     let phase: String
     let message: String
     let detail: String
     var detailed: Bool = false
-    @State private var showingError = false
+    var onOpenNote: ((String) -> Void)?
+    @State private var showingDetail = false
+
+    private var toolPhase: ToolPhase { ToolPhase(rawValue: phase) }
+
+    private var notePath: String? {
+        guard tool == "dragonglass_read_note_with_hash",
+              toolPhase == .done,
+              message.hasPrefix("Reading: ") else { return nil }
+        return String(message.dropFirst("Reading: ".count))
+    }
+
+    private var badgeColor: Color {
+        switch toolPhase {
+        case .error: return .red
+        case .validationError: return .orange
+        default: return .blue
+        }
+    }
+
+    private var isErrorLike: Bool {
+        toolPhase == .error || toolPhase == .validationError
+    }
+
+    private var badgeLabel: String {
+        switch toolPhase {
+        case .error: return "\(tool): error"
+        case .validationError: return "\(tool): validation error"
+        default: return message
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            if phase == "error" {
+            if toolPhase == .error {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundColor(.red)
+            } else if toolPhase == .validationError {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundColor(.orange)
             }
             if detailed {
                 VStack(alignment: .leading, spacing: 2) {
@@ -513,19 +562,23 @@ struct ToolCallBadge: View {
                     Text(message + (detail.isEmpty ? "" : " — \(detail)"))
                 }
             } else {
-                Text(phase == "error" ? tool : message)
+                Text(badgeLabel)
             }
         }
         .font(.caption)
         .padding(4)
-        .background(phase == "error" ? Color.red.opacity(0.08) : Color.orange.opacity(0.08))
+        .background(badgeColor.opacity(0.08))
         .cornerRadius(4)
         .onTapGesture {
-            if phase == "error" { showingError = true }
+            if isErrorLike {
+                showingDetail = true
+            } else if let path = notePath {
+                onOpenNote?(path)
+            }
         }
-        .popover(isPresented: $showingError) {
+        .popover(isPresented: $showingDetail) {
             ScrollView {
-                Text(detail.isEmpty ? "No error detail available." : detail)
+                Text(detail.isEmpty ? "No detail available." : detail)
                     .font(.caption)
                     .padding()
                     .frame(maxWidth: 320, alignment: .leading)
@@ -539,6 +592,7 @@ struct CollapsedToolSummary: View {
     let turn: ChatTurn
     let events: [AgentEvent]
     var detailed: Bool = false
+    var onOpenNote: ((String) -> Void)?
     @State private var isExpanded = false
 
     var body: some View {
@@ -548,7 +602,7 @@ struct CollapsedToolSummary: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(turn.toolCallIndices, id: \.self) { idx in
                         if case .mcpTool(let t, let p, let m, let d) = events[idx] {
-                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed)
+                            ToolCallBadge(tool: t, phase: p, message: m, detail: d, detailed: detailed, onOpenNote: onOpenNote)
                         }
                     }
                 }

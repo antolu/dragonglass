@@ -29,6 +29,7 @@ from dragonglass.agent.types import (
     MCPToolEvent,
     StatusEvent,
     TextChunk,
+    ToolPhase,
     UsageEvent,
     UserMessageEvent,
     _FallbackFunction,
@@ -53,26 +54,44 @@ logger = logging.getLogger(__name__)
 
 
 def history_to_events(history: list[_Message]) -> list[AgentEvent]:
+    tool_results: dict[str, str] = {
+        msg["tool_call_id"]: str(msg.get("content") or "")
+        for msg in history
+        if msg.get("role") == "tool" and msg.get("tool_call_id")
+    }
+
     events: list[AgentEvent] = []
     for msg in history:
         role = msg.get("role")
         content = str(msg.get("content") or "")
         if role == "user":
             events.append(UserMessageEvent(message=content))
-        elif role == "assistant" and content:
-            events.append(TextChunk(text=content))
-        elif role == "tool":
-            tool_name = str(msg.get("tool_call_id") or "tool")
+        elif role == "assistant":
             if content:
+                events.append(TextChunk(text=content))
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                tool_name = str(fn.get("name") or "tool")
+                raw_args = str(fn.get("arguments") or "")
+                result = tool_results.get(tc.get("id") or "", "")
+                try:
+                    parsed = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    parsed = {}
+                if tool_name == "dragonglass_read_note_with_hash" and parsed.get(
+                    "path"
+                ):
+                    message = f"Reading: {parsed['path']}"
+                else:
+                    message = raw_args
                 events.append(
                     MCPToolEvent(
                         tool=tool_name,
-                        phase="done",
-                        message=content,
+                        phase=ToolPhase.DONE,
+                        message=message,
+                        detail=result,
                     )
                 )
-        # Tool messages and tool_calls are currently omitted from UI history
-        # as they are intermediate steps.
     return events
 
 
@@ -89,7 +108,13 @@ def _truncate_result(text: str) -> str:
     )
 
 
+def _is_validation_error_result(result: str) -> bool:
+    return result.startswith("Tool '") and "called with wrong arguments" in result
+
+
 def _is_error_result(result: str) -> bool:
+    if _is_validation_error_result(result):
+        return False
     if result.startswith(("Search server error:", "Tool '")):
         return True
     try:
@@ -888,9 +913,19 @@ class VaultAgent:
                     logger.debug(
                         "tool %r  args=%s  result=%s", tool_name, args, result[:300]
                     )
-                if _is_error_result(result):
+                if _is_validation_error_result(result):
                     yield MCPToolEvent(
-                        tool=tool_name, phase="error", message=tool_name, detail=result
+                        tool=tool_name,
+                        phase=ToolPhase.VALIDATION_ERROR,
+                        message=tool_name,
+                        detail=result,
+                    )
+                elif _is_error_result(result):
+                    yield MCPToolEvent(
+                        tool=tool_name,
+                        phase=ToolPhase.ERROR,
+                        message=tool_name,
+                        detail=result,
                     )
 
                 messages.append(
