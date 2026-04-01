@@ -40,7 +40,7 @@ from dragonglass.agent.types import (
     ConversationsListEvent,
     StatusEvent,
 )
-from dragonglass.config import Settings, get_settings, invalidate_settings
+from dragonglass.config import LLMBackend, Settings, get_settings, invalidate_settings
 from dragonglass.mcp.search import create_search_server
 from dragonglass.mcp.telemetry import drain_tool_events
 from dragonglass.paths import OPENCODE_CONFIG_FILE
@@ -176,7 +176,7 @@ class DragonglassServer:
 
     @staticmethod
     def _opencode_is_active(settings: Settings) -> bool:
-        return settings.llm_backend == "opencode" and settings.spawn_opencode
+        return settings.llm_backend == LLMBackend.opencode and settings.spawn_opencode
 
     async def _stop_opencode(self) -> None:
         if self._opencode_process and self._opencode_process.returncode is None:
@@ -223,8 +223,8 @@ class DragonglassServer:
 
         current = self._read_config_toml()
         changed = False
-        if current.get("llm_backend") == "opencode":
-            current["llm_backend"] = "litellm"
+        if current.get("llm_backend") == LLMBackend.opencode:
+            current["llm_backend"] = LLMBackend.litellm
             changed = True
 
         if changed:
@@ -353,7 +353,7 @@ class DragonglassServer:
         )
 
         # Start OpenCode server
-        if settings.llm_backend == "opencode" and settings.spawn_opencode:
+        if settings.llm_backend == LLMBackend.opencode and settings.spawn_opencode:
             port = self._opencode_port(settings.opencode_url)
             logger.info("server: starting OpenCode server on port %d", port)
             await self._kill_stale_opencode_on_port(port)
@@ -892,7 +892,7 @@ class DragonglassServer:
             except Exception:
                 logger.debug("ollama unreachable at %s", base_url, exc_info=True)
 
-        if settings.llm_backend == "opencode":
+        if settings.llm_backend == LLMBackend.opencode:
             if self._opencode_start_error:
                 await websocket.send(
                     serialize_event(StatusEvent(message=self._opencode_start_error))
