@@ -14,6 +14,7 @@ final class STTManager: ObservableObject {
     @Published var readyToFire = false
     @Published var downloadProgress: [String: Double] = [:]
     @Published var availableModels: [String] = []
+    @Published var modelSizes: [String: Int] = [:]
     @Published var localModels: [String] = []
     @Published var micPermissionGranted = false
     @Published var accessibilityGranted = false
@@ -91,6 +92,22 @@ final class STTManager: ObservableObject {
             models.insert(m, at: 0)
         }
         availableModels = models
+        modelSizes = Self.loadManifestSizes()
+    }
+
+    private static func loadManifestSizes() -> [String: Int] {
+        guard let url = Bundle.main.url(forResource: "whisper_models", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]]
+        else { return [:] }
+        var sizes: [String: Int] = [:]
+        for entry in models {
+            if let name = entry["name"] as? String, let bytes = entry["size_bytes"] as? Int {
+                sizes[name] = bytes
+            }
+        }
+        return sizes
     }
 
     func downloadModel(_ modelName: String) {

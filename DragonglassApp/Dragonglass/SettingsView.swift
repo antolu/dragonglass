@@ -194,17 +194,22 @@ struct SettingsView: View {
                 let opencodeAvailable = config.opencodeAvailable.wrappedValue ?? true
                 let opencodeDisabledReason = config.opencodeDisabledReason.wrappedValue
 
-                Picker("Backend", selection: config.llmBackend) {
-                    Text("LiteLLM").tag("litellm")
-                    Text("OpenCode")
-                        .tag("opencode")
-                        .disabled(!opencodeAvailable)
-                        .help(opencodeDisabledReason ?? "OpenCode is unavailable")
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: config.llmBackend.wrappedValue) { _, newBackend in
-                    config.selectedModel.wrappedValue = ""
-                    client.setBackend(newBackend)
+                HStack {
+                    Text("Backend")
+                    Spacer()
+                    Picker("", selection: config.llmBackend) {
+                        Text("LiteLLM").tag("litellm")
+                        Text("OpenCode")
+                            .tag("opencode")
+                            .disabled(!opencodeAvailable)
+                            .help(opencodeDisabledReason ?? "OpenCode is unavailable")
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .onChange(of: config.llmBackend.wrappedValue) { _, newBackend in
+                        config.selectedModel.wrappedValue = ""
+                        client.setBackend(newBackend)
+                    }
                 }
 
                 if !opencodeAvailable {

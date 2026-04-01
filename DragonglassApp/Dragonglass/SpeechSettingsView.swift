@@ -31,10 +31,48 @@ struct SpeechSettingsView: View {
 
             Divider()
 
+            modelListSection
+        }
+        .onAppear {
+            sttManager.refreshLocalModels()
+            sttManager.checkAccessibilityPermission()
+            hotkeyManager.refreshAccessibility()
+            Task { await sttManager.fetchAvailableModels() }
+        }
+    }
+
+    @State private var modelsExpanded = false
+
+    private var unusedLocalModels: [String] {
+        sttManager.localModels.filter { $0 != sttManager.selectedModel }
+    }
+
+    private var modelListSection: some View {
+        DisclosureGroup(isExpanded: $modelsExpanded) {
+            VStack(spacing: 2) {
+                if sttManager.availableModels.isEmpty {
+                    ProgressView("Fetching model list…")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                } else {
+                    ForEach(sttManager.availableModels, id: \.self) { model in
+                        ModelRowView(modelName: model)
+                            .environmentObject(sttManager)
+                    }
+                }
+            }
+            .padding(.top, 4)
+        } label: {
             HStack {
                 Text("Whisper model")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if !sttManager.selectedModel.isEmpty {
+                    Text(sttManager.selectedModel)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                }
                 Spacer()
                 if sttManager.isModelLoading {
                     ProgressView()
@@ -44,27 +82,19 @@ struct SpeechSettingsView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-            }
-
-            if sttManager.availableModels.isEmpty {
-                ProgressView("Fetching model list…")
-                    .font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(sttManager.availableModels, id: \.self) { model in
-                        ModelRowView(modelName: model)
-                            .environmentObject(sttManager)
+                if !unusedLocalModels.isEmpty && !modelsExpanded {
+                    Button("Clean Up (\(unusedLocalModels.count))") {
+                        for model in unusedLocalModels {
+                            sttManager.deleteModel(model)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.orange)
+                    .font(.caption2)
                 }
             }
         }
-        .onAppear {
-            sttManager.refreshLocalModels()
-            sttManager.checkAccessibilityPermission()
-            hotkeyManager.refreshAccessibility()
-            Task { await sttManager.fetchAvailableModels() }
-        }
+        .font(.caption)
     }
 
     private var micPermissionRow: some View {
@@ -131,6 +161,7 @@ struct SpeechSettingsView: View {
 struct ModelRowView: View {
     let modelName: String
     @EnvironmentObject var sttManager: STTManager
+    @State private var confirmDownload = false
 
     private var isLocal: Bool { sttManager.localModels.contains(modelName) }
     private var isActive: Bool { sttManager.selectedModel == modelName }
@@ -165,6 +196,11 @@ struct ModelRowView: View {
                     .foregroundColor(.red)
                     .font(.caption2)
             } else {
+                if let bytes = sttManager.modelSizes[modelName] {
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 Button("Download") { sttManager.downloadModel(modelName) }
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
@@ -174,7 +210,17 @@ struct ModelRowView: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isLocal { sttManager.switchModel(to: modelName) }
+            if isLocal {
+                sttManager.switchModel(to: modelName)
+            } else if progress == nil {
+                confirmDownload = true
+            }
+        }
+        .confirmationDialog("Download \(modelName)?", isPresented: $confirmDownload) {
+            Button("Download") { sttManager.downloadModel(modelName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This model is not downloaded yet.")
         }
     }
 
