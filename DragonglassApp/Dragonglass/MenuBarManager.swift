@@ -67,12 +67,12 @@ class MenuBarManager: NSObject, ObservableObject {
                         .environmentObject(client)
                         .environmentObject(sttManager)
                         .environmentObject(hotkeyManager)
-                        .frame(width: 400, height: 500)
                 )
                 hostingController.safeAreaRegions = []
                 let p = NSPopover()
                 p.contentViewController = hostingController
                 p.behavior = .transient
+                p.contentSize = NSSize(width: 400, height: 500)
                 self.popover = p
             }
         } else {
@@ -87,7 +87,10 @@ class MenuBarManager: NSObject, ObservableObject {
         popover.behavior = closeOnFocusLoss ? .semitransient : .transient
         NSApplication.shared.activate(ignoringOtherApps: true)
         popover.show(relativeTo: statusButton.bounds, of: statusButton, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        if let window = popover.contentViewController?.view.window {
+            window.minSize = NSSize(width: 400, height: 500)
+            window.makeKey()
+        }
     }
 
     private func updateIcon() {

@@ -1,6 +1,14 @@
 import SwiftUI
 
 struct ContentView: View {
+    private enum ResizeDragMode {
+        case bottom
+        case bottomLeading
+        case bottomTrailing
+    }
+
+    private let minWindowWidth: CGFloat = 400
+    private let minWindowHeight: CGFloat = 500
     @EnvironmentObject var backend: BackendManager
     @EnvironmentObject var client: AgentClient
     @EnvironmentObject var sttManager: STTManager
@@ -16,6 +24,7 @@ struct ContentView: View {
     @State private var escapeMonitor: Any?
     @State private var shiftMonitor: Any?
     @State private var includeToolCallsInSelection = false
+    @State private var resizeStartFrame: CGRect?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +38,40 @@ struct ContentView: View {
 
             inputArea
         }
-        .frame(width: 400, height: 500)
+        .frame(minWidth: minWindowWidth, minHeight: minWindowHeight)
+        .overlay(alignment: .bottom) {
+            ZStack(alignment: .bottom) {
+                Color.clear
+                    .frame(height: 12)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in handleResizeDragChanged(value, mode: .bottom) }
+                            .onEnded { value in handleResizeDragEnded(value, mode: .bottom) }
+                    )
+
+                HStack {
+                    Color.clear
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in handleResizeDragChanged(value, mode: .bottomLeading) }
+                                .onEnded { value in handleResizeDragEnded(value, mode: .bottomLeading) }
+                        )
+                    Spacer(minLength: 0)
+                    Color.clear
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in handleResizeDragChanged(value, mode: .bottomTrailing) }
+                                .onEnded { value in handleResizeDragEnded(value, mode: .bottomTrailing) }
+                        )
+                }
+                .frame(height: 16)
+            }
+        }
         .sheet(item: $client.pendingApproval) { req in
             ApprovalView(request: req)
                 .environmentObject(client)
@@ -430,6 +472,40 @@ struct ContentView: View {
 
         client.sendChat(text: inputText, model: model)
         inputText = ""
+    }
+
+    private func handleResizeDragChanged(_ value: DragGesture.Value, mode: ResizeDragMode) {
+        guard let window = NSApp.keyWindow else { return }
+        if resizeStartFrame == nil {
+            resizeStartFrame = window.frame
+        }
+        guard let startFrame = resizeStartFrame else { return }
+
+        let targetHeight = max(minWindowHeight, startFrame.height + value.translation.height)
+        let signedHorizontalTranslation: CGFloat
+        switch mode {
+        case .bottom:
+            signedHorizontalTranslation = 0
+        case .bottomLeading:
+            signedHorizontalTranslation = -value.translation.width
+        case .bottomTrailing:
+            signedHorizontalTranslation = value.translation.width
+        }
+        let targetWidth = max(minWindowWidth, startFrame.width + (signedHorizontalTranslation * 2))
+        let maxY = startFrame.maxY
+        let midX = startFrame.midX
+        let newFrame = CGRect(
+            x: midX - (targetWidth / 2),
+            y: maxY - targetHeight,
+            width: targetWidth,
+            height: targetHeight
+        )
+        window.setFrame(newFrame, display: true)
+    }
+
+    private func handleResizeDragEnded(_ value: DragGesture.Value, mode: ResizeDragMode) {
+        handleResizeDragChanged(value, mode: mode)
+        resizeStartFrame = nil
     }
 
     private func shouldPersistCustomModel(completedEventIndex: Int) -> Bool {
