@@ -309,8 +309,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dragonglass uses the microphone for voice dictation.";
 				INFOPLIST_KEY_NSInputMonitoringUsageDescription = "Dragonglass monitors keyboard input to detect the push-to-talk hotkey.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dragonglass uses the microphone for voice dictation.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -349,8 +349,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dragonglass uses the microphone for voice dictation.";
 				INFOPLIST_KEY_NSInputMonitoringUsageDescription = "Dragonglass monitors keyboard input to detect the push-to-talk hotkey.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dragonglass uses the microphone for voice dictation.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

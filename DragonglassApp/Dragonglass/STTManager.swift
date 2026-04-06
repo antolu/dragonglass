@@ -33,6 +33,9 @@ final class STTManager: ObservableObject {
 
     private static let repoName = "argmaxinc/whisperkit-coreml"
 
+    @Published var isCursorDictating = false
+    private var cursorSession: CursorDictationSession?
+
     private var whisperKit: WhisperKit?
     private var loadTask: Task<WhisperKit, Error>?
     private var streamTranscriber: AudioStreamTranscriber?
@@ -232,6 +235,51 @@ final class STTManager: ObservableObject {
         pendingText = nil
         readyToFire = false
 
+        startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
+            guard let self else { return }
+            self.pendingText = full
+        }
+    }
+
+    func startCursorDictation() {
+        guard !isRecording, micPermissionGranted, isModelReady else {
+            logger.warning("startCursorDictation failed: isRecording=\(self.isRecording), micGranted=\(self.micPermissionGranted), isModelReady=\(self.isModelReady)")
+            return
+        }
+        guard let wk = whisperKit, let tokenizer = wk.tokenizer else {
+            logger.warning("startCursorDictation failed: whisperKit not ready")
+            return
+        }
+        guard let session = CursorDictationSession.start() else {
+            logger.warning("startCursorDictation failed: could not acquire AX session")
+            return
+        }
+
+        logger.info("Starting cursor dictation...")
+        cursorSession = session
+        isCursorDictating = true
+
+        startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
+            guard let self, let session = self.cursorSession else { return }
+            if session.checkDrift() {
+                logger.info("Drift detected — stopping cursor dictation")
+                self.stopCursorDictation()
+                return
+            }
+            session.update(text: full)
+        }
+    }
+
+    func stopCursorDictation() {
+        guard isCursorDictating else { return }
+        logger.info("Stopping cursor dictation")
+        isCursorDictating = false
+        cursorSession?.finish()
+        cursorSession = nil
+        stopTranscriber()
+    }
+
+    private func startTranscriber(wk: WhisperKit, tokenizer: any WhisperTokenizer, onSegment: @escaping @MainActor (String) -> Void) {
         let transcriber = AudioStreamTranscriber(
             audioEncoder: wk.audioEncoder,
             featureExtractor: wk.featureExtractor,
@@ -246,12 +294,12 @@ final class STTManager: ObservableObject {
             requiredSegmentsForConfirmation: 2,
             useVAD: true
         ) { [weak self] _, newState in
-            guard let self else { return }
+            guard self != nil else { return }
             let confirmed = newState.confirmedSegments.map { $0.text }.joined()
             let current = newState.currentText
             let full = (confirmed + " " + current).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !full.isEmpty, full != "Waiting for speech..." else { return }
-            Task { @MainActor in self.pendingText = full }
+            Task { @MainActor in onSegment(full) }
         }
 
         streamTranscriber = transcriber
@@ -272,7 +320,7 @@ final class STTManager: ObservableObject {
     }
 
     func stopAndTranscribe() {
-        guard isRecording else { return }
+        guard isRecording, !isCursorDictating else { return }
         logger.info("Stopping recording")
         let transcriber = streamTranscriber
         streamTranscriber = nil
@@ -287,6 +335,15 @@ final class STTManager: ObservableObject {
                 if self.autoSend { self.scheduleAutoSend() }
             }
         }
+    }
+
+    private func stopTranscriber() {
+        guard isRecording else { return }
+        let transcriber = streamTranscriber
+        streamTranscriber = nil
+        streamTask = nil
+        isRecording = false
+        Task { await transcriber?.stopStreamTranscription() }
     }
 
     // MARK: - Auto-send
