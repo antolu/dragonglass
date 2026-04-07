@@ -16,11 +16,6 @@ final class HotkeyManager: NSObject, ObservableObject {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    override init() {
-        super.init()
-        registerIfPossible()
-    }
-
     func setup(sttManager: STTManager, menuBarManager: MenuBarManager, agentClient: AgentClient) {
         self.sttManager = sttManager
         self.menuBarManager = menuBarManager

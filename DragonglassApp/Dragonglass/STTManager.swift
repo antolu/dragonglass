@@ -35,6 +35,7 @@ final class STTManager: ObservableObject {
 
     @Published var isCursorDictating = false
     private var cursorSession: CursorDictationSession?
+    private var lastCursorText: String = ""
 
     private var whisperKit: WhisperKit?
     private var loadTask: Task<WhisperKit, Error>?
@@ -258,25 +259,50 @@ final class STTManager: ObservableObject {
         logger.info("Starting cursor dictation...")
         cursorSession = session
         isCursorDictating = true
+        lastCursorText = ""
 
         startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
             guard let self, let session = self.cursorSession else { return }
             if session.checkDrift() {
                 logger.info("Drift detected — stopping cursor dictation")
-                self.stopCursorDictation()
+                // Don't call stopCursorDictation (already mid-callback); just clean up
+                self.isCursorDictating = false
+                self.cursorSession = nil
+                session.finish()
+                self.stopTranscriber()
                 return
             }
+            self.lastCursorText = full
             session.update(text: full)
         }
     }
 
     func stopCursorDictation() {
         guard isCursorDictating else { return }
-        logger.info("Stopping cursor dictation")
+        logger.info("Stopping cursor dictation — waiting for tail")
         isCursorDictating = false
-        cursorSession?.finish()
+        let session = cursorSession
         cursorSession = nil
-        stopTranscriber()
+
+        let transcriber = streamTranscriber
+        streamTranscriber = nil
+        streamTask = nil
+
+        Task {
+            // Give Whisper ~500ms of silence to finalize the last segment
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await transcriber?.stopStreamTranscription()
+            // After stop, take whatever the last emitted text was (includes currentText)
+            await MainActor.run {
+                let final = self.lastCursorText
+                self.isRecording = false
+                if !final.isEmpty {
+                    session?.update(text: final)
+                }
+                session?.finish()
+                logger.info("Cursor dictation finished with: \"\(final)\"")
+            }
+        }
     }
 
     private func startTranscriber(wk: WhisperKit, tokenizer: any WhisperTokenizer, onSegment: @escaping @MainActor (String) -> Void) {
