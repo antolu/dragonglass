@@ -30,13 +30,56 @@ struct SettingsView: View {
             } else if let config = Binding($config) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        vaultSection(config)
-                        modelSection(config)
-                        backendSection(config)
-                        permissionsSection(config)
-                        uiSection()
-                        speechSection()
-                        advancedSection(config)
+                        settingsSection("Obsidian Vault") {
+                            VaultSettingsSection(
+                                config: config,
+                                onSaved: { updated in
+                                    self.config = updated
+                                    self.baselineConfig = updated
+                                    self.saveMessage = "Saved"
+                                },
+                                onError: { msg in
+                                    self.errorMessage = msg
+                                    self.showError = true
+                                }
+                            )
+                            .environmentObject(client)
+                        }
+                        settingsSection("Model") {
+                            ModelSettingsSection(config: config)
+                        }
+                        settingsSection("LLM Backend") {
+                            BackendSettingsSection(config: config)
+                                .environmentObject(client)
+                        }
+                        settingsSection("Permissions") {
+                            PermissionsSettingsSection(config: config)
+                        }
+                        settingsSection("Interface") {
+                            UISettingsSection()
+                                .environmentObject(client)
+                        }
+                        settingsSection("Speech to Text") {
+                            SpeechSettingsView()
+                                .environmentObject(sttManager)
+                                .environmentObject(hotkeyManager)
+                        }
+                        DisclosureGroup("Advanced") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                settingsSection("Environment Variables") {
+                                    EnvironmentSettingsSection(
+                                        config: config,
+                                        newEnvKey: $newEnvKey,
+                                        newEnvValue: $newEnvValue,
+                                        envFilter: $envFilter
+                                    )
+                                }
+                            }
+                            .padding(.top, 8)
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 2)
                     }
                     .padding(.horizontal)
                     .padding(.top, 10)
@@ -111,269 +154,6 @@ struct SettingsView: View {
         .background(Color(NSColor.windowBackgroundColor))
     }
 
-    @ViewBuilder
-    private func vaultSection(_ config: Binding<DragonglassConfig>) -> some View {
-        settingsSection("Obsidian Vault") {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text(config.obsidianDir.wrappedValue.isEmpty ? "Not configured" : "Configured")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            config.obsidianDir.wrappedValue.isEmpty
-                                ? Color.orange.opacity(0.2)
-                                : Color.green.opacity(0.2)
-                        )
-                        .clipShape(Capsule())
-                    Spacer()
-                    Button("Change…") {
-                        SetupWindowController.shared.show { vaultPath in
-                            guard var current = self.config else { return }
-                            Task {
-                                current.obsidianDir = vaultPath
-                                do {
-                                    try await self.client.setConfig(current)
-                                    await MainActor.run {
-                                        self.config = current
-                                        self.baselineConfig = current
-                                        self.saveMessage = "Saved"
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        self.errorMessage =
-                                            "Failed to save vault path: \(error.localizedDescription)"
-                                        self.showError = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
-                }
-
-                HStack(spacing: 6) {
-                    Text(config.obsidianDir.wrappedValue.isEmpty ? "Not configured" : config.obsidianDir.wrappedValue)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(config.obsidianDir.wrappedValue.isEmpty ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    if !config.obsidianDir.wrappedValue.isEmpty {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(config.obsidianDir.wrappedValue, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy vault path")
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func modelSection(_ config: Binding<DragonglassConfig>) -> some View {
-        settingsSection("Model") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Default Model")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                TextField("Default Model", text: config.llmModel)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func backendSection(_ config: Binding<DragonglassConfig>) -> some View {
-        settingsSection("LLM Backend") {
-            VStack(alignment: .leading, spacing: 8) {
-                let opencodeAvailable = config.opencodeAvailable.wrappedValue ?? true
-                let opencodeDisabledReason = config.opencodeDisabledReason.wrappedValue
-
-                HStack {
-                    Text("Backend")
-                    Spacer()
-                    Picker("", selection: config.llmBackend) {
-                        Text("LiteLLM").tag("litellm")
-                        Text("OpenCode")
-                            .tag("opencode")
-                            .disabled(!opencodeAvailable)
-                            .help(opencodeDisabledReason ?? "OpenCode is unavailable")
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                    .onChange(of: config.llmBackend.wrappedValue) { _, newBackend in
-                        config.selectedModel.wrappedValue = ""
-                        client.setBackend(newBackend)
-                    }
-                }
-
-                if !opencodeAvailable {
-                    Text(opencodeDisabledReason ?? "OpenCode is unavailable")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                if config.llmBackend.wrappedValue == "opencode" {
-                    HStack {
-                        Text("Spawn Managed Server")
-                        Spacer()
-                        Toggle("", isOn: config.spawnOpencode)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .labelsHidden()
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func permissionsSection(_ config: Binding<DragonglassConfig>) -> some View {
-        settingsSection("Permissions") {
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Auto-allow Edits")
-                    Spacer()
-                    Toggle("", isOn: config.autoAllowEdit)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-                HStack {
-                    Text("Auto-allow Create")
-                    Spacer()
-                    Toggle("", isOn: config.autoAllowCreate)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-                HStack {
-                    Text("Auto-allow Delete")
-                    Spacer()
-                    Toggle("", isOn: config.autoAllowDelete)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func environmentSection(_ config: Binding<DragonglassConfig>) -> some View {
-        settingsSection("Environment Variables") {
-            let envVars = config.envVars.wrappedValue ?? [:]
-            let filteredKeys = Array(envVars.keys)
-                .filter { envFilter.isEmpty || $0.localizedCaseInsensitiveContains(envFilter) }
-                .sorted()
-
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Filter keys", text: $envFilter)
-
-                ForEach(filteredKeys, id: \.self) { key in
-                    VStack(spacing: 6) {
-                        HStack {
-                            Text(key)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Button(action: {
-                                config.envVars.wrappedValue?.removeValue(forKey: key)
-                            }) {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        TextField("Value", text: Binding(
-                            get: { envVars[key] ?? "" },
-                            set: {
-                                if config.envVars.wrappedValue == nil {
-                                    config.envVars.wrappedValue = [:]
-                                }
-                                config.envVars.wrappedValue?[key] = $0
-                            }
-                        ))
-                    }
-                    .padding(8)
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-
-                HStack {
-                    TextField("KEY", text: $newEnvKey)
-                    TextField("VALUE", text: $newEnvValue)
-                    Button(action: {
-                        if !newEnvKey.isEmpty {
-                            if config.envVars.wrappedValue == nil {
-                                config.envVars.wrappedValue = [:]
-                            }
-                            config.envVars.wrappedValue?[newEnvKey] = newEnvValue
-                            newEnvKey = ""
-                            newEnvValue = ""
-                        }
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(newEnvKey.isEmpty)
-                }
-
-                Text("Changes apply after Save.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    private func uiSection() -> some View {
-        settingsSection("Interface") {
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Detailed tool events")
-                    Spacer()
-                    Toggle("", isOn: $client.detailedToolEvents)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-                HStack {
-                    Text("Close popover when clicking another window")
-                    Spacer()
-                    Toggle("", isOn: $closePopoverOnFocusLoss)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    private func speechSection() -> some View {
-        settingsSection("Speech to Text") {
-            SpeechSettingsView()
-                .environmentObject(sttManager)
-                .environmentObject(hotkeyManager)
-        }
-    }
-
-    private func advancedSection(_ config: Binding<DragonglassConfig>) -> some View {
-        DisclosureGroup("Advanced") {
-            VStack(alignment: .leading, spacing: 12) {
-                environmentSection(config)
-            }
-            .padding(.top, 8)
-        }
-        .font(.caption)
-        .foregroundColor(.secondary)
-        .padding(.horizontal, 2)
-    }
-
     private func loadConfig() {
         Task {
             do {
@@ -435,68 +215,5 @@ struct SettingsView: View {
         .padding(10)
         .background(Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-@MainActor
-final class SetupWindowController: NSObject, NSWindowDelegate {
-    static let shared = SetupWindowController()
-
-    private var window: NSWindow?
-    private var onComplete: ((String) -> Void)?
-
-    func show(onComplete: ((String) -> Void)? = nil) {
-        self.onComplete = onComplete
-
-        if let window {
-            NSApp.activate(ignoringOtherApps: true)
-            window.orderFrontRegardless()
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let isPresented = Binding<Bool>(
-            get: { self.window != nil },
-            set: { visible in
-                if !visible {
-                    self.closeWindow()
-                }
-            }
-        )
-
-        let rootView = ObsidianSetupView(
-            isPresented: isPresented,
-            onComplete: { [weak self] vaultPath in
-                self?.onComplete?(vaultPath)
-            }
-        )
-        let host = NSHostingController(rootView: rootView)
-        let setupWindow = NSWindow(contentViewController: host)
-        setupWindow.title = "Obsidian Setup"
-        setupWindow.styleMask = [.titled, .closable]
-        setupWindow.level = .floating
-        setupWindow.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        setupWindow.isReleasedWhenClosed = false
-        setupWindow.delegate = self
-        setupWindow.center()
-
-        window = setupWindow
-
-        NSApp.activate(ignoringOtherApps: true)
-        setupWindow.orderFrontRegardless()
-        setupWindow.makeKeyAndOrderFront(nil)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        if let closedWindow = notification.object as? NSWindow, closedWindow == window {
-            window = nil
-            onComplete = nil
-        }
-    }
-
-    private func closeWindow() {
-        guard let window else { return }
-        self.window = nil
-        window.close()
     }
 }
