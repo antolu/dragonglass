@@ -133,13 +133,17 @@ func ensureOpencodeInstalled(paths: BackendPaths) async throws {
         )
     }
 
-    if let desiredCliVersion,
-       let installedCliVersion,
-       desiredCliVersion != installedCliVersion {
-        throw NSError(
-            domain: "BackendManager",
-            code: 5,
-            userInfo: [NSLocalizedDescriptionKey: "OpenCode CLI version mismatch: expected \(desiredCliVersion), found \(installedCliVersion)."]
-        )
+    // Re-check the installed CLI version after running `npm install`.
+    // Previously we compared against the value read before installation which
+    // could incorrectly report a mismatch even when the install updated the CLI.
+    if let desiredCliVersion {
+        let newInstalledCliVersion = installedOpencodeCliVersion(paths: paths)
+        if let newInstalledCliVersion, desiredCliVersion != newInstalledCliVersion {
+            throw NSError(
+                domain: "BackendManager",
+                code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "OpenCode CLI version mismatch: expected \(desiredCliVersion), found \(newInstalledCliVersion)."]
+            )
+        }
     }
 }
