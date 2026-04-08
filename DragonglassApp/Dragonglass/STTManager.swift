@@ -33,6 +33,10 @@ final class STTManager: ObservableObject {
 
     private static let repoName = "argmaxinc/whisperkit-coreml"
 
+    @Published var isCursorDictating = false
+    private var cursorSession: CursorDictationSession?
+    private var lastCursorText: String = ""
+
     private var whisperKit: WhisperKit?
     private var loadTask: Task<WhisperKit, Error>?
     private var streamTranscriber: AudioStreamTranscriber?
@@ -112,7 +116,7 @@ final class STTManager: ObservableObject {
 
     func downloadModel(_ modelName: String) {
         guard downloadProgress[modelName] == nil else { return }
-        logger.info("Starting download for model: \(modelName)")
+        logger.debug("Starting download for model: \(modelName)")
         downloadProgress[modelName] = 0.0
         let downloadBase = URL(fileURLWithPath: localModelPath)
         Task {
@@ -127,7 +131,7 @@ final class STTManager: ObservableObject {
                         }
                     }
                 )
-                logger.info("Download completed for: \(modelName)")
+                logger.debug("Download completed for: \(modelName)")
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: modelName)
                     self.refreshLocalModels()
@@ -157,7 +161,7 @@ final class STTManager: ObservableObject {
 
     func switchModel(to modelName: String) {
         guard modelName != selectedModel else { return }
-        logger.info("Switching model to: \(modelName)")
+        logger.debug("Switching model to: \(modelName)")
         objectWillChange.send()
         selectedModel = modelName
         loadTask?.cancel()
@@ -183,7 +187,7 @@ final class STTManager: ObservableObject {
         let repoURL = URL(fileURLWithPath: modelRepoPath)
         let modelFolder = repoURL.appendingPathComponent(model)
 
-        logger.info("Initializing WhisperKit with model: \(model)")
+        logger.debug("Initializing WhisperKit with model: \(model)")
         logger.debug("Model folder: \(modelFolder.path)")
 
         guard FileManager.default.fileExists(atPath: modelFolder.path) else {
@@ -207,7 +211,7 @@ final class STTManager: ObservableObject {
         }
         do {
             whisperKit = try await task.value
-            logger.info("WhisperKit loaded successfully")
+            logger.debug("WhisperKit loaded successfully")
         } catch {
             logger.error("Failed to load WhisperKit: \(error.localizedDescription)")
             throw error
@@ -226,12 +230,82 @@ final class STTManager: ObservableObject {
             return
         }
 
-        logger.info("Starting recording...")
+        logger.debug("Starting recording...")
         autoSendTask?.cancel()
         autoSendTask = nil
         pendingText = nil
         readyToFire = false
 
+        startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
+            guard let self else { return }
+            self.pendingText = full
+        }
+    }
+
+    func startCursorDictation() {
+        guard !isRecording, micPermissionGranted, isModelReady else {
+            logger.warning("startCursorDictation failed: isRecording=\(self.isRecording), micGranted=\(self.micPermissionGranted), isModelReady=\(self.isModelReady)")
+            return
+        }
+        guard let wk = whisperKit, let tokenizer = wk.tokenizer else {
+            logger.warning("startCursorDictation failed: whisperKit not ready")
+            return
+        }
+        guard let session = CursorDictationSession.start() else {
+            logger.warning("startCursorDictation failed: could not acquire AX session")
+            return
+        }
+
+        logger.debug("Starting cursor dictation...")
+        cursorSession = session
+        isCursorDictating = true
+        lastCursorText = ""
+
+        startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
+            guard let self, let session = self.cursorSession else { return }
+            if session.checkDrift() {
+                logger.debug("Drift detected — stopping cursor dictation")
+                // Don't call stopCursorDictation (already mid-callback); just clean up
+                self.isCursorDictating = false
+                self.cursorSession = nil
+                session.finish()
+                self.stopTranscriber()
+                return
+            }
+            self.lastCursorText = full
+            session.update(text: full)
+        }
+    }
+
+    func stopCursorDictation() {
+        guard isCursorDictating else { return }
+        logger.debug("Stopping cursor dictation — waiting for tail")
+        isCursorDictating = false
+        let session = cursorSession
+        cursorSession = nil
+
+        let transcriber = streamTranscriber
+        streamTranscriber = nil
+        streamTask = nil
+
+        Task {
+            // Give Whisper ~500ms of silence to finalize the last segment
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await transcriber?.stopStreamTranscription()
+            // After stop, take whatever the last emitted text was (includes currentText)
+            await MainActor.run {
+                let final = self.lastCursorText
+                self.isRecording = false
+                if !final.isEmpty {
+                    session?.update(text: final)
+                }
+                session?.finish()
+                logger.info("Cursor dictation finished with: \"\(final)\"")
+            }
+        }
+    }
+
+    private func startTranscriber(wk: WhisperKit, tokenizer: any WhisperTokenizer, onSegment: @escaping @MainActor (String) -> Void) {
         let transcriber = AudioStreamTranscriber(
             audioEncoder: wk.audioEncoder,
             featureExtractor: wk.featureExtractor,
@@ -246,12 +320,12 @@ final class STTManager: ObservableObject {
             requiredSegmentsForConfirmation: 2,
             useVAD: true
         ) { [weak self] _, newState in
-            guard let self else { return }
+            guard self != nil else { return }
             let confirmed = newState.confirmedSegments.map { $0.text }.joined()
             let current = newState.currentText
             let full = (confirmed + " " + current).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !full.isEmpty, full != "Waiting for speech..." else { return }
-            Task { @MainActor in self.pendingText = full }
+            Task { @MainActor in onSegment(full) }
         }
 
         streamTranscriber = transcriber
@@ -268,12 +342,12 @@ final class STTManager: ObservableObject {
             await MainActor.run { self.isRecording = false }
         }
 
-        logger.info("Recording started successfully")
+        logger.debug("Recording started successfully")
     }
 
     func stopAndTranscribe() {
-        guard isRecording else { return }
-        logger.info("Stopping recording")
+        guard isRecording, !isCursorDictating else { return }
+        logger.debug("Stopping recording")
         let transcriber = streamTranscriber
         streamTranscriber = nil
         streamTask = nil
@@ -289,6 +363,15 @@ final class STTManager: ObservableObject {
         }
     }
 
+    private func stopTranscriber() {
+        guard isRecording else { return }
+        let transcriber = streamTranscriber
+        streamTranscriber = nil
+        streamTask = nil
+        isRecording = false
+        Task { await transcriber?.stopStreamTranscription() }
+    }
+
     // MARK: - Auto-send
 
     private func scheduleAutoSend() {
@@ -298,6 +381,12 @@ final class STTManager: ObservableObject {
             guard !Task.isCancelled else { return }
             await MainActor.run { self.readyToFire = true }
         }
+    }
+
+    func cancelRecording() {
+        guard isRecording, !isCursorDictating else { return }
+        logger.debug("Recording cancelled")
+        stopTranscriber()
     }
 
     func cancelPending() {

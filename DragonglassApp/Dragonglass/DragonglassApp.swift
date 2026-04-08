@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @main
 struct DragonglassApp: App {
@@ -31,6 +32,11 @@ struct DragonglassApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var backend: BackendManager?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        // remapDictationKeyToF13() — on ice until intelligenceplatformd interception is resolved
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         backend?.cancelObsidianPoll()

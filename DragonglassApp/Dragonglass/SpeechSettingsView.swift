@@ -7,6 +7,9 @@ struct SpeechSettingsView: View {
     @AppStorage("sttHotkeyKeyCode") private var hotkeyKeyCode: Int = 0
     @AppStorage("sttHotkeyModifiers") private var hotkeyModifiers: Int = 0
     @AppStorage("sttAutoSend") private var autoSend: Bool = true
+    @AppStorage("dictationToggleThreshold") private var dictationToggleThreshold: Double = 10.0
+    @AppStorage("dictationHotkeyKeyCode") private var dictationHotkeyKeyCode: Int = 0
+    @AppStorage("dictationHotkeyModifiers") private var dictationHotkeyModifiers: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -24,6 +27,9 @@ struct SpeechSettingsView: View {
             }
 
             hotkeyRow
+            dictationHotkeyRow
+
+            dictationModeRow
 
             if !hotkeyManager.accessibilityGranted {
                 accessibilityWarning
@@ -134,6 +140,49 @@ struct SpeechSettingsView: View {
             .frame(width: 110, height: 22)
             .disabled(!hotkeyManager.accessibilityGranted)
             .opacity(hotkeyManager.accessibilityGranted ? 1.0 : 0.4)
+        }
+    }
+
+    private var dictationHotkeyRow: some View {
+        HStack {
+            Text("Dictate-at-cursor hotkey")
+                .font(.caption)
+            Spacer()
+            KeyRecorderView(
+                keyCode: $dictationHotkeyKeyCode,
+                modifiers: $dictationHotkeyModifiers,
+                onChanged: { hotkeyManager.registerIfPossible() }
+            )
+            .frame(width: 110, height: 22)
+            .disabled(!hotkeyManager.accessibilityGranted)
+            .opacity(hotkeyManager.accessibilityGranted ? 1.0 : 0.4)
+        }
+    }
+
+    private var dictationModeRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Dictation toggle threshold")
+                    .font(.caption)
+                Spacer()
+                if dictationToggleThreshold == 0 {
+                    Text("hold only")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("\(Int(dictationToggleThreshold))s")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Slider(value: $dictationToggleThreshold, in: 0...30, step: 1)
+                .controlSize(.small)
+            Text(dictationToggleThreshold == 0
+                ? "Always hold to dictate"
+                : "Hold < \(Int(dictationToggleThreshold))s = hold-to-dictate, longer = toggle"
+            )
+            .font(.caption2)
+            .foregroundColor(.secondary)
         }
     }
 

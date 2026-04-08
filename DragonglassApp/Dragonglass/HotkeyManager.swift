@@ -31,14 +31,22 @@ final class HotkeyManager: NSObject, ObservableObject {
 
     func registerIfPossible() {
         unregister()
-        guard AXIsProcessTrusted() else { return }
-        let keyCode = UserDefaults.standard.integer(forKey: "sttHotkeyKeyCode")
-        let modifiers = UserDefaults.standard.integer(forKey: "sttHotkeyModifiers")
-        guard keyCode != 0 else { return }
-        installEventTap(keyCode: keyCode, carbonModifiers: modifiers)
+        guard AXIsProcessTrusted() else {
+            logger.warning("registerIfPossible: not AX trusted, tap not installed")
+            return
+        }
+        let popoverkeyCode = UserDefaults.standard.integer(forKey: "sttHotkeyKeyCode")
+        let popoverModifiers = UserDefaults.standard.integer(forKey: "sttHotkeyModifiers")
+        let dictationKeyCode = UserDefaults.standard.integer(forKey: "dictationHotkeyKeyCode")
+        let dictationModifiers = UserDefaults.standard.integer(forKey: "dictationHotkeyModifiers")
+        logger.debug("registerIfPossible: popover=\(popoverkeyCode) dictation=\(dictationKeyCode)")
+        installEventTap(
+            popoverKeyCode: popoverkeyCode, popoverModifiers: popoverModifiers,
+            dictationKeyCode: dictationKeyCode, dictationModifiers: dictationModifiers
+        )
     }
 
-    private func installEventTap(keyCode: Int, carbonModifiers: Int) {
+    private func installEventTap(popoverKeyCode: Int, popoverModifiers: Int, dictationKeyCode: Int, dictationModifiers: Int) {
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
@@ -50,7 +58,11 @@ final class HotkeyManager: NSObject, ObservableObject {
             return ctx.handle(type: type, event: event)
         }
 
-        let ctx = TapContext(state: TapContext.TapState(keyCode: keyCode, carbonModifiers: carbonModifiers), manager: self)
+        let ctx = TapContext(
+            popover: TapContext.KeyBinding(keyCode: popoverKeyCode, carbonModifiers: popoverModifiers),
+            dictation: TapContext.KeyBinding(keyCode: dictationKeyCode, carbonModifiers: dictationModifiers),
+            manager: self
+        )
         let ctxPtr = Unmanaged.passRetained(ctx)
 
         guard let tap = CGEvent.tapCreate(
@@ -62,9 +74,10 @@ final class HotkeyManager: NSObject, ObservableObject {
             userInfo: ctxPtr.toOpaque()
         ) else {
             ctxPtr.release()
-            print("[HotkeyManager] CGEvent.tapCreate failed — check Input Monitoring permission")
+            logger.error("CGEvent.tapCreate failed — check Input Monitoring permission")
             return
         }
+        logger.info("CGEvent tap installed successfully")
 
         eventTap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -94,6 +107,33 @@ final class HotkeyManager: NSObject, ObservableObject {
         }
     }
 
+    var dictationToggleThreshold: Double {
+        UserDefaults.standard.object(forKey: "dictationToggleThreshold") as? Double ?? 10.0
+    }
+
+    private var dictationKeyDownTime: Double = 0
+
+    func onDictationKeyDown() {
+        logger.debug("onDictationKeyDown: sttManager=\(self.sttManager != nil), isCursorDictating=\(self.sttManager?.isCursorDictating ?? false)")
+        if sttManager?.isCursorDictating == true {
+            sttManager?.stopCursorDictation()
+            dictationKeyDownTime = 0
+        } else {
+            dictationKeyDownTime = CACurrentMediaTime()
+            sttManager?.startCursorDictation()
+        }
+    }
+
+    func onDictationKeyUp() {
+        guard sttManager?.isCursorDictating == true, dictationKeyDownTime > 0 else { return }
+        let held = CACurrentMediaTime() - dictationKeyDownTime
+        let threshold = dictationToggleThreshold
+        if threshold == 0 || held < threshold {
+            sttManager?.stopCursorDictation()
+            dictationKeyDownTime = 0
+        }
+    }
+
     nonisolated static func toCarbonModifiers(_ flags: NSEvent.ModifierFlags) -> Int {
         var carbon = 0
         if flags.contains(.command) { carbon |= cmdKey }
@@ -114,21 +154,19 @@ final class HotkeyManager: NSObject, ObservableObject {
 }
 
 private final class TapContext: @unchecked Sendable {
-    final class TapState: @unchecked Sendable {
+    struct KeyBinding {
         var isPressed = false
         let keyCode: Int
         let carbonModifiers: Int
-        init(keyCode: Int, carbonModifiers: Int) {
-            self.keyCode = keyCode
-            self.carbonModifiers = carbonModifiers
-        }
     }
 
-    let state: TapState
+    var popover: KeyBinding
+    var dictation: KeyBinding
     weak var manager: HotkeyManager?
 
-    init(state: TapState, manager: HotkeyManager) {
-        self.state = state
+    init(popover: KeyBinding, dictation: KeyBinding, manager: HotkeyManager) {
+        self.popover = popover
+        self.dictation = dictation
         self.manager = manager
     }
 
@@ -137,31 +175,53 @@ private final class TapContext: @unchecked Sendable {
         let cgFlags = event.flags
         let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(cgFlags.rawValue))
         let eventCarbon = HotkeyManager.toCarbonModifiers(nsFlags)
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
         switch type {
         case .keyDown:
-            guard keyCode == state.keyCode, eventCarbon == state.carbonModifiers else {
-                return Unmanaged.passUnretained(event)
+            // Popover hotkey
+            if popover.keyCode != 0, keyCode == popover.keyCode, eventCarbon == popover.carbonModifiers {
+                if isRepeat || popover.isPressed { return nil }
+                logger.debug("Popover hotkey down")
+                popover.isPressed = true
+                Task { @MainActor [weak manager] in manager?.onKeyDown() }
+                return nil
             }
-            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            if isRepeat || state.isPressed { return nil }
-            logger.debug("keyDown matched at \(CACurrentMediaTime())")
-            state.isPressed = true
-            Task { @MainActor [weak manager] in manager?.onKeyDown() }
-            return nil
+            // Dictation hotkey
+            if dictation.keyCode != 0, keyCode == dictation.keyCode, eventCarbon == dictation.carbonModifiers {
+                if isRepeat { return nil }
+                if !dictation.isPressed {
+                    logger.debug("Dictation hotkey down")
+                    dictation.isPressed = true
+                    Task { @MainActor [weak manager] in manager?.onDictationKeyDown() }
+                }
+                return nil
+            }
+            return Unmanaged.passUnretained(event)
 
         case .keyUp:
-            guard keyCode == state.keyCode, state.isPressed else {
-                return Unmanaged.passUnretained(event)
+            if popover.keyCode != 0, keyCode == popover.keyCode, popover.isPressed {
+                popover.isPressed = false
+                return nil
             }
-            state.isPressed = false
-            return nil
+            if dictation.keyCode != 0, keyCode == dictation.keyCode, dictation.isPressed {
+                dictation.isPressed = false
+                Task { @MainActor [weak manager] in manager?.onDictationKeyUp() }
+                return nil
+            }
+            return Unmanaged.passUnretained(event)
 
         case .flagsChanged:
-            guard state.isPressed else { return Unmanaged.passUnretained(event) }
-            let requiredNSFlags = HotkeyManager.toNSModifiers(carbonModifiers: state.carbonModifiers)
-            if !nsFlags.contains(requiredNSFlags) {
-                state.isPressed = false
+            if popover.isPressed {
+                let required = HotkeyManager.toNSModifiers(carbonModifiers: popover.carbonModifiers)
+                if !nsFlags.contains(required) { popover.isPressed = false }
+            }
+            if dictation.isPressed {
+                let required = HotkeyManager.toNSModifiers(carbonModifiers: dictation.carbonModifiers)
+                if !nsFlags.contains(required) {
+                    dictation.isPressed = false
+                    Task { @MainActor [weak manager] in manager?.onDictationKeyUp() }
+                }
             }
             return Unmanaged.passUnretained(event)
 

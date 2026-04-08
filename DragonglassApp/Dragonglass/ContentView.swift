@@ -393,7 +393,10 @@ struct ContentView: View {
 
     private func installEscapeMonitor() {
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 && self.sttManager.pendingText != nil {
+            if event.keyCode == 53 && (self.sttManager.isRecording || self.sttManager.pendingText != nil) {
+                if self.sttManager.isRecording {
+                    self.sttManager.cancelRecording()
+                }
                 self.sttManager.cancelPending()
                 self.inputText = ""
                 return nil
