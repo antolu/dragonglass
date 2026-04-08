@@ -49,6 +49,7 @@ class BackendManager: ObservableObject {
     }
 
     func startBackend() async {
+        logger.info("startBackend begin")
         await findAndKillExistingBackend()
 
         guard let bundledVersion = getBundledVersion() else {
@@ -69,6 +70,7 @@ class BackendManager: ObservableObject {
             || bundledVersion != installedVersion
 
         if needsInstall {
+            logger.info("startBackend install required bundled=\(bundledVersion, privacy: .public) installed=\((installedVersion ?? "none"), privacy: .public)")
             phase = .installing
             do {
                 if FileManager.default.fileExists(atPath: venvDir.path) {
@@ -116,10 +118,12 @@ class BackendManager: ObservableObject {
                         obsidianPollTask = Task { await self.pollUntilObsidianReady() }
                     }
                 } else {
+                    logger.error("backend health check timed out")
                     phase = .failed("Backend started but health check failed (timeout).")
                 }
             }
         } catch {
+            logger.error("startBackend failed error=\(error.localizedDescription, privacy: .public)")
             phase = .failed("Launch failed: \(error.localizedDescription)")
         }
     }
@@ -132,8 +136,11 @@ class BackendManager: ObservableObject {
         let session = URLSession(configuration: .ephemeral)
         do {
             let (_, response) = try await session.data(for: request)
-            return (response as? HTTPURLResponse)?.statusCode == 200
+            let healthy = (response as? HTTPURLResponse)?.statusCode == 200
+            logger.debug("isBackendResponsive healthy=\(healthy)")
+            return healthy
         } catch {
+            logger.debug("isBackendResponsive request failed")
             return false
         }
     }
@@ -264,7 +271,7 @@ class BackendManager: ObservableObject {
             try FileManager.default.copyItem(at: bundledManifestUrl, to: destManifest)
             writeDragonglassConfig(to: pluginDir)
         } catch {
-            print("[BackendManager] Plugin deploy failed: \(error)")
+            logger.error("Plugin deploy failed error=\(error.localizedDescription, privacy: .public)")
         }
         return false
     }
@@ -286,7 +293,7 @@ class BackendManager: ObservableObject {
             writeDragonglassConfig(to: pluginDir)
             phase = .needsPluginReload
         } catch {
-            print("[BackendManager] Plugin update failed: \(error)")
+            logger.error("Plugin update failed error=\(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -343,7 +350,7 @@ class BackendManager: ObservableObject {
         let targets = parseLsofProcessEntries(output)
 
         for target in targets where isExpectedProcess(target, matcher: matcher) {
-            print("[BackendManager] Killing orphaned \(label) process PID \(target.pid) (\(target.command)) on port \(port)")
+            logger.warning("Killing orphaned \(label, privacy: .public) process pid=\(target.pid) command=\(target.command, privacy: .public) port=\(port)")
             let killProcess = Process()
             killProcess.executableURL = URL(fileURLWithPath: "/bin/kill")
             killProcess.arguments = ["-9", "\(target.pid)"]
@@ -468,16 +475,16 @@ class BackendManager: ObservableObject {
         let requiredVersion = getBundledPythonVersion()
 
         if let required = requiredVersion {
-            print("[BackendManager] Bundled wheels require Python \(required)")
+            logger.info("Bundled wheels require Python \(required, privacy: .public)")
         }
 
-        print("[BackendManager] Searching for compatible Python (3.11+)...")
+        logger.info("Searching for compatible Python (3.11+)")
         for path in candidatePaths {
             if FileManager.default.fileExists(atPath: path) {
                 if let version = getPythonVersion(at: path) {
-                    print("[BackendManager] Found Python \(version) at \(path)")
+                    logger.debug("Found Python \(version, privacy: .public) at \(path, privacy: .public)")
                     if let required = requiredVersion, version == required {
-                        print("[BackendManager] Selected \(path) (exact match)")
+                        logger.info("Selected Python exact match path=\(path, privacy: .public) version=\(version, privacy: .public)")
                         return path
                     }
 
@@ -490,7 +497,7 @@ class BackendManager: ObservableObject {
         }
 
         if candidates.isEmpty {
-            print("[BackendManager] No compatible Python 3.11+ found, falling back to /usr/bin/python3")
+            logger.warning("No compatible Python 3.11+ found; using /usr/bin/python3")
             return "/usr/bin/python3"
         }
 
@@ -533,14 +540,14 @@ class BackendManager: ObservableObject {
 
         for minor in searchOrder {
             if let match = byMinor[minor] {
-                print("[BackendManager] Selected \(match.path) (version \(match.version), bundled minor was \(bundledMinor))")
+                logger.info("Selected Python path=\(match.path, privacy: .public) version=\(match.version, privacy: .public) bundled_minor=\(bundledMinor)")
                 return match.path
             }
         }
 
         // Shouldn't reach here, but just in case
         let best = candidates.first!
-        print("[BackendManager] Selected \(best.path) (fallback, version \(best.version))")
+        logger.info("Selected Python fallback path=\(best.path, privacy: .public) version=\(best.version, privacy: .public)")
         return best.path
     }
 
@@ -576,7 +583,7 @@ class BackendManager: ObservableObject {
         try FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
 
         let pythonPathForVenv = findPython3()
-        print("[BackendManager] Creating venv using \(pythonPathForVenv)...")
+        logger.info("Creating venv using \(pythonPathForVenv, privacy: .public)")
 
         // 1. Create venv
         let venvProcess = Process()
@@ -592,7 +599,7 @@ class BackendManager: ObservableObject {
             do {
                 try await uvInstallProcess.runAsync()
             } catch {
-                print("[BackendManager] uv install failed, falling back to pip: \(error)")
+                logger.warning("uv install failed, falling back to pip error=\(error.localizedDescription, privacy: .public)")
             }
         }
 
@@ -601,7 +608,7 @@ class BackendManager: ObservableObject {
             throw NSError(domain: "BackendManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Wheels not found in bundle"])
         }
 
-        print("[BackendManager] Installing wheels from \(wheelDir.path)...")
+        logger.info("Installing wheels from \(wheelDir.path, privacy: .public)")
         if FileManager.default.isExecutableFile(atPath: uvPath.path) {
             let uvInstallProcess = Process()
             uvInstallProcess.executableURL = uvPath
@@ -616,7 +623,7 @@ class BackendManager: ObservableObject {
                 try await uvInstallProcess.runAsync()
                 return
             } catch {
-                print("[BackendManager] uv package install failed, falling back to pip: \(error)")
+                logger.warning("uv package install failed, falling back to pip error=\(error.localizedDescription, privacy: .public)")
             }
         }
 
@@ -719,7 +726,7 @@ class BackendManager: ObservableObject {
 
     private func ensureOpencodeInstalled() async throws {
         guard let bundledPackageData = bundledOpencodePackageData() else {
-            print("[BackendManager] Missing bundled opencode_package.json, skipping OpenCode install")
+            logger.warning("Missing bundled opencode_package.json, skipping OpenCode install")
             return
         }
 
@@ -757,7 +764,7 @@ class BackendManager: ObservableObject {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
 
-        print("[BackendManager] Installing OpenCode CLI with npm using \(npmPath)...")
+        logger.info("Installing OpenCode CLI with npm path=\(npmPath, privacy: .public)")
         let installProcess = Process()
         installProcess.executableURL = URL(fileURLWithPath: npmPath)
         installProcess.arguments = ["install", "--omit=dev", "--no-audit", "--no-fund"]
@@ -813,7 +820,7 @@ class BackendManager: ObservableObject {
         handle.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                print("[Backend] \(str)", terminator: "")
+                logger.debug("[Backend] \(str, privacy: .public)")
             }
         }
 
@@ -853,7 +860,7 @@ extension Process {
         while isRunning {
             if let data = try? handle.read(upToCount: 4096), !data.isEmpty {
                 if let str = String(data: data, encoding: .utf8) {
-                    print(str, terminator: "")
+                    logger.debug("process output \(str, privacy: .public)")
                 }
             }
             try await Task.sleep(nanoseconds: 100_000_000)
@@ -862,7 +869,7 @@ extension Process {
         // Read remaining
         if let data = try? handle.readToEnd(), !data.isEmpty {
             if let str = String(data: data, encoding: .utf8) {
-                print(str, terminator: "")
+                logger.debug("process output \(str, privacy: .public)")
             }
         }
 

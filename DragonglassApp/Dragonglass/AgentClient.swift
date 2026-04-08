@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "AgentClient")
 
 struct ApprovalRequest: Identifiable {
     let id: String
@@ -228,11 +231,13 @@ class AgentClient: ObservableObject {
     private let url = URL(string: "ws://localhost:51363")!
 
     func connect() {
+        logger.info("connect start url=\(self.url.absoluteString, privacy: .public)")
         webSocketTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask?.resume()
         isConnected = true
         receiveMessage()
         refreshState()
+        logger.info("connect ready")
     }
 
     func disconnect() {
@@ -292,7 +297,7 @@ class AgentClient: ObservableObject {
                                     break
                                 }
                             } catch {
-                                print("[AgentClient] Failed to decode event: \(error) from message: \(text)")
+                                logger.warning("decode event failed error=\(error.localizedDescription, privacy: .public)")
                             }
                         }
                     default: break
@@ -300,12 +305,14 @@ class AgentClient: ObservableObject {
                     self.receiveMessage()
                 case .failure:
                     self.isConnected = false
+                    logger.warning("receiveMessage failed and disconnected")
                 }
             }
         }
     }
 
     func sendChat(text: String, model: String? = nil) {
+        logger.info("sendChat text_len=\(text.count) model=\((model ?? "default"), privacy: .public)")
         isThinking = true
         events.append(.userMessage(text))
         var command: [String: Any] = [
@@ -381,6 +388,7 @@ class AgentClient: ObservableObject {
     }
 
     func refreshState() {
+        logger.debug("refreshState")
         send(["command": "get_config"])
         fetchModels()
     }
@@ -390,6 +398,7 @@ class AgentClient: ObservableObject {
     }
 
     func setBackend(_ backend: String) {
+        logger.info("setBackend backend=\(backend, privacy: .public)")
         availableModels = []
         selectedModel = ""
         llmBackend = backend
@@ -398,6 +407,7 @@ class AgentClient: ObservableObject {
 
     func setSelectedModel(_ model: String) {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        logger.info("setSelectedModel model=\(trimmedModel, privacy: .public)")
         let command: [String: Any] = [
             "command": "set_config",
             "config": ["selected_model": trimmedModel]
@@ -407,33 +417,39 @@ class AgentClient: ObservableObject {
     }
 
     func startNewChat() {
+        logger.info("startNewChat")
         send(["command": "new_chat"])
         events = []
         activeConversationId = nil
     }
 
     func fetchConversations() {
+        logger.debug("fetchConversations")
         send(["command": "list_conversations"])
     }
 
     func loadConversation(id: String) {
+        logger.info("loadConversation id=\(id, privacy: .public)")
         send(["command": "load_conversation", "id": id])
     }
 
     func deleteConversation(id: String) {
+        logger.info("deleteConversation id=\(id, privacy: .public)")
         send(["command": "delete_conversation", "id": id])
     }
 
     func openNote(path: String) {
+        logger.info("openNote path=\(path, privacy: .public)")
         send(["command": "open_note", "path": path])
     }
 
     private func send(_ dict: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let string = String(data: data, encoding: .utf8) else { return }
+        logger.debug("send payload_chars=\(string.count)")
         webSocketTask?.send(.string(string)) { error in
             if let error = error {
-                print("WebSocket send error: \(error)")
+                logger.error("websocket send error=\(error.localizedDescription, privacy: .public)")
             }
         }
     }
