@@ -116,7 +116,7 @@ final class STTManager: ObservableObject {
 
     func downloadModel(_ modelName: String) {
         guard downloadProgress[modelName] == nil else { return }
-        logger.info("Starting download for model: \(modelName)")
+        logger.debug("Starting download for model: \(modelName)")
         downloadProgress[modelName] = 0.0
         let downloadBase = URL(fileURLWithPath: localModelPath)
         Task {
@@ -131,7 +131,7 @@ final class STTManager: ObservableObject {
                         }
                     }
                 )
-                logger.info("Download completed for: \(modelName)")
+                logger.debug("Download completed for: \(modelName)")
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: modelName)
                     self.refreshLocalModels()
@@ -161,7 +161,7 @@ final class STTManager: ObservableObject {
 
     func switchModel(to modelName: String) {
         guard modelName != selectedModel else { return }
-        logger.info("Switching model to: \(modelName)")
+        logger.debug("Switching model to: \(modelName)")
         objectWillChange.send()
         selectedModel = modelName
         loadTask?.cancel()
@@ -187,7 +187,7 @@ final class STTManager: ObservableObject {
         let repoURL = URL(fileURLWithPath: modelRepoPath)
         let modelFolder = repoURL.appendingPathComponent(model)
 
-        logger.info("Initializing WhisperKit with model: \(model)")
+        logger.debug("Initializing WhisperKit with model: \(model)")
         logger.debug("Model folder: \(modelFolder.path)")
 
         guard FileManager.default.fileExists(atPath: modelFolder.path) else {
@@ -211,7 +211,7 @@ final class STTManager: ObservableObject {
         }
         do {
             whisperKit = try await task.value
-            logger.info("WhisperKit loaded successfully")
+            logger.debug("WhisperKit loaded successfully")
         } catch {
             logger.error("Failed to load WhisperKit: \(error.localizedDescription)")
             throw error
@@ -230,7 +230,7 @@ final class STTManager: ObservableObject {
             return
         }
 
-        logger.info("Starting recording...")
+        logger.debug("Starting recording...")
         autoSendTask?.cancel()
         autoSendTask = nil
         pendingText = nil
@@ -256,7 +256,7 @@ final class STTManager: ObservableObject {
             return
         }
 
-        logger.info("Starting cursor dictation...")
+        logger.debug("Starting cursor dictation...")
         cursorSession = session
         isCursorDictating = true
         lastCursorText = ""
@@ -264,7 +264,7 @@ final class STTManager: ObservableObject {
         startTranscriber(wk: wk, tokenizer: tokenizer) { [weak self] full in
             guard let self, let session = self.cursorSession else { return }
             if session.checkDrift() {
-                logger.info("Drift detected — stopping cursor dictation")
+                logger.debug("Drift detected — stopping cursor dictation")
                 // Don't call stopCursorDictation (already mid-callback); just clean up
                 self.isCursorDictating = false
                 self.cursorSession = nil
@@ -279,7 +279,7 @@ final class STTManager: ObservableObject {
 
     func stopCursorDictation() {
         guard isCursorDictating else { return }
-        logger.info("Stopping cursor dictation — waiting for tail")
+        logger.debug("Stopping cursor dictation — waiting for tail")
         isCursorDictating = false
         let session = cursorSession
         cursorSession = nil
@@ -342,12 +342,12 @@ final class STTManager: ObservableObject {
             await MainActor.run { self.isRecording = false }
         }
 
-        logger.info("Recording started successfully")
+        logger.debug("Recording started successfully")
     }
 
     func stopAndTranscribe() {
         guard isRecording, !isCursorDictating else { return }
-        logger.info("Stopping recording")
+        logger.debug("Stopping recording")
         let transcriber = streamTranscriber
         streamTranscriber = nil
         streamTask = nil
@@ -381,6 +381,12 @@ final class STTManager: ObservableObject {
             guard !Task.isCancelled else { return }
             await MainActor.run { self.readyToFire = true }
         }
+    }
+
+    func cancelRecording() {
+        guard isRecording, !isCursorDictating else { return }
+        logger.debug("Recording cancelled")
+        stopTranscriber()
     }
 
     func cancelPending() {

@@ -182,6 +182,7 @@ private final class TapContext: @unchecked Sendable {
             // Popover hotkey
             if popover.keyCode != 0, keyCode == popover.keyCode, eventCarbon == popover.carbonModifiers {
                 if isRepeat || popover.isPressed { return nil }
+                logger.debug("Popover hotkey down")
                 popover.isPressed = true
                 Task { @MainActor [weak manager] in manager?.onKeyDown() }
                 return nil
@@ -190,6 +191,7 @@ private final class TapContext: @unchecked Sendable {
             if dictation.keyCode != 0, keyCode == dictation.keyCode, eventCarbon == dictation.carbonModifiers {
                 if isRepeat { return nil }
                 if !dictation.isPressed {
+                    logger.debug("Dictation hotkey down")
                     dictation.isPressed = true
                     Task { @MainActor [weak manager] in manager?.onDictationKeyDown() }
                 }

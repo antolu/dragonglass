@@ -58,11 +58,12 @@ final class CursorDictationSession {
         AXUIElementGetPid(element, &pid)
         let isInSelf = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == Bundle.main.bundleIdentifier
 
-        logger.info("CursorDictationSession started at anchor \(anchor), inSelf=\(isInSelf)")
+        logger.debug("CursorDictationSession started at anchor \(anchor), inSelf=\(isInSelf)")
         return CursorDictationSession(element: element, anchor: anchor, isInSelf: isInSelf)
     }
 
     func update(text: String) {
+        logger.debug("update: \"\(text)\"")
         var replaceRange = CFRange(location: anchor, length: lastInsertedLength)
         guard let axRange = AXValueCreate(.cfRange, &replaceRange) else { return }
         AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, axRange)
