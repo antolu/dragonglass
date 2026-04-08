@@ -245,7 +245,23 @@ struct ContentView: View {
                     }
 
                     ForEach(client.turns) { turn in
-                        EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
+                        if !turn.isCompleted, case .userMessage(let msg) = client.events[turn.userMessageIndex] {
+                            HStack(alignment: .top, spacing: 4) {
+                                Button(action: {
+                                    inputText = msg
+                                }) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(4)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Resend message")
+                                EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
+                            }
+                        } else {
+                            EventRow(event: client.events[turn.userMessageIndex], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
+                        }
 
                         if turn.isCompleted {
                             CollapsedToolSummary(
