@@ -18,6 +18,7 @@ from dragonglass.server.main import DEFAULT_PORT, run, start_server_daemon
 
 _PID_FILE = paths.DATA_DIR / "dragonglass.pid"
 _LOG_FILE = str(LOG_FILE)
+_SERVER_STARTUP_WAIT_SECONDS = 1.0
 
 
 @click.group()
@@ -44,7 +45,7 @@ def chat() -> None:
             click.echo("server not running, starting it...")
             start_server_daemon()
             # Brief wait for it to bind
-            time.sleep(1.0)
+            time.sleep(_SERVER_STARTUP_WAIT_SECONDS)
 
     asyncio.run(run_headless())
 

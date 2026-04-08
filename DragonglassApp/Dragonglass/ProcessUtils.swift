@@ -1,6 +1,9 @@
 import Foundation
 import OSLog
 
+/// Interval between pipe-read polls while waiting for a subprocess to finish.
+private let pipeReadInterval: Duration = .milliseconds(100)
+
 extension Process {
     func runAsync() async throws {
         let pipe = Pipe()
@@ -16,7 +19,7 @@ extension Process {
                     Logger(subsystem: subsystem, category: "BackendManager").debug("process output \(str)")
                 }
             }
-            try await Task.sleep(nanoseconds: 100_000_000)
+            try await Task.sleep(for: pipeReadInterval)
         }
 
         if let data = try? handle.readToEnd(), !data.isEmpty {

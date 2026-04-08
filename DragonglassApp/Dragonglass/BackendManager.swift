@@ -26,8 +26,14 @@ struct BackendPaths {
     var opencodeCliPackagePath: URL { opencodeInstallDir.appendingPathComponent("node_modules/opencode-ai/package.json") }
     var opencodeConfigPath: URL { appSupportDir.appendingPathComponent("config/opencode.json") }
 
+    /// Port the dragonglass Python server listens on.
     static let backendPort = 51363
+    /// Port the dragonglass MCP server listens on.
+    static let mcpPort = 51364
+    /// Port the Obsidian Vector Search plugin listens on.
     static let obsidianPort = 51362
+    /// WebSocket endpoint for the dragonglass Python server.
+    static var backendWebSocketURL: URL { URL(string: "ws://localhost:\(backendPort)")! }
     static var backendHealthURL: URL { URL(string: "http://localhost:\(backendPort)/health")! }
     static var obsidianHealthURL: URL { URL(string: "http://localhost:\(obsidianPort)/health")! }
 
@@ -35,6 +41,23 @@ struct BackendPaths {
         let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         return BackendPaths(appSupportDir: paths[0].appendingPathComponent("dragonglass"))
     }()
+}
+
+/// Timing constants for backend startup, health checks, and polling.
+struct BackendTimings {
+    /// Initial wait after launching the Python process before polling /health.
+    /// Python startup + uvicorn bind typically takes 4–6 s.
+    static let pythonStartupDelay: Duration = .seconds(6)
+    /// Interval between /health retries during the startup window.
+    static let healthCheckInterval: Duration = .milliseconds(500)
+    /// Total time allowed for the backend to become healthy after the initial delay.
+    static let healthCheckTimeout: TimeInterval = 30
+    /// Per-request timeout for individual /health HTTP calls.
+    static let healthRequestTimeout: TimeInterval = 1
+    /// Grace period between sending `dragonglass stop` and force-killing leftover processes.
+    static let gracefulShutdownDelay: Duration = .milliseconds(500)
+    /// Interval between Obsidian availability checks while waiting for the plugin to come up.
+    static let obsidianPollInterval: Duration = .seconds(2)
 }
 
 @MainActor
@@ -98,15 +121,15 @@ class BackendManager: ObservableObject {
             try launchProcess()
             if case .needsUpdate = deployResult { } else {
                 logger.info("Waiting for health check...")
-                try await Task.sleep(nanoseconds: 6_000_000_000)
+                try await Task.sleep(for: BackendTimings.pythonStartupDelay)
                 let start = Date()
                 var ready = false
-                while Date().timeIntervalSince(start) < 30 {
+                while Date().timeIntervalSince(start) < BackendTimings.healthCheckTimeout {
                     if await isBackendResponsive() {
                         ready = true
                         break
                     }
-                    try await Task.sleep(nanoseconds: 500_000_000)
+                    try await Task.sleep(for: BackendTimings.healthCheckInterval)
                 }
                 if ready {
                     logger.info("Backend is ready and healthy.")
@@ -144,7 +167,7 @@ class BackendManager: ObservableObject {
         let url = BackendPaths.backendHealthURL
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 1.0
+        request.timeoutInterval = BackendTimings.healthRequestTimeout
         let session = URLSession(configuration: .ephemeral)
         do {
             let (_, response) = try await session.data(for: request)
@@ -167,7 +190,7 @@ class BackendManager: ObservableObject {
         let url = BackendPaths.obsidianHealthURL
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 1.0
+        request.timeoutInterval = BackendTimings.healthRequestTimeout
         let session = URLSession(configuration: .ephemeral)
         do {
             let (data, response) = try await session.data(for: request)
@@ -188,7 +211,7 @@ class BackendManager: ObservableObject {
         logger.info("Starting Obsidian poll loop")
         while !Task.isCancelled {
             do {
-                try await Task.sleep(nanoseconds: 2_000_000_000)
+                try await Task.sleep(for: BackendTimings.obsidianPollInterval)
             } catch {
                 logger.info("Obsidian poll cancelled during sleep")
                 return
@@ -235,10 +258,10 @@ class BackendManager: ObservableObject {
             try? stopProcess.run()
             stopProcess.waitUntilExit()
 
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(for: BackendTimings.gracefulShutdownDelay)
 
-            killProcesses(onPort: 51363, label: "backend", matcher: .backend)
-            killProcesses(onPort: 51364, label: "mcp", matcher: .mcp)
+            killProcesses(onPort: BackendPaths.backendPort, label: "backend", matcher: .backend)
+            killProcesses(onPort: BackendPaths.mcpPort, label: "mcp", matcher: .mcp)
         }.value
     }
 

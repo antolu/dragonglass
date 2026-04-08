@@ -5,6 +5,9 @@ import OSLog
 
 private let logger = Logger(subsystem: subsystem, category: "ObsidianSetup")
 
+/// Interval between Obsidian health checks during vault setup.
+private let obsidianHealthPollInterval: Duration = .seconds(2)
+
 enum SetupStep {
     case pickVault
     case installPlugin
@@ -116,7 +119,7 @@ class ObsidianSetupViewModel: ObservableObject {
     private func writeDragonglassConfig() {
         guard let pluginDir else { return }
         let configPath = pluginDir.appendingPathComponent("dragonglass.json")
-        let config = ["port": 51362]
+        let config = ["port": BackendPaths.obsidianPort]
         if let data = try? JSONSerialization.data(withJSONObject: config) {
             try? data.write(to: configPath)
         }
@@ -129,7 +132,7 @@ class ObsidianSetupViewModel: ObservableObject {
             while !isHealthy && !Task.isCancelled {
                 await checkHealth()
                 if !isHealthy {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    try? await Task.sleep(for: obsidianHealthPollInterval)
                 }
             }
             isPolling = false
@@ -137,7 +140,7 @@ class ObsidianSetupViewModel: ObservableObject {
     }
 
     private func checkHealth() async {
-        guard let url = URL(string: "http://127.0.0.1:51362/health") else { return }
+        let url = BackendPaths.obsidianHealthURL
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             if let http = response as? HTTPURLResponse, http.statusCode == 200,

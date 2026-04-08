@@ -4,6 +4,9 @@ import OSLog
 
 private let logger = Logger(subsystem: subsystem, category: "AgentClient")
 
+/// Time between connection-readiness polls while waiting for the WebSocket to establish.
+private let connectionRetryInterval: Duration = .milliseconds(50)
+
 struct ApprovalRequest: Identifiable {
     let id: String
     let tool: String
@@ -228,7 +231,7 @@ class AgentClient: ObservableObject {
     }
 
     private var webSocketTask: URLSessionWebSocketTask?
-    private let url = URL(string: "ws://localhost:51363")!
+    private let url = BackendPaths.backendWebSocketURL
 
     func connect() {
         logger.info("connect start url=\(self.url.absoluteString, privacy: .public)")
@@ -331,7 +334,7 @@ class AgentClient: ObservableObject {
             // Wait briefly for connection to establish
             for _ in 0..<10 {
                 if isConnected { break }
-                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms chunks
+                try? await Task.sleep(for: connectionRetryInterval)
             }
         }
 

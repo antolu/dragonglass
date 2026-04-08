@@ -50,6 +50,24 @@ from dragonglass.paths import OPENCODE_CONFIG_FILE
 logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 40
+DEFAULT_WS_PORT = 51363
+DEFAULT_OPENCODE_PORT = 4096
+
+PROCESS_TERMINATE_TIMEOUT_SECONDS = 8.0
+PROCESS_TERMINATE_GRACE_SECONDS = 0.4
+
+MCP_READY_TIMEOUT_SECONDS = 10.0
+MCP_READY_POLL_INTERVAL_SECONDS = 0.1
+MCP_HEALTHCHECK_TIMEOUT_SECONDS = 0.5
+
+OPENCODE_READY_TIMEOUT_SECONDS = 15.0
+OPENCODE_READY_POLL_INTERVAL_SECONDS = 0.1
+OPENCODE_HEALTHCHECK_TIMEOUT_SECONDS = 0.5
+OPENCODE_HEALTHCHECK_STABILIZE_SECONDS = 0.35
+
+EVENT_QUEUE_POLL_TIMEOUT_SECONDS = 0.1
+OLLAMA_LIST_MODELS_TIMEOUT_SECONDS = 5.0
+OPEN_NOTE_TIMEOUT_SECONDS = 5.0
 
 
 class Command(enum.StrEnum):
@@ -183,7 +201,7 @@ def parse_opencode_models(raw_providers: object) -> list[str]:
 
 
 class DragonglassServer:
-    def __init__(self, host: str = "localhost", port: int = 51363) -> None:
+    def __init__(self, host: str = "localhost", port: int = DEFAULT_WS_PORT) -> None:
         self.host = host
         self.port = port
         self.agent: VaultAgent | None = None
@@ -209,7 +227,10 @@ class DragonglassServer:
             )
             self._opencode_process.terminate()
             try:
-                await asyncio.wait_for(self._opencode_process.wait(), timeout=8.0)
+                await asyncio.wait_for(
+                    self._opencode_process.wait(),
+                    timeout=PROCESS_TERMINATE_TIMEOUT_SECONDS,
+                )
             except TimeoutError:
                 logger.warning(
                     "server: OpenCode process did not terminate in time; killing pid %d",
@@ -362,7 +383,7 @@ class DragonglassServer:
             logger.warning("server: killing stale process pid=%d on port %d", pid, port)
             with contextlib.suppress(Exception):
                 os.kill(pid, signal.SIGTERM)
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(PROCESS_TERMINATE_GRACE_SECONDS)
             if self._pid_exists(pid):
                 with contextlib.suppress(Exception):
                     os.kill(pid, signal.SIGKILL)
@@ -401,7 +422,7 @@ class DragonglassServer:
                 await self._fallback_to_litellm(self._opencode_start_error)
 
     async def _wait_for_mcp_server(self, port: int) -> None:
-        deadline = time.monotonic() + 10.0
+        deadline = time.monotonic() + MCP_READY_TIMEOUT_SECONDS
         last_error: Exception | None = None
         attempts = 0
 
@@ -435,7 +456,7 @@ class DragonglassServer:
                     type(exc).__name__,
                 )
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(MCP_READY_POLL_INTERVAL_SECONDS)
 
         if self._mcp_task and self._mcp_task.done():
             task_exc = self._mcp_task.exception()
@@ -454,7 +475,7 @@ class DragonglassServer:
 
     @staticmethod
     async def _check_mcp_server(port: int) -> bool:
-        async with httpx.AsyncClient(timeout=0.5) as client:
+        async with httpx.AsyncClient(timeout=MCP_HEALTHCHECK_TIMEOUT_SECONDS) as client:
             resp = await client.get(f"http://127.0.0.1:{port}/mcp")
         return resp.status_code in {
             HTTPStatus.OK,
@@ -466,7 +487,7 @@ class DragonglassServer:
 
     @staticmethod
     def _opencode_port(opencode_url: str) -> int:
-        port = 4096
+        port = DEFAULT_OPENCODE_PORT
         try:
             parsed = urllib.parse.urlparse(opencode_url)
             if parsed.port:
@@ -535,7 +556,7 @@ class DragonglassServer:
             with contextlib.suppress(Exception):
                 os.kill(pid, signal.SIGTERM)
 
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(PROCESS_TERMINATE_GRACE_SECONDS)
             if self._pid_exists(pid):
                 logger.warning(
                     "server: forcing stale OpenCode process pid=%d to stop",
@@ -609,7 +630,7 @@ class DragonglassServer:
         )
 
     async def _wait_for_opencode_server(self, opencode_url: str) -> None:
-        deadline = time.monotonic() + 15.0
+        deadline = time.monotonic() + OPENCODE_READY_TIMEOUT_SECONDS
         last_error: Exception | None = None
         url = opencode_url.rstrip("/") + "/"
 
@@ -621,10 +642,12 @@ class DragonglassServer:
                 )
 
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
+                async with httpx.AsyncClient(
+                    timeout=OPENCODE_HEALTHCHECK_TIMEOUT_SECONDS
+                ) as client:
                     resp = await client.get(url)
                     if resp.status_code < HTTPStatus.INTERNAL_SERVER_ERROR:
-                        await asyncio.sleep(0.35)
+                        await asyncio.sleep(OPENCODE_HEALTHCHECK_STABILIZE_SECONDS)
                         if (
                             self._opencode_process
                             and self._opencode_process.returncode is not None
@@ -641,7 +664,7 @@ class DragonglassServer:
             except Exception as exc:
                 last_error = exc
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(OPENCODE_READY_POLL_INTERVAL_SECONDS)
 
         raise RuntimeError(
             f"Timed out waiting for OpenCode at {opencode_url}"
@@ -909,7 +932,8 @@ class DragonglassServer:
                     while True:
                         try:
                             event = await asyncio.wait_for(
-                                event_queue.get(), timeout=0.1
+                                event_queue.get(),
+                                timeout=EVENT_QUEUE_POLL_TIMEOUT_SECONDS,
                             )
                         except TimeoutError:
                             await flush_mcp_telemetry()
@@ -978,7 +1002,10 @@ class DragonglassServer:
         for base_url in dict.fromkeys(base_urls):
             try:
                 async with httpx.AsyncClient() as client:
-                    resp = await client.get(f"{base_url}/api/tags", timeout=5.0)
+                    resp = await client.get(
+                        f"{base_url}/api/tags",
+                        timeout=OLLAMA_LIST_MODELS_TIMEOUT_SECONDS,
+                    )
                     if resp.status_code != HTTPStatus.OK:
                         continue
                     data = resp.json()
@@ -1227,7 +1254,8 @@ class DragonglassServer:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{settings.vector_search_url}/open/{encoded}", timeout=5
+                    f"{settings.vector_search_url}/open/{encoded}",
+                    timeout=OPEN_NOTE_TIMEOUT_SECONDS,
                 )
             if resp.status_code in {204, 200}:
                 await websocket.send(json.dumps({"type": "open_note_ack"}))
