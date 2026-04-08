@@ -42,6 +42,7 @@ from dragonglass.agent.types import (
     StatusEvent,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings, invalidate_settings
+from dragonglass.log_context import bind_request_id
 from dragonglass.mcp.search import create_search_server
 from dragonglass.mcp.telemetry import drain_tool_events
 from dragonglass.paths import OPENCODE_CONFIG_FILE
@@ -824,17 +825,17 @@ class DragonglassServer:
         finally:
             logger.info("server: request done")
 
-    async def _run_chat_task(  # noqa: PLR0915
+    async def _run_chat_task_with_context(  # noqa: PLR0915
         self, websocket: typing.Any, data: dict[str, object]
     ) -> None:
         text = str(data.get("text", ""))
         settings = get_settings()
         model_override = resolve_chat_model(data.get("model"), settings.selected_model)
-
         logger.info(
-            "server: chat message received chars=%d model=%s",
+            "server: chat message received chars=%d model=%s conversation_id=%s",
             len(text),
             model_override,
+            self._current_conversation_id,
         )
 
         provisional_history: list[typing.Any] | None = None
@@ -924,14 +925,19 @@ class DragonglassServer:
                             await feed_task
 
                 await flush_mcp_telemetry()
-
-                # Auto-save after response
                 persist_history()
         except asyncio.CancelledError:
             logger.info("server: chat task cancelled")
             persist_history()
             with contextlib.suppress(Exception):
                 await websocket.send(serialize_event(DoneEvent()))
+
+    async def _run_chat_task(
+        self, websocket: typing.Any, data: dict[str, object]
+    ) -> None:
+        request_id = uuid.uuid4().hex[:10]
+        with bind_request_id(request_id):
+            await self._run_chat_task_with_context(websocket, data)
 
     async def _handle_get_config(self, websocket: typing.Any) -> None:
         settings = get_settings()

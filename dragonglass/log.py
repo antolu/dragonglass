@@ -5,6 +5,7 @@ import logging.handlers
 import sys
 
 from dragonglass import paths
+from dragonglass.log_context import get_request_id
 
 LOG_FILE = paths.LOG_DIR / "dragonglass.log"
 
@@ -25,6 +26,12 @@ _NOISY_LOGGERS = [
 ]
 
 
+class _RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: PLR6301
+        record.request_id = get_request_id()
+        return True
+
+
 def setup_logging(rollover: bool = True) -> None:
     paths.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -39,10 +46,11 @@ def setup_logging(rollover: bool = True) -> None:
         handler.doRollover()
     handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+            fmt="%(asctime)s %(levelname)-8s %(name)s [rid=%(request_id)s] %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%S",
         )
     )
+    handler.addFilter(_RequestIdFilter())
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
