@@ -3,7 +3,7 @@ import AppKit
 import Combine
 import OSLog
 
-private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "ObsidianSetup")
+private let logger = Logger(subsystem: subsystem, category: "ObsidianSetup")
 
 enum SetupStep {
     case pickVault

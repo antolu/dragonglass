@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import OSLog
 
-private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "AgentClient")
+private let logger = Logger(subsystem: subsystem, category: "AgentClient")
 
 struct ApprovalRequest: Identifiable {
     let id: String

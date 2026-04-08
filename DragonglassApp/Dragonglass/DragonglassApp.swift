@@ -3,7 +3,7 @@ import OSLog
 import SwiftUI
 import UserNotifications
 
-private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "AppDelegate")
+private let logger = Logger(subsystem: subsystem, category: "AppDelegate")
 
 @main
 struct DragonglassApp: App {

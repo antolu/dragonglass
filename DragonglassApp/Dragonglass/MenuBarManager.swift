@@ -3,7 +3,7 @@ import Combine
 import OSLog
 import SwiftUI
 
-private let logger = Logger(subsystem: "com.lua.Dragonglass", category: "MenuBarManager")
+private let logger = Logger(subsystem: subsystem, category: "MenuBarManager")
 
 @MainActor
 class MenuBarManager: NSObject, ObservableObject {
