@@ -251,26 +251,28 @@ class BackendManager: ObservableObject {
 
     private func findAndKillExistingBackend() async {
         let dragonglassPath = paths.dragonglassPath
-        await Task.detached {
-            let stopProcess = Process()
-            stopProcess.executableURL = dragonglassPath
-            stopProcess.arguments = ["stop"]
-            try? stopProcess.run()
-            stopProcess.waitUntilExit()
+        await terminateExistingBackendProcesses(dragonglassPath: dragonglassPath)
+    }
 
-            try? await Task.sleep(for: BackendTimings.gracefulShutdownDelay)
+    nonisolated private func terminateExistingBackendProcesses(dragonglassPath: URL) async {
+        let stopProcess = Process()
+        stopProcess.executableURL = dragonglassPath
+        stopProcess.arguments = ["stop"]
+        try? stopProcess.run()
+        stopProcess.waitUntilExit()
 
-            await killProcesses(
-                onPort: BackendPaths.backendPort,
-                label: "backend",
-                matcher: .backend
-            )
-            await killProcesses(
-                onPort: BackendPaths.mcpPort,
-                label: "mcp",
-                matcher: .mcp
-            )
-        }.value
+        try? await Task.sleep(for: BackendTimings.gracefulShutdownDelay)
+
+        await killProcesses(
+            onPort: BackendPaths.backendPort,
+            label: "backend",
+            matcher: .backend
+        )
+        await killProcesses(
+            onPort: BackendPaths.mcpPort,
+            label: "mcp",
+            matcher: .mcp
+        )
     }
 
     private func launchProcess() throws {
@@ -290,6 +292,7 @@ class BackendManager: ObservableObject {
             attributes: nil
         )
 
+        let processLogger = Logger(subsystem: subsystem, category: "BackendManager")
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
@@ -298,8 +301,7 @@ class BackendManager: ObservableObject {
         handle.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                Logger(subsystem: subsystem, category: "BackendManager")
-                    .debug("[Backend] \(str, privacy: .public)")
+                processLogger.debug("[Backend] \(str, privacy: .public)")
             }
         }
 
