@@ -282,9 +282,24 @@ class DragonglassServer:
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        logger.info(
+            "server: saved conversation id=%s messages=%d title=%r",
+            conversation_id,
+            len(history),
+            title,
+        )
 
     async def run(self) -> None:
         settings = get_settings()
+        logger.info(
+            "server: startup backend=%s model=%s ws_port=%d mcp_port=%d opencode_url=%s spawn_opencode=%s",
+            settings.llm_backend,
+            settings.llm_model,
+            self.port,
+            settings.mcp_http_port,
+            settings.opencode_url,
+            settings.spawn_opencode,
+        )
         self.agent = VaultAgent(settings)
 
         loop = asyncio.get_running_loop()
@@ -387,8 +402,10 @@ class DragonglassServer:
     async def _wait_for_mcp_server(self, port: int) -> None:
         deadline = time.monotonic() + 10.0
         last_error: Exception | None = None
+        attempts = 0
 
         while time.monotonic() < deadline:
+            attempts += 1
             if self._mcp_task and self._mcp_task.done():
                 task_exc = self._mcp_task.exception()
                 if task_exc is not None:
@@ -402,9 +419,20 @@ class DragonglassServer:
 
             try:
                 if await self._check_mcp_server(port):
+                    logger.info(
+                        "server: MCP health check passed port=%d attempts=%d",
+                        port,
+                        attempts,
+                    )
                     return
             except Exception as exc:
                 last_error = exc
+                logger.debug(
+                    "server: MCP health check failed port=%d attempt=%d error=%s",
+                    port,
+                    attempts,
+                    type(exc).__name__,
+                )
 
             await asyncio.sleep(0.1)
 
@@ -740,6 +768,11 @@ class DragonglassServer:
                 except ValueError:
                     logger.warning("server: unknown command %r", data.get("command"))
                     continue
+                logger.info(
+                    "server: command=%s payload_keys=%s",
+                    command.value,
+                    sorted(data.keys()),
+                )
                 match command:
                     case Command.CHAT:
                         if self._chat_task and not self._chat_task.done():
@@ -798,7 +831,11 @@ class DragonglassServer:
         settings = get_settings()
         model_override = resolve_chat_model(data.get("model"), settings.selected_model)
 
-        logger.info("server: chat message: %r (model=%s)", text, model_override)
+        logger.info(
+            "server: chat message received chars=%d model=%s",
+            len(text),
+            model_override,
+        )
 
         provisional_history: list[typing.Any] | None = None
         if text:
@@ -997,6 +1034,9 @@ class DragonglassServer:
         if not isinstance(new_config, dict):
             logger.warning("server: invalid config update payload")
             return
+        logger.info(
+            "server: config update requested keys=%s", sorted(new_config.keys())
+        )
 
         try:
             with open(paths.CONFIG_FILE, "rb") as f:
@@ -1020,6 +1060,12 @@ class DragonglassServer:
             "llm_backend" in new_config
             and new_config["llm_backend"] != old_settings.llm_backend
         )
+        if backend_changed:
+            logger.info(
+                "server: llm backend transition %s -> %s",
+                old_settings.llm_backend,
+                new_config["llm_backend"],
+            )
         if backend_changed:
             current_toml[f"selected_model_{old_settings.llm_backend}"] = (
                 old_settings.selected_model
@@ -1046,6 +1092,14 @@ class DragonglassServer:
             old_active
             and new_active
             and settings.llm_model != self._last_opencode_model
+        )
+        logger.info(
+            "server: opencode state old_active=%s new_active=%s restart=%s old_model=%s new_model=%s",
+            old_active,
+            new_active,
+            should_restart_opencode,
+            self._last_opencode_model,
+            settings.llm_model,
         )
 
         if old_active and not new_active:

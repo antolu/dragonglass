@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import logging
 import os
 
 from pydantic_settings import (
@@ -11,6 +12,8 @@ from pydantic_settings import (
 )
 
 from dragonglass import paths
+
+logger = logging.getLogger(__name__)
 
 
 class LLMBackend(enum.StrEnum):
@@ -77,9 +80,18 @@ def get_settings() -> Settings:
     if not _settings:
         s = Settings()
         re_export_settings(s)
+        logger.info(
+            "settings loaded backend=%s model=%s mcp_port=%d opencode_url=%s env_vars=%d",
+            s.llm_backend,
+            s.llm_model,
+            s.mcp_http_port,
+            s.opencode_url,
+            len(s.env_vars),
+        )
         _settings.append(s)
     return _settings[0]
 
 
 def invalidate_settings() -> None:
+    logger.info("settings cache invalidated")
     _settings.clear()

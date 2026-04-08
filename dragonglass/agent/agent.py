@@ -370,10 +370,22 @@ class VaultAgent:
 
     async def initialise(self) -> None:
         settings = get_settings()
+        logger.info(
+            "agent initialise backend=%s model=%s vector_search=%s",
+            settings.llm_backend,
+            settings.llm_model,
+            settings.vector_search_url,
+        )
         self._system_prompt, self.agents_note_found = await load_system_prompt(
             settings, opencode=settings.llm_backend == LLMBackend.opencode
         )
         await self._connect_mcp_servers()
+        logger.info(
+            "agent ready tools=%d stdio_sessions=%d agents_note_found=%s",
+            len(self._litellm_tools),
+            len(self._stdio_sessions),
+            self.agents_note_found,
+        )
 
     def clear_history(self) -> None:
         self._history = []
@@ -404,6 +416,12 @@ class VaultAgent:
                         continue
                     lt_tool = _mcp_tool_to_litellm(tool)
                     self._litellm_tools.append(lt_tool)
+                logger.info(
+                    "connected MCP server command=%s args=%s tools=%d",
+                    params.command,
+                    params.args,
+                    len(result.tools),
+                )
             except Exception:
                 logger.warning(
                     "failed to connect MCP server %s %s",
@@ -431,11 +449,18 @@ class VaultAgent:
                 ),
             )
             self._litellm_tools.append(lt_tool)
+        logger.info("registered search tools total=%d", len(self._litellm_tools))
 
     async def run(
         self, user_message: str, model_override: str | None = None
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
+        logger.info(
+            "agent run start message_len=%d model_override=%s history_len=%d",
+            len(user_message),
+            model_override,
+            len(self._history),
+        )
         history_len_before = len(self._history)
         self._history.append(_Message(role="user", content=user_message))
         messages: list[_Message] = [
@@ -458,6 +483,11 @@ class VaultAgent:
 
         new_messages = messages[2 + history_len_before :]
         self._history.extend(new_messages)
+        logger.info(
+            "agent run done history_added=%d history_total=%d",
+            len(new_messages),
+            len(self._history),
+        )
 
     def _needs_approval(  # noqa: PLR0911
         self,

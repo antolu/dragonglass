@@ -14,6 +14,7 @@ from dragonglass.server.server import main
 
 DEFAULT_PORT = 51363
 _PID_FILE = paths.DATA_DIR / "dragonglass.pid"
+logger = logging.getLogger(__name__)
 
 
 def run() -> None:
@@ -21,6 +22,7 @@ def run() -> None:
     setup_logging()
     # websockets logger is very chatty
     logging.getLogger("websockets").setLevel(logging.WARNING)
+    logger.info("server.main run starting")
     asyncio.run(main())
 
 
@@ -39,6 +41,7 @@ def start_server_daemon() -> int:
         )
     with open(_PID_FILE, "w", encoding="utf-8") as f:
         f.write(str(proc.pid))
+    logger.info("server daemon started pid=%d pid_file=%s", proc.pid, _PID_FILE)
     return proc.pid
 
 

@@ -37,8 +37,10 @@ class AgentClient:
         self._receive_task: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
+        logger.info("client: connecting uri=%s", self.uri)
         self._websocket = await websockets.connect(self.uri)
         self._receive_task = asyncio.create_task(self._receive_loop())
+        logger.info("client: connected uri=%s", self.uri)
 
     async def _receive_loop(self) -> None:
         assert self._websocket is not None
@@ -61,6 +63,7 @@ class AgentClient:
             await self._queue.put(DoneEvent())
 
     async def run(self, text: str) -> collections.abc.AsyncGenerator[AgentEvent]:
+        logger.info("client: run start text_len=%d", len(text))
         if self._websocket is None or self._websocket.closed:
             try:
                 await self.connect()
@@ -80,6 +83,7 @@ class AgentClient:
 
         assert self._websocket is not None
         await self._websocket.send(json.dumps({"command": "chat", "text": text}))
+        logger.debug("client: sent chat command text_len=%d", len(text))
 
         while True:
             event = await self._queue.get()

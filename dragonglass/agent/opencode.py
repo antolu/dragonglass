@@ -451,8 +451,11 @@ async def run_opencode_turn(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
             if raw_response.status_code != 200:  # noqa: PLR2004
                 with open("/tmp/opencode_error.json", "w", encoding="utf-8") as f:
                     f.write(raw_response.text)
-                print(
-                    f"OpenCode returned status={raw_response.status_code}. Full body written to /tmp/opencode_error.json"
+                logger.error(
+                    "OpenCode returned status=%d session=%s body_saved_to=%s",
+                    raw_response.status_code,
+                    session_id,
+                    "/tmp/opencode_error.json",
                 )
                 logger.error(
                     "OpenCode returned status=%d body=%s",
