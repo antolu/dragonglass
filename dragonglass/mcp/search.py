@@ -299,6 +299,12 @@ async def do_manage_frontmatter(  # noqa: PLR0911
     path = args["path"]
     operation = args["operation"]
     key = args["key"].strip()
+    logger.info(
+        "manage_frontmatter start path=%s operation=%s key=%s",
+        path,
+        operation,
+        key,
+    )
     if not key:
         return {"error": "key is required"}
 
@@ -315,6 +321,13 @@ async def do_manage_frontmatter(  # noqa: PLR0911
 
     if operation == "get":
         value, exists = _get_frontmatter_key_value(frontmatter_lines, key)
+        logger.info(
+            "manage_frontmatter done path=%s operation=%s key=%s exists=%s",
+            path,
+            operation,
+            key,
+            exists,
+        )
         return {
             "path": path,
             "operation": operation,
@@ -351,7 +364,20 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             new_content,
         )
         if "error" in patch_result:
+            logger.warning(
+                "manage_frontmatter failed path=%s operation=%s key=%s error=%s",
+                path,
+                operation,
+                key,
+                patch_result.get("error"),
+            )
             return patch_result
+        logger.info(
+            "manage_frontmatter done path=%s operation=%s key=%s",
+            path,
+            operation,
+            key,
+        )
         return {
             "path": path,
             "operation": operation,
@@ -365,6 +391,12 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             key,
         )
         if not deleted:
+            logger.info(
+                "manage_frontmatter done path=%s operation=%s key=%s deleted=false",
+                path,
+                operation,
+                key,
+            )
             return {
                 "path": path,
                 "operation": operation,
@@ -384,7 +416,20 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             new_content,
         )
         if "error" in patch_result:
+            logger.warning(
+                "manage_frontmatter failed path=%s operation=%s key=%s error=%s",
+                path,
+                operation,
+                key,
+                patch_result.get("error"),
+            )
             return patch_result
+        logger.info(
+            "manage_frontmatter done path=%s operation=%s key=%s deleted=true",
+            path,
+            operation,
+            key,
+        )
         return {
             "path": path,
             "operation": operation,
@@ -405,6 +450,12 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
     normalized_tags = [
         _strip_tag_prefix(tag) for tag in raw_tags if _strip_tag_prefix(tag)
     ]
+    logger.info(
+        "manage_tags start path=%s operation=%s tags=%d",
+        path,
+        operation,
+        len(normalized_tags),
+    )
 
     read_result = await do_read_note_with_hash(settings, path)
     if "error" in read_result:
@@ -441,6 +492,9 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
     current_tags = list(dict.fromkeys(frontmatter_tags + inline_tags))
 
     if operation == "list":
+        logger.info(
+            "manage_tags done path=%s operation=list total=%d", path, len(current_tags)
+        )
         return {
             "path": path,
             "operation": operation,
@@ -470,7 +524,18 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             new_content,
         )
         if "error" in patch_result:
+            logger.warning(
+                "manage_tags failed path=%s operation=add error=%s",
+                path,
+                patch_result.get("error"),
+            )
             return patch_result
+        logger.info(
+            "manage_tags done path=%s operation=add added=%d total=%d",
+            path,
+            len([tag for tag in normalized_tags if tag not in frontmatter_tags]),
+            len(merged),
+        )
         return {
             "path": path,
             "operation": operation,
@@ -510,9 +575,20 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             new_content,
         )
         if "error" in patch_result:
+            logger.warning(
+                "manage_tags failed path=%s operation=remove error=%s",
+                path,
+                patch_result.get("error"),
+            )
             return patch_result
         final_tags = list(
             dict.fromkeys(updated_frontmatter_tags + _collect_inline_tags(updated_body))
+        )
+        logger.info(
+            "manage_tags done path=%s operation=remove removed=%d total=%d",
+            path,
+            len([tag for tag in normalized_tags if tag in current_tags]),
+            len(final_tags),
         )
         return {
             "path": path,
@@ -653,6 +729,12 @@ async def do_read_note_with_hash(  # noqa: PLR0911
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> dict[str, typing.Any]:
+    logger.info(
+        "read_note_with_hash start path=%s range=%s-%s",
+        path,
+        start_line,
+        end_line,
+    )
     session = get_current_session()
     if not session:
         return {
@@ -693,6 +775,12 @@ async def do_read_note_with_hash(  # noqa: PLR0911
 
                 data["content_with_line_numbers"] = "\n".join(display_lines)
                 data["total_lines"] = total_lines
+                logger.info(
+                    "read_note_with_hash done path=%s total_lines=%d selected_lines=%d",
+                    path,
+                    total_lines,
+                    len(display_lines),
+                )
                 return data
 
             data = _parse_response_json(resp)
@@ -709,6 +797,11 @@ async def do_read_note_with_hash(  # noqa: PLR0911
                 )
             }
     except httpx.ConnectError:
+        logger.warning(
+            "read_note_with_hash connect error path=%s vector_search_url=%s",
+            path,
+            settings.vector_search_url,
+        )
         return {
             "error": (
                 f"Cannot connect to vector search server at {settings.vector_search_url}. "
@@ -743,6 +836,13 @@ async def do_patch_note_lines(  # noqa: PLR0911
         "replacement": args["replacement"],
         "expected_hash": resolved_expected_hash,
     }
+    logger.info(
+        "patch_note_lines start path=%s start_line=%d end_line=%d replacement_chars=%d",
+        path,
+        args["start_line"],
+        args["end_line"],
+        len(args["replacement"]),
+    )
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -757,6 +857,11 @@ async def do_patch_note_lines(  # noqa: PLR0911
                 new_hash = data.get("new_hash")
                 if isinstance(new_hash, str):
                     session.set_last_read_hash(path, new_hash)
+                logger.info(
+                    "patch_note_lines done path=%s new_hash=%s",
+                    path,
+                    bool(data.get("new_hash")),
+                )
                 return data
 
             data = _parse_response_json(resp)
@@ -773,6 +878,11 @@ async def do_patch_note_lines(  # noqa: PLR0911
                 )
             }
     except httpx.ConnectError:
+        logger.warning(
+            "patch_note_lines connect error path=%s vector_search_url=%s",
+            path,
+            settings.vector_search_url,
+        )
         return {
             "error": (
                 f"Cannot connect to vector search server at {settings.vector_search_url}. "
