@@ -260,8 +260,16 @@ class BackendManager: ObservableObject {
 
             try? await Task.sleep(for: BackendTimings.gracefulShutdownDelay)
 
-            killProcesses(onPort: BackendPaths.backendPort, label: "backend", matcher: .backend)
-            killProcesses(onPort: BackendPaths.mcpPort, label: "mcp", matcher: .mcp)
+            await killProcesses(
+                onPort: BackendPaths.backendPort,
+                label: "backend",
+                matcher: .backend
+            )
+            await killProcesses(
+                onPort: BackendPaths.mcpPort,
+                label: "mcp",
+                matcher: .mcp
+            )
         }.value
     }
 
@@ -290,7 +298,8 @@ class BackendManager: ObservableObject {
         handle.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                logger.debug("[Backend] \(str, privacy: .public)")
+                Logger(subsystem: subsystem, category: "BackendManager")
+                    .debug("[Backend] \(str, privacy: .public)")
             }
         }
 

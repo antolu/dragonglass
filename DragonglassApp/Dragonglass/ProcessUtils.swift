@@ -83,7 +83,7 @@ func isExpectedProcess(_ process: LsofProcessEntry, matcher: ProcessMatcher) -> 
     }
 }
 
-func killProcesses(onPort port: Int, label: String, matcher: ProcessMatcher) {
+func killProcesses(onPort port: Int, label: String, matcher: ProcessMatcher) async {
     let logger = Logger(subsystem: subsystem, category: "BackendManager")
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")

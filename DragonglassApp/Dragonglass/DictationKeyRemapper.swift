@@ -14,7 +14,7 @@ func remapDictationKeyToF13() {
     proc.standardOutput = pipe
     proc.standardError = pipe
     do {
-        try proc.launch()
+        try proc.run()
         proc.waitUntilExit()
         if proc.terminationStatus == 0 {
             logger.info("Dictation key remapped via hidutil")
