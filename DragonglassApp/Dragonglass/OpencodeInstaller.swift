@@ -2,6 +2,21 @@ import Foundation
 import OSLog
 
 private let logger = Logger(subsystem: subsystem, category: "BackendManager")
+private let cachedToolPathEnvKey = "dragonglass.tool_path_env"
+private let cachedToolBinariesKey = "dragonglass.tool_binaries"
+
+func cachedToolPathEnv() -> String? {
+    UserDefaults.standard.string(forKey: cachedToolPathEnvKey)
+}
+
+func cachedToolBinaries() -> [String: String?] {
+    guard let json = UserDefaults.standard.string(forKey: cachedToolBinariesKey),
+          let data = json.data(using: .utf8),
+          let binaries = try? JSONDecoder().decode([String: String?].self, from: data) else {
+        return [:]
+    }
+    return binaries
+}
 
 func bundledOpencodePackageData() -> Data? {
     guard let url = Bundle.main.url(forResource: "opencode_package", withExtension: "json"),
@@ -30,7 +45,12 @@ func installedOpencodeCliVersion(paths: BackendPaths) -> String? {
     return version
 }
 
-func findNpm() -> String? {
+func findNpm(preferredPathEnv: String?, preferredBinaries: [String: String?]) -> String? {
+    if let preferredNpm = preferredBinaries["npm"] ?? nil,
+       FileManager.default.fileExists(atPath: preferredNpm) {
+        return preferredNpm
+    }
+
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
 
     let extraPaths = [
@@ -42,7 +62,8 @@ func findNpm() -> String? {
         homeDir.appendingPathComponent(".volta/bin").path,
         homeDir.appendingPathComponent(".fnm").path
     ]
-    let augmentedPath = (extraPaths + (ProcessInfo.processInfo.environment["PATH"] ?? "")
+    let sourcePath = preferredPathEnv ?? ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let augmentedPath = (extraPaths + sourcePath
         .components(separatedBy: ":")).joined(separator: ":")
 
     let process = Process()
@@ -100,7 +121,12 @@ func ensureOpencodeInstalled(paths: BackendPaths) async throws {
         || cliVersionChanged
     if !needsInstall { return }
 
-    guard let npmPath = findNpm() else {
+    let preferredPathEnv = cachedToolPathEnv()
+    let preferredBinaries = cachedToolBinaries()
+    guard let npmPath = findNpm(
+        preferredPathEnv: preferredPathEnv,
+        preferredBinaries: preferredBinaries
+    ) else {
         throw NSError(
             domain: "BackendManager",
             code: 2,
@@ -115,7 +141,8 @@ func ensureOpencodeInstalled(paths: BackendPaths) async throws {
     try bundledPackageData.write(to: localPackage)
 
     var env = ProcessInfo.processInfo.environment
-    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+    let baselinePath = preferredPathEnv ?? env["PATH"] ?? ""
+    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + baselinePath
 
     logger.info("Installing OpenCode CLI with npm path=\(npmPath, privacy: .public)")
     let installProcess = Process()

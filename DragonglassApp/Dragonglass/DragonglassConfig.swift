@@ -21,6 +21,9 @@ struct DragonglassConfig: Codable, Equatable {
     var autoAllowDelete: Bool
     var opencodeAvailable: Bool?
     var opencodeDisabledReason: String?
+    var toolPaths: [String]?
+    var toolPathEnv: String?
+    var toolBinaries: [String: String?]?
 
     enum CodingKeys: String, CodingKey {
         case obsidianDir = "obsidian_dir"
@@ -43,5 +46,8 @@ struct DragonglassConfig: Codable, Equatable {
         case envVars = "env_vars"
         case opencodeAvailable = "opencode_available"
         case opencodeDisabledReason = "opencode_disabled_reason"
+        case toolPaths = "tool_paths"
+        case toolPathEnv = "tool_path_env"
+        case toolBinaries = "tool_binaries"
     }
 }

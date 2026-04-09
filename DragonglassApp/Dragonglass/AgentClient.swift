@@ -3,6 +3,8 @@ import Combine
 import OSLog
 
 private let logger = Logger(subsystem: subsystem, category: "AgentClient")
+private let cachedToolPathEnvKey = "dragonglass.tool_path_env"
+private let cachedToolBinariesKey = "dragonglass.tool_binaries"
 
 /// Time between connection-readiness polls while waiting for the WebSocket to establish.
 private let connectionRetryInterval: Duration = .milliseconds(50)
@@ -278,6 +280,14 @@ class AgentClient: ObservableObject {
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
                                     self.llmBackend = config.llmBackend
+                                    if let toolPathEnv = config.toolPathEnv {
+                                        UserDefaults.standard.set(toolPathEnv, forKey: cachedToolPathEnvKey)
+                                    }
+                                    if let toolBinaries = config.toolBinaries,
+                                       let data = try? JSONEncoder().encode(toolBinaries),
+                                       let json = String(data: data, encoding: .utf8) {
+                                        UserDefaults.standard.set(json, forKey: cachedToolBinariesKey)
+                                    }
                                     if (config.opencodeAvailable ?? true) == false,
                                        self.llmBackend == "opencode" {
                                         self.llmBackend = "litellm"
