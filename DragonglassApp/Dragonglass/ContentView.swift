@@ -28,7 +28,7 @@ struct ContentView: View {
                     includeToolCallsInSelection: includeToolCallsInSelection,
                     isAtBottom: $isAtBottom,
                     onEventsChanged: handleEventsChanged,
-                    onResend: { msg in inputText = msg }
+                    inputText: $inputText
                 )
                 .environmentObject(client)
                 .environmentObject(backend)

@@ -6,7 +6,7 @@ struct ChatTimelineView: View {
     let includeToolCallsInSelection: Bool
     @Binding var isAtBottom: Bool
     let onEventsChanged: () -> Void
-    let onResend: (String) -> Void
+    @Binding var inputText: String
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -33,7 +33,7 @@ struct ChatTimelineView: View {
                     ForEach(client.turns) { turn in
                         if !turn.isCompleted, case .userMessage(let msg) = client.events[turn.userMessageIndex] {
                             HStack(alignment: .top, spacing: 4) {
-                                Button(action: { onResend(msg) }) {
+                                Button(action: { inputText = msg }) {
                                     Image(systemName: "arrow.counterclockwise")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
