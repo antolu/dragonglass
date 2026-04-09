@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import os
 import pathlib
 import platform
@@ -12,10 +13,11 @@ def _split_path_entries(value: str) -> list[str]:
     return [entry for entry in value.split(os.pathsep) if entry]
 
 
-def _platform_default_tool_paths() -> list[str]:
+@functools.lru_cache(maxsize=1)
+def _platform_default_tool_paths() -> tuple[str, ...]:
     system_name = platform.system().lower()
     if system_name == "darwin":
-        return [
+        return (
             "/opt/homebrew/bin",
             "/opt/homebrew/sbin",
             os.path.expanduser("~/.local/bin"),
@@ -24,21 +26,21 @@ def _platform_default_tool_paths() -> list[str]:
             "/bin",
             "/usr/sbin",
             "/sbin",
-        ]
+        )
     if system_name == "linux":
-        return [
+        return (
             os.path.expanduser("~/.local/bin"),
             "/usr/local/bin",
             "/usr/bin",
             "/bin",
             "/snap/bin",
-        ]
-    return [
+        )
+    return (
         os.path.expanduser("~/.local/bin"),
         "/usr/local/bin",
         "/usr/bin",
         "/bin",
-    ]
+    )
 
 
 def resolve_tool_paths(
@@ -63,7 +65,7 @@ def resolve_tool_paths(
         if resolved:
             entries.append(str(pathlib.Path(resolved).parent))
 
-    entries.extend(_platform_default_tool_paths())
+    entries.extend(list(_platform_default_tool_paths()))
 
     deduped: list[str] = []
     for entry in entries:
