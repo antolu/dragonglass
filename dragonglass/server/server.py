@@ -12,7 +12,7 @@ import websockets.datastructures
 import websockets.http11
 from uvicorn import Config, Server
 
-from dragonglass.agent.agent import VaultAgent
+from dragonglass.agent import VaultAgent
 from dragonglass.config import Settings, get_settings
 from dragonglass.mcp.search import create_search_server
 from dragonglass.server.conversations import ConversationStore

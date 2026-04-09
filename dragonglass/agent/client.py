@@ -8,7 +8,7 @@ import logging
 
 import websockets
 
-from dragonglass.agent.agent import (
+from dragonglass.agent import (
     AgentEvent,
     DoneEvent,
     MCPToolEvent,
@@ -17,6 +17,7 @@ from dragonglass.agent.agent import (
     UsageEvent,
 )
 from dragonglass.agent.types import ToolPhase
+from dragonglass.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,14 @@ _EVENT_MAP: dict[str, type[AgentEvent]] = {
 
 
 class AgentClient:
-    def __init__(self, host: str = "localhost", port: int = 51363) -> None:
-        self.uri = f"ws://{host}:{port}"
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        active_settings = settings or get_settings()
+        self.uri = active_settings.websocket_uri(host=host, port=port)
         self._websocket: websockets.WebSocketClientProtocol | None = None
         self._queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
         self._receive_task: asyncio.Task[None] | None = None

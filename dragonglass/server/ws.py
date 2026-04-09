@@ -5,6 +5,7 @@ import collections.abc
 import contextlib
 import json
 import logging
+import os
 import time
 import tomllib
 import typing
@@ -19,7 +20,8 @@ from opencode_ai import AsyncOpencode
 
 from dragonglass import paths
 from dragonglass._version import version
-from dragonglass.agent.agent import AgentEvent, DoneEvent, MCPToolEvent, VaultAgent
+from dragonglass.agent import AgentEvent, DoneEvent, MCPToolEvent, VaultAgent
+from dragonglass.agent.mcp import resolve_tool_paths
 from dragonglass.agent.types import JsonValue, StatusEvent, _Message
 from dragonglass.config import LLMBackend, get_settings, invalidate_settings
 from dragonglass.log_context import bind_request_id
@@ -292,6 +294,7 @@ class ConnectionHandler:
 
     async def _handle_get_config(self, websocket: WebSocketConnection) -> None:
         settings = get_settings()
+        tool_paths = resolve_tool_paths(settings=settings)
         extra_models = []
         if paths.EXTRA_MODELS_FILE.exists():
             try:
@@ -305,6 +308,8 @@ class ConnectionHandler:
                 "type": "config",
                 **settings.model_dump(),
                 "extra_models": extra_models,
+                "tool_paths": tool_paths,
+                "tool_path_env": os.pathsep.join(tool_paths),
                 "opencode_available": (
                     self._opencode.resolve_executable() is not None
                     and self._opencode.start_error is None

@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from dragonglass.agent.agent import VaultAgent
+from dragonglass.agent import VaultAgent
 from dragonglass.agent.types import StatusEvent, TextChunk
 from dragonglass.config import LLMBackend, get_settings
 from dragonglass.paths import OPENCODE_CONFIG_FILE

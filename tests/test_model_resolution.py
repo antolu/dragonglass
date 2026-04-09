@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dragonglass.agent.agent import resolve_model_name
+from dragonglass.agent import resolve_model_name
 
 
 def test_resolve_model_name_returns_default_without_override() -> None:

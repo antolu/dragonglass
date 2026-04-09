@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dragonglass.agent.agent import parse_tool_calls_from_text
+from dragonglass.agent import parse_tool_calls_from_text
 
 
 def test_parses_single_tool_call() -> None:

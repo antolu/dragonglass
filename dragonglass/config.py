@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     llm_model: str = "ollama/llama3.2"
     llm_backend: LLMBackend = LLMBackend.litellm
     opencode_url: str = "http://localhost:4096"
+    ws_port: int = 51363
     mcp_http_port: int = 51364
     spawn_opencode: bool = True
     llm_temperature: float | None = None
@@ -127,6 +128,12 @@ class Settings(BaseSettings):
         if parsed.hostname:
             return parsed.hostname
         return socket.gethostname()
+
+    def websocket_uri(self, host: str | None = None, port: int | None = None) -> str:
+        resolved_host = host or self.bind_host()
+        resolved_port = self.ws_port if port is None else port
+        formatted_host = self._format_http_host(resolved_host)
+        return f"ws://{formatted_host}:{resolved_port}"
 
 
 def re_export_settings(settings: Settings) -> None:

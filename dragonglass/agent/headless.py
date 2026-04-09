@@ -6,7 +6,7 @@ import logging
 import signal
 import sys
 
-from dragonglass.agent.agent import (
+from dragonglass.agent import (
     DoneEvent,
     MCPToolEvent,
     StatusEvent,

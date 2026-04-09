@@ -6,7 +6,7 @@ import pathlib
 import time
 
 from dragonglass import paths
-from dragonglass.agent.agent import history_to_events
+from dragonglass.agent import history_to_events
 from dragonglass.agent.types import (
     ConversationLoadedEvent,
     ConversationsListEvent,
