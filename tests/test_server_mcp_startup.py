@@ -5,20 +5,20 @@ import types
 
 import pytest
 
+from dragonglass.config import Settings
 from dragonglass.server.server import DragonglassServer
+from dragonglass.server.ws import ConnectionHandler
 
 
 def test_wait_for_mcp_server_allows_existing_server_when_task_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server = DragonglassServer()
-
     async def check_ok(port: int) -> bool:
         await asyncio.sleep(0)
         _ = port
         return True
 
-    monkeypatch.setattr(DragonglassServer, "_check_mcp_server", staticmethod(check_ok))
+    monkeypatch.setattr(ConnectionHandler, "check_mcp_server", staticmethod(check_ok))
 
     async def run() -> None:
         async def fail() -> None:
@@ -28,9 +28,9 @@ def test_wait_for_mcp_server_allows_existing_server_when_task_fails(
         task = asyncio.create_task(fail())
         while not task.done():
             await asyncio.sleep(0)
-        server._mcp_task = task  # noqa: SLF001
-        wait_for_mcp_server = server._wait_for_mcp_server  # noqa: SLF001
-        await wait_for_mcp_server(51364)
+
+        handler = ConnectionHandler.__new__(ConnectionHandler)
+        await handler.wait_for_mcp_server(51364, task)
 
     asyncio.run(run())
 
@@ -38,17 +38,13 @@ def test_wait_for_mcp_server_allows_existing_server_when_task_fails(
 def test_wait_for_mcp_server_raises_when_task_fails_and_no_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server = DragonglassServer()
-
     async def check_not_ok(port: int) -> bool:
         await asyncio.sleep(0)
         _ = port
         return False
 
     monkeypatch.setattr(
-        DragonglassServer,
-        "_check_mcp_server",
-        staticmethod(check_not_ok),
+        ConnectionHandler, "check_mcp_server", staticmethod(check_not_ok)
     )
 
     async def run() -> None:
@@ -59,10 +55,10 @@ def test_wait_for_mcp_server_raises_when_task_fails_and_no_server(
         task = asyncio.create_task(fail())
         while not task.done():
             await asyncio.sleep(0)
-        server._mcp_task = task  # noqa: SLF001
-        wait_for_mcp_server = server._wait_for_mcp_server  # noqa: SLF001
+
+        handler = ConnectionHandler.__new__(ConnectionHandler)
         with pytest.raises(RuntimeError, match="MCP server task failed to start"):
-            await wait_for_mcp_server(51364)
+            await handler.wait_for_mcp_server(51364, task)
 
     asyncio.run(run())
 
@@ -72,9 +68,10 @@ def test_run_continues_when_managed_services_fail(
 ) -> None:
     server = DragonglassServer()
 
-    async def fail_start(settings: object) -> None:
+    async def fail_start(settings: Settings, handler: ConnectionHandler) -> None:
         await asyncio.sleep(0)
         _ = settings
+        _ = handler
         raise RuntimeError("managed services failed")
 
     init_called = False
@@ -95,15 +92,28 @@ def test_run_continues_when_managed_services_fail(
         async def __aenter__(self) -> None:
             return None
 
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            return None
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: types.TracebackType | None,
+        ) -> None:
+            _ = exc_type
+            _ = exc
+            _ = tb
 
     monkeypatch.setattr(server, "_start_managed_services", fail_start)
     monkeypatch.setattr("dragonglass.server.server.VaultAgent", lambda _: DummyAgent())
     monkeypatch.setattr(
         "dragonglass.server.server.get_settings",
         lambda: types.SimpleNamespace(
-            opencode_url="http://opencode", vector_search_url="http://vector"
+            llm_backend="litellm",
+            llm_model="test-model",
+            mcp_http_port=51364,
+            opencode_url="http://opencode",
+            spawn_opencode=False,
+            vector_search_url="http://vector",
+            bind_host=lambda: "localhost",
         ),
     )
     monkeypatch.setattr(

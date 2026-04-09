@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from dragonglass.server.server import DragonglassServer
+from dragonglass.server.opencode import OpenCodeManager
 
 
 def test_resolve_opencode_executable_prefers_env(
@@ -12,14 +12,14 @@ def test_resolve_opencode_executable_prefers_env(
 ) -> None:
     monkeypatch.setenv("OPENCODE_BIN", "/tmp/opencode")
     monkeypatch.setattr(
-        "dragonglass.server.server.os.path.isfile", lambda p: p == "/tmp/opencode"
+        "dragonglass.server.opencode.os.path.isfile", lambda p: p == "/tmp/opencode"
     )
     monkeypatch.setattr(
-        "dragonglass.server.server.os.access", lambda p, mode: p == "/tmp/opencode"
+        "dragonglass.server.opencode.os.access", lambda p, mode: p == "/tmp/opencode"
     )
-    monkeypatch.setattr("dragonglass.server.server.shutil.which", lambda name: None)
+    monkeypatch.setattr("dragonglass.server.opencode.shutil.which", lambda name: None)
 
-    assert DragonglassServer._resolve_opencode_executable() == "/tmp/opencode"  # noqa: SLF001
+    assert OpenCodeManager.resolve_executable() == "/tmp/opencode"
 
 
 def test_resolve_opencode_executable_uses_path_lookup(
@@ -27,22 +27,24 @@ def test_resolve_opencode_executable_uses_path_lookup(
 ) -> None:
     monkeypatch.delenv("OPENCODE_BIN", raising=False)
     monkeypatch.setattr(
-        "dragonglass.server.server.shutil.which", lambda name: "/usr/local/bin/opencode"
+        "dragonglass.server.opencode.shutil.which",
+        lambda name: "/usr/local/bin/opencode",
     )
 
-    assert DragonglassServer._resolve_opencode_executable() == "/usr/local/bin/opencode"  # noqa: SLF001
+    assert OpenCodeManager.resolve_executable() == "/usr/local/bin/opencode"
 
 
-def test_restart_opencode_reports_missing_binary(
+def test_restart_reports_missing_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server = DragonglassServer()
-
-    monkeypatch.setattr(server, "_resolve_opencode_executable", lambda: None)
+    manager = OpenCodeManager()
+    monkeypatch.setattr(
+        OpenCodeManager, "resolve_executable", staticmethod(lambda: None)
+    )
 
     async def run() -> None:
-        ok = await server._restart_opencode("github-copilot/gpt-5-mini")  # noqa: SLF001
+        ok = await manager.restart("github-copilot/gpt-5-mini")
         assert ok is False
-        assert server._opencode_start_error is not None  # noqa: SLF001
+        assert manager.start_error is not None
 
     asyncio.run(run())
