@@ -21,6 +21,7 @@ from dragonglass.agent.mcp import (
     _check_node_version,
     _get_mcp_env,
     _StdioSessionContext,
+    fastmcp_tool_to_litellm,
     mcp_tool_to_litellm,
 )
 from dragonglass.agent.opencode import run_opencode_turn
@@ -262,7 +263,7 @@ class VaultAgent:
         logger.debug("sequential thinking MCP server disabled")
 
         for tool in await self._search.list_tools():
-            self._litellm_tools.append(mcp_tool_to_litellm(tool))
+            self._litellm_tools.append(fastmcp_tool_to_litellm(tool))
         logger.info("registered search tools total=%d", len(self._litellm_tools))
 
     async def run(

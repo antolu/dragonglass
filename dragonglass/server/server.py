@@ -5,6 +5,7 @@ import contextlib
 import logging
 import os
 import signal
+from http import HTTPStatus
 
 import websockets
 import websockets.asyncio.server
@@ -74,8 +75,17 @@ class DragonglassServer:
             request: websockets.http11.Request,
         ) -> websockets.http11.Response | None:
             if request.path == "/health":
+                status = (
+                    HTTPStatus.OK
+                    if handler.agent_ready
+                    else HTTPStatus.SERVICE_UNAVAILABLE
+                )
+                body = b"OK\n" if handler.agent_ready else b"STARTING\n"
                 return websockets.http11.Response(
-                    200, "OK", websockets.datastructures.Headers([]), b"OK\n"
+                    status,
+                    status.phrase,
+                    websockets.datastructures.Headers([]),
+                    body,
                 )
             return None
 
@@ -92,6 +102,7 @@ class DragonglassServer:
                 handler.agent_ready = True
             except Exception:
                 logger.exception("server: failed to connect to vault")
+                self._stop_event.set()
 
         async def _init_shielded() -> None:
             await asyncio.shield(asyncio.ensure_future(_init()))

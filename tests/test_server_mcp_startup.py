@@ -136,3 +136,71 @@ def test_run_continues_when_managed_services_fail(
 
     assert init_called is True
     assert close_called is True
+
+
+def test_run_stops_when_agent_initialise_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = DragonglassServer()
+
+    async def ok_start(settings: Settings, handler: ConnectionHandler) -> None:
+        await asyncio.sleep(0)
+        _ = settings
+        _ = handler
+
+    close_called = False
+
+    class DummyAgent:
+        async def initialise(self) -> None:
+            _ = self
+            raise RuntimeError("vault init failed")
+
+        async def close(self) -> None:
+            _ = self
+            nonlocal close_called
+            close_called = True
+
+    class DummyAsyncContext:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: types.TracebackType | None,
+        ) -> None:
+            _ = exc_type
+            _ = exc
+            _ = tb
+
+    monkeypatch.setattr(server, "_start_managed_services", ok_start)
+    monkeypatch.setattr("dragonglass.server.server.VaultAgent", lambda _: DummyAgent())
+    monkeypatch.setattr(
+        "dragonglass.server.server.get_settings",
+        lambda: types.SimpleNamespace(
+            llm_backend="litellm",
+            llm_model="test-model",
+            mcp_http_port=51364,
+            opencode_url="http://opencode",
+            spawn_opencode=False,
+            vector_search_url="http://vector",
+            bind_host=lambda: "localhost",
+        ),
+    )
+    monkeypatch.setattr(
+        "dragonglass.server.server.websockets.serve",
+        lambda *args, **kwargs: DummyAsyncContext(),
+    )
+    monkeypatch.setattr(
+        asyncio,
+        "get_running_loop",
+        lambda: types.SimpleNamespace(add_signal_handler=lambda *args, **kwargs: None),
+    )
+
+    async def run() -> None:
+        await asyncio.wait_for(server.run(), timeout=1)
+
+    asyncio.run(run())
+
+    assert close_called is True

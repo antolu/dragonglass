@@ -95,6 +95,24 @@ def mcp_tool_to_litellm(tool: MCPToolLike) -> Tool:
     }
 
 
+class FastMCPToolLike(typing.Protocol):
+    name: str
+    description: str | None
+    parameters: dict[str, JsonValue]
+
+
+def fastmcp_tool_to_litellm(tool: FastMCPToolLike) -> Tool:
+    function: ToolFunction = {
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": tool.parameters,
+    }
+    return {
+        "type": "function",
+        "function": function,
+    }
+
+
 class _StdioSessionContext:
     def __init__(self, params: StdioServerParameters) -> None:
         self._params = params
