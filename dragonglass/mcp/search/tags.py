@@ -10,13 +10,13 @@ from dragonglass.mcp.search.frontmatter import (
     ManageTagsArgs,
     _body_from_frontmatter_rest,
     _collect_inline_tags,
-    _delete_frontmatter_key_lines,
     _get_frontmatter_key_value,
-    _rebuild_note_with_frontmatter,
-    _remove_inline_tags,
-    _set_frontmatter_key_lines,
-    _split_frontmatter_block,
     _strip_tag_prefix,
+    delete_frontmatter_key_lines,
+    rebuild_note_with_frontmatter,
+    remove_inline_tags,
+    set_frontmatter_key_lines,
+    split_frontmatter_block,
 )
 from dragonglass.mcp.search.notes import _patch_entire_note, do_read_note_with_hash
 
@@ -50,7 +50,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
     if not isinstance(content_hash, str) or not content_hash:
         return {"error": "Note read did not return content_hash"}
 
-    frontmatter_lines, rest, had_frontmatter = _split_frontmatter_block(content)
+    frontmatter_lines, rest, had_frontmatter = split_frontmatter_block(content)
     body = _body_from_frontmatter_rest(rest)
     frontmatter_tags_raw, has_frontmatter_tags = _get_frontmatter_key_value(
         frontmatter_lines,
@@ -90,12 +90,12 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
 
     if operation == "add":
         merged = list(dict.fromkeys(frontmatter_tags + normalized_tags))
-        updated_frontmatter_lines = _set_frontmatter_key_lines(
+        updated_frontmatter_lines = set_frontmatter_key_lines(
             frontmatter_lines,
             "tags",
             typing.cast(list[JsonValue], merged),
         )
-        new_content = _rebuild_note_with_frontmatter(
+        new_content = rebuild_note_with_frontmatter(
             updated_frontmatter_lines,
             rest,
             had_frontmatter,
@@ -137,19 +137,19 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
         ]
         updated_frontmatter_lines = frontmatter_lines
         if updated_frontmatter_tags:
-            updated_frontmatter_lines = _set_frontmatter_key_lines(
+            updated_frontmatter_lines = set_frontmatter_key_lines(
                 updated_frontmatter_lines,
                 "tags",
                 typing.cast(list[JsonValue], updated_frontmatter_tags),
             )
         else:
-            updated_frontmatter_lines, _ = _delete_frontmatter_key_lines(
+            updated_frontmatter_lines, _ = delete_frontmatter_key_lines(
                 updated_frontmatter_lines,
                 "tags",
             )
-        updated_body = _remove_inline_tags(body, to_remove)
+        updated_body = remove_inline_tags(body, to_remove)
         updated_rest = f"\n{updated_body}" if rest.startswith("\n") else updated_body
-        new_content = _rebuild_note_with_frontmatter(
+        new_content = rebuild_note_with_frontmatter(
             updated_frontmatter_lines,
             updated_rest,
             had_frontmatter,

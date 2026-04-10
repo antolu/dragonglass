@@ -8,7 +8,6 @@ import fastmcp
 import httpx
 from pydantic import JsonValue
 
-from dragonglass.agent.types import ToolPhase
 from dragonglass.config import Settings
 from dragonglass.mcp.search.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
 from dragonglass.mcp.search.notes import (
@@ -22,7 +21,7 @@ from dragonglass.mcp.search.queries import (
     _StringList,
 )
 from dragonglass.mcp.search.tags import do_manage_tags
-from dragonglass.mcp.telemetry import emit_tool_event
+from dragonglass.mcp.telemetry import ToolPhase, emit_tool_event
 from dragonglass.search.session import new_session
 
 logger = logging.getLogger(__name__)

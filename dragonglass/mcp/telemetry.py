@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import queue
 import time
+
+
+class ToolPhase(enum.StrEnum):
+    DONE = "done"
+    ERROR = "error"
+    VALIDATION_ERROR = "validation_error"
 
 
 @dataclasses.dataclass

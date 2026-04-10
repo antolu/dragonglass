@@ -9,12 +9,12 @@ from dragonglass.config import Settings
 from dragonglass.mcp.search.frontmatter import (
     ManageFrontmatterArgs,
     PatchLinesArgs,
-    _delete_frontmatter_key_lines,
     _get_frontmatter_key_value,
-    _rebuild_note_with_frontmatter,
-    _set_frontmatter_key_lines,
-    _split_frontmatter_block,
     _strip_tag_prefix,
+    delete_frontmatter_key_lines,
+    rebuild_note_with_frontmatter,
+    set_frontmatter_key_lines,
+    split_frontmatter_block,
 )
 from dragonglass.search.session import get_current_session, new_session
 
@@ -272,7 +272,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
     if not isinstance(content_hash, str) or not content_hash:
         return {"error": "Note read did not return content_hash"}
 
-    frontmatter_lines, rest, had_frontmatter = _split_frontmatter_block(content)
+    frontmatter_lines, rest, had_frontmatter = split_frontmatter_block(content)
 
     if operation == "get":
         value, exists = _get_frontmatter_key_value(frontmatter_lines, key)
@@ -301,12 +301,12 @@ async def do_manage_frontmatter(  # noqa: PLR0911
                 for tag in value
                 if _strip_tag_prefix(str(tag))
             ]
-        updated_frontmatter_lines = _set_frontmatter_key_lines(
+        updated_frontmatter_lines = set_frontmatter_key_lines(
             frontmatter_lines,
             key,
             value,
         )
-        new_content = _rebuild_note_with_frontmatter(
+        new_content = rebuild_note_with_frontmatter(
             updated_frontmatter_lines,
             rest,
             had_frontmatter,
@@ -337,7 +337,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
         }
 
     if operation == "delete":
-        updated_frontmatter_lines, deleted = _delete_frontmatter_key_lines(
+        updated_frontmatter_lines, deleted = delete_frontmatter_key_lines(
             frontmatter_lines,
             key,
         )
@@ -354,7 +354,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
                 "key": key,
                 "deleted": False,
             }
-        new_content = _rebuild_note_with_frontmatter(
+        new_content = rebuild_note_with_frontmatter(
             updated_frontmatter_lines,
             rest,
             had_frontmatter,

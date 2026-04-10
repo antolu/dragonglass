@@ -9,12 +9,12 @@ import httpx
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.mcp.search.frontmatter import (
-    _delete_frontmatter_key_lines,
-    _rebuild_note_with_frontmatter,
-    _remove_inline_tags,
-    _set_frontmatter_key_lines,
-    _split_frontmatter_block,
+from dragonglass.mcp import (
+    delete_frontmatter_key_lines,
+    rebuild_note_with_frontmatter,
+    remove_inline_tags,
+    set_frontmatter_key_lines,
+    split_frontmatter_block,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,12 +128,12 @@ async def compute_diff(  # noqa: PLR0912, PLR0914, PLR0915
             op = str(args.get("operation", ""))
             key = str(args.get("key", ""))
             value = args.get("value")
-            fm_lines, rest, had = _split_frontmatter_block(original)
+            fm_lines, rest, had = split_frontmatter_block(original)
             if op == "set":
-                fm_lines = _set_frontmatter_key_lines(fm_lines, key, value)
+                fm_lines = set_frontmatter_key_lines(fm_lines, key, value)
             elif op == "delete":
-                fm_lines, _ = _delete_frontmatter_key_lines(fm_lines, key)
-            new_content = _rebuild_note_with_frontmatter(fm_lines, rest, had)
+                fm_lines, _ = delete_frontmatter_key_lines(fm_lines, key)
+            new_content = rebuild_note_with_frontmatter(fm_lines, rest, had)
             new_lines = new_content.splitlines(keepends=True)
             description = f"Frontmatter {op} '{key}' in {path}"
 
@@ -141,11 +141,11 @@ async def compute_diff(  # noqa: PLR0912, PLR0914, PLR0915
             op = str(args.get("operation", ""))
             tags = args.get("tags", [])
             tags_list = tags if isinstance(tags, list) else []
-            fm_lines, rest, had = _split_frontmatter_block(original)
+            fm_lines, rest, had = split_frontmatter_block(original)
             if op == "remove":
                 body = rest.lstrip("\n")
-                updated_body = _remove_inline_tags(body, {str(t) for t in tags_list})
-                new_content = _rebuild_note_with_frontmatter(
+                updated_body = remove_inline_tags(body, {str(t) for t in tags_list})
+                new_content = rebuild_note_with_frontmatter(
                     fm_lines,
                     f"\n{updated_body}" if rest.startswith("\n") else updated_body,
                     had,

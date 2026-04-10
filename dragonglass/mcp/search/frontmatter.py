@@ -99,7 +99,7 @@ _FRONTMATTER_BLOCK_RE = re.compile(r"\A---\n(?P<fm>[\s\S]*?)\n---(?P<rest>[\s\S]
 _FRONTMATTER_KEY_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(.*)$")
 
 
-def _split_frontmatter_block(content: str) -> tuple[list[str], str, bool]:
+def split_frontmatter_block(content: str) -> tuple[list[str], str, bool]:
     match = _FRONTMATTER_BLOCK_RE.match(content)
     if not match:
         return [], content, False
@@ -109,7 +109,7 @@ def _split_frontmatter_block(content: str) -> tuple[list[str], str, bool]:
     return frontmatter_lines, rest, True
 
 
-def _rebuild_note_with_frontmatter(  # noqa: PLR0911
+def rebuild_note_with_frontmatter(  # noqa: PLR0911
     frontmatter_lines: list[str],
     rest: str,
     had_frontmatter: bool,
@@ -191,7 +191,7 @@ def _serialize_frontmatter_entry(key: str, value: JsonValue) -> list[str]:
     return [f"{key}: {_yaml_scalar(value)}"]
 
 
-def _set_frontmatter_key_lines(
+def set_frontmatter_key_lines(
     frontmatter_lines: list[str],
     key: str,
     value: JsonValue,
@@ -204,7 +204,7 @@ def _set_frontmatter_key_lines(
     return frontmatter_lines[:start] + replacement + frontmatter_lines[end:]
 
 
-def _delete_frontmatter_key_lines(
+def delete_frontmatter_key_lines(
     frontmatter_lines: list[str],
     key: str,
 ) -> tuple[list[str], bool]:
@@ -225,7 +225,7 @@ def _collect_inline_tags(body: str) -> list[str]:
     return list(dict.fromkeys(tag for tag in tags if tag))
 
 
-def _remove_inline_tags(body: str, tags_to_remove: set[str]) -> str:
+def remove_inline_tags(body: str, tags_to_remove: set[str]) -> str:
     updated = body
     for tag in tags_to_remove:
         rx = re.compile(rf"(^|[^\w#-])#{re.escape(tag)}\b", re.MULTILINE)
