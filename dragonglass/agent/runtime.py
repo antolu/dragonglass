@@ -182,6 +182,167 @@ def _coerce_json_map(value: JsonValue) -> dict[str, JsonValue]:
     return result
 
 
+_PATH_ALIASES: frozenset[str] = frozenset({
+    "filePath",
+    "file_path",
+    "file",
+    "note",
+    "notePath",
+    "note_path",
+})
+
+_KEYWORD_QUERIES_ALIASES: frozenset[str] = frozenset({
+    "queryStrings",
+    "query_strings",
+    "keywords",
+    "searchTerms",
+    "search_terms",
+    "terms",
+    "searches",
+})
+
+_VECTOR_QUERY_ALIASES: frozenset[str] = frozenset({
+    "queryString",
+    "query_string",
+    "searchQuery",
+    "search_query",
+    "search",
+    "text",
+})
+
+_TOP_N_ALIASES: frozenset[str] = frozenset({
+    "topN",
+    "top_k",
+    "topK",
+    "k",
+    "n",
+    "limit",
+    "max_results",
+})
+
+_MIN_SCORE_ALIASES: frozenset[str] = frozenset({
+    "minScore",
+    "min_score",
+    "threshold",
+    "score",
+    "min_similarity",
+})
+
+_PATH_TOOLS: frozenset[str] = frozenset({
+    DragonglassTool.READ_NOTE_WITH_HASH,
+    DragonglassTool.REPLACE_LINES,
+    DragonglassTool.INSERT_AFTER_LINE,
+    DragonglassTool.DELETE_LINES,
+    DragonglassTool.MANAGE_FRONTMATTER,
+    DragonglassTool.MANAGE_TAGS,
+})
+
+_START_LINE_ALIASES: frozenset[str] = frozenset({
+    "startLine",
+    "start_line",
+    "start",
+    "from",
+    "from_line",
+    "fromLine",
+})
+
+_END_LINE_ALIASES: frozenset[str] = frozenset({
+    "endLine",
+    "end_line",
+    "end",
+    "to",
+    "to_line",
+    "toLine",
+})
+
+_REPLACEMENT_ALIASES: frozenset[str] = frozenset({
+    "content",
+    "new_content",
+    "newContent",
+    "new_text",
+    "newText",
+    "new_lines",
+    "newLines",
+})
+
+_LINE_ALIASES: frozenset[str] = frozenset({
+    "lineNumber",
+    "line_number",
+    "after_line",
+    "afterLine",
+    "lineNum",
+    "line_num",
+})
+
+_TEXT_ALIASES: frozenset[str] = frozenset({
+    "content",
+    "new_content",
+    "newContent",
+    "new_text",
+    "newText",
+})
+
+_OPERATION_ALIASES: frozenset[str] = frozenset({"op", "action", "type"})
+
+
+def _rename_first(
+    args: dict[str, JsonValue], aliases: frozenset[str], target: str
+) -> None:
+    """Rename the first alias found into target, only if target is absent."""
+    if target in args:
+        return
+    for alias in aliases:
+        if alias in args:
+            logger.debug("coercing arg %r → %r", alias, target)
+            args[target] = args.pop(alias)
+            return
+
+
+def _coerce_args(name: str, args: dict[str, JsonValue]) -> None:
+    if name in _PATH_TOOLS:
+        _rename_first(args, _PATH_ALIASES, "path")
+
+    if name == DragonglassTool.KEYWORD_SEARCH:
+        _rename_first(args, _KEYWORD_QUERIES_ALIASES, "queries")
+        queries = args.get("queries")
+        if isinstance(queries, str):
+            parts: list[JsonValue] = [
+                p.strip() for p in queries.split(",") if p.strip()
+            ]
+            args["queries"] = parts if len(parts) > 1 else [queries.strip()]
+        elif isinstance(queries, list):
+            flat: list[JsonValue] = []
+            for item in queries:
+                if isinstance(item, str) and "," in item:
+                    flat.extend(p.strip() for p in item.split(",") if p.strip())
+                else:
+                    flat.append(item)
+            args["queries"] = flat
+
+    if name == DragonglassTool.VECTOR_SEARCH:
+        _rename_first(args, _VECTOR_QUERY_ALIASES, "query")
+        _rename_first(args, _TOP_N_ALIASES, "top_n")
+        _rename_first(args, _MIN_SCORE_ALIASES, "min_score")
+
+    if name in {
+        DragonglassTool.REPLACE_LINES,
+        DragonglassTool.DELETE_LINES,
+        DragonglassTool.READ_NOTE_WITH_HASH,
+    }:
+        _rename_first(args, _START_LINE_ALIASES, "start_line")
+        _rename_first(args, _END_LINE_ALIASES, "end_line")
+
+    if name == DragonglassTool.REPLACE_LINES:
+        _rename_first(args, _REPLACEMENT_ALIASES, "replacement")
+
+    if name == DragonglassTool.INSERT_AFTER_LINE:
+        _rename_first(args, _LINE_ALIASES, "line")
+        _rename_first(args, _TEXT_ALIASES, "text")
+
+    if name in {DragonglassTool.MANAGE_FRONTMATTER, DragonglassTool.MANAGE_TAGS}:
+        _rename_first(args, _OPERATION_ALIASES, "operation")
+
+
 class VaultAgent:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -659,6 +820,7 @@ class VaultAgent:
             return f"Search server error: {exc}"
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
+        _coerce_args(name, args)
         if name in _SEARCH_TOOLS:
             return await self._call_search_tool(name, args)
 
