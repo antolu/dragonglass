@@ -36,17 +36,17 @@ from dragonglass.agent.types import (
     AgentEvent,
     ApprovalRequestEvent,
     DoneEvent,
+    FallbackFunction,
+    FallbackToolCall,
+    FunctionCall,
     MCPToolEvent,
     Message,
     StatusEvent,
     TextChunk,
+    Tool,
+    ToolCallMsg,
     UsageEvent,
     UserMessageEvent,
-    _FallbackFunction,
-    _FallbackToolCall,
-    _FunctionCall,
-    _Tool,
-    _ToolCallMsg,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings
 from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
@@ -88,7 +88,7 @@ class CompletionKwargs(typing.TypedDict, total=False):
     presence_penalty: float | None
     repetition_penalty: float | None
     api_base: str
-    tools: list[_Tool]
+    tools: list[Tool]
 
 
 def resolve_model_name(model_override: str | None, default_model: str) -> str:
@@ -186,7 +186,7 @@ class VaultAgent:
         self._settings = settings
         self._history: list[Message] = []
         self._system_prompt: str | None = None
-        self._litellm_tools: list[_Tool] = []
+        self._litellm_tools: list[Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = contextlib.AsyncExitStack()
         self._search = create_search_server(get_settings())
@@ -437,7 +437,7 @@ class VaultAgent:
 
             stream = await litellm.acompletion(**kwargs)
             full_text = ""
-            accumulated_tool_calls: dict[str, _ToolCallMsg] = {}
+            accumulated_tool_calls: dict[str, ToolCallMsg] = {}
             usage_emitted = False
             final_reasoning = ""
 
@@ -485,10 +485,10 @@ class VaultAgent:
 
                     existing = accumulated_tool_calls.get(tc_id)
                     if existing is None:
-                        accumulated_tool_calls[tc_id] = _ToolCallMsg(
+                        accumulated_tool_calls[tc_id] = ToolCallMsg(
                             id=tc_id,
                             type="function",
-                            function=_FunctionCall(
+                            function=FunctionCall(
                                 name=name_delta or "",
                                 arguments=args_delta or "",
                             ),
@@ -505,9 +505,9 @@ class VaultAgent:
 
             msg_content = full_text
             tool_calls = [
-                _FallbackToolCall(
+                FallbackToolCall(
                     id=tc["id"],
-                    function=_FallbackFunction(
+                    function=FallbackFunction(
                         name=tc["function"].get("name", ""),
                         arguments=tc["function"].get("arguments", ""),
                     ),
@@ -524,9 +524,9 @@ class VaultAgent:
                         len(fallback),
                     )
                     tool_calls = [
-                        _FallbackToolCall(
+                        FallbackToolCall(
                             id=f"call_{uuid.uuid4().hex[:8]}",
-                            function=_FallbackFunction(
+                            function=FallbackFunction(
                                 name=name,
                                 arguments=json.dumps(args),
                             ),
@@ -543,10 +543,10 @@ class VaultAgent:
             assistant_msg = Message(role="assistant", content=msg_content)
             if tool_calls:
                 assistant_msg["tool_calls"] = [
-                    _ToolCallMsg(
+                    ToolCallMsg(
                         id=tc.id,
                         type="function",
-                        function=_FunctionCall(
+                        function=FunctionCall(
                             name=tc.function.name,
                             arguments=tc.function.arguments,
                         ),

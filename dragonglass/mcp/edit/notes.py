@@ -226,7 +226,7 @@ async def do_patch_note_lines(  # noqa: PLR0911
         return {"error": str(exc)}
 
 
-async def _patch_entire_note(
+async def patch_entire_note(
     settings: Settings,
     path: str,
     expected_hash: str,
@@ -311,7 +311,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             rest,
             had_frontmatter,
         )
-        patch_result = await _patch_entire_note(
+        patch_result = await patch_entire_note(
             settings, path, content_hash, content, new_content
         )
         if "error" in patch_result:
@@ -359,7 +359,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             rest,
             had_frontmatter,
         )
-        patch_result = await _patch_entire_note(
+        patch_result = await patch_entire_note(
             settings, path, content_hash, content, new_content
         )
         if "error" in patch_result:

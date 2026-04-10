@@ -18,7 +18,7 @@ from dragonglass.mcp.edit.frontmatter import (
     set_frontmatter_key_lines,
     split_frontmatter_block,
 )
-from dragonglass.mcp.edit.notes import _patch_entire_note, do_read_note_with_hash
+from dragonglass.mcp.edit.notes import do_read_note_with_hash, patch_entire_note
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             rest,
             had_frontmatter,
         )
-        patch_result = await _patch_entire_note(
+        patch_result = await patch_entire_note(
             settings,
             path,
             content_hash,
@@ -154,7 +154,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             updated_rest,
             had_frontmatter,
         )
-        patch_result = await _patch_entire_note(
+        patch_result = await patch_entire_note(
             settings,
             path,
             content_hash,
