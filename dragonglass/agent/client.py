@@ -16,8 +16,8 @@ from dragonglass.agent import (
     TextChunk,
     UsageEvent,
 )
-from dragonglass.agent.types import ToolPhase
 from dragonglass.config import Settings, get_settings
+from dragonglass.mcp import ToolPhase
 
 logger = logging.getLogger(__name__)
 

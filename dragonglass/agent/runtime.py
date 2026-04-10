@@ -37,20 +37,19 @@ from dragonglass.agent.types import (
     ApprovalRequestEvent,
     DoneEvent,
     MCPToolEvent,
+    Message,
     StatusEvent,
     TextChunk,
-    ToolPhase,
     UsageEvent,
     UserMessageEvent,
     _FallbackFunction,
     _FallbackToolCall,
     _FunctionCall,
-    _Message,
     _Tool,
     _ToolCallMsg,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings
-from dragonglass.mcp.search import create_search_server
+from dragonglass.mcp import ToolPhase, create_search_server
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,7 @@ _SEARCH_TOOLS: frozenset[str] = frozenset({
 
 class CompletionKwargs(typing.TypedDict, total=False):
     model: str
-    messages: list[_Message]
+    messages: list[Message]
     stream: bool
     temperature: float | None
     top_p: float | None
@@ -108,7 +107,7 @@ def resolve_model_name(model_override: str | None, default_model: str) -> str:
     return override
 
 
-def history_to_events(history: list[_Message]) -> list[AgentEvent]:
+def history_to_events(history: list[Message]) -> list[AgentEvent]:
     tool_results: dict[str, str] = {
         msg["tool_call_id"]: str(msg.get("content") or "")
         for msg in history
@@ -185,7 +184,7 @@ def _coerce_json_map(value: JsonValue) -> dict[str, JsonValue]:
 class VaultAgent:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._history: list[_Message] = []
+        self._history: list[Message] = []
         self._system_prompt: str | None = None
         self._litellm_tools: list[_Tool] = []
         self._stdio_sessions: list[ClientSession] = []
@@ -223,10 +222,10 @@ class VaultAgent:
         self._opencode_session_id = None
         self._session_approved.clear()
 
-    def get_history(self) -> list[_Message]:
+    def get_history(self) -> list[Message]:
         return list(self._history)
 
-    def set_history(self, history: list[_Message]) -> None:
+    def set_history(self, history: list[Message]) -> None:
         self._history = list(history)
         self._total_tokens = 0
 
@@ -277,9 +276,9 @@ class VaultAgent:
             len(self._history),
         )
         history_len_before = len(self._history)
-        self._history.append(_Message(role="user", content=user_message))
-        messages: list[_Message] = [
-            _Message(role="system", content=self._system_prompt),
+        self._history.append(Message(role="user", content=user_message))
+        messages: list[Message] = [
+            Message(role="system", content=self._system_prompt),
             *self._history,
         ]
         gen = self._agent_loop(messages, model_override=model_override)
@@ -322,7 +321,7 @@ class VaultAgent:
 
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
         self,
-        messages: list[_Message],
+        messages: list[Message],
         model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         seen_calls: dict[tuple[str, str], str] = {}
@@ -541,7 +540,7 @@ class VaultAgent:
                 msg_content,
             )
 
-            assistant_msg = _Message(role="assistant", content=msg_content)
+            assistant_msg = Message(role="assistant", content=msg_content)
             if tool_calls:
                 assistant_msg["tool_calls"] = [
                     _ToolCallMsg(
@@ -639,7 +638,7 @@ class VaultAgent:
                     )
 
                 messages.append(
-                    _Message(role="tool", tool_call_id=tc.id, content=result)
+                    Message(role="tool", tool_call_id=tc.id, content=result)
                 )
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import enum
 import typing
 
 from pydantic import JsonValue
@@ -41,7 +40,7 @@ class _ToolCallMsg(typing.TypedDict):
     function: _FunctionCall
 
 
-class _Message(typing.TypedDict, total=False):  # noqa: PYI049
+class Message(typing.TypedDict, total=False):
     role: str
     content: str
     tool_calls: list[_ToolCallMsg]
@@ -74,12 +73,6 @@ class UsageEvent:
 @dataclasses.dataclass
 class UserMessageEvent:
     message: str
-
-
-class ToolPhase(enum.StrEnum):
-    DONE = "done"
-    ERROR = "error"
-    VALIDATION_ERROR = "validation_error"
 
 
 @dataclasses.dataclass

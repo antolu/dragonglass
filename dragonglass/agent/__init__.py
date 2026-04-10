@@ -6,14 +6,17 @@ from dragonglass.agent.runtime import VaultAgent, history_to_events, resolve_mod
 from dragonglass.agent.types import (
     AgentEvent,
     ApprovalRequestEvent,
+    ConversationLoadedEvent,
+    ConversationsListEvent,
     DoneEvent,
     MCPToolEvent,
+    Message,
     StatusEvent,
     TextChunk,
-    ToolPhase,
     UsageEvent,
     UserMessageEvent,
 )
+from dragonglass.mcp import ToolPhase
 
 for _sym in (  # noqa: RUF067
     VaultAgent,
@@ -21,8 +24,11 @@ for _sym in (  # noqa: RUF067
     parse_tool_calls_from_text,
     resolve_model_name,
     ApprovalRequestEvent,
+    ConversationLoadedEvent,
+    ConversationsListEvent,
     DoneEvent,
     MCPToolEvent,
+    Message,
     StatusEvent,
     TextChunk,
     ToolPhase,
@@ -34,8 +40,11 @@ for _sym in (  # noqa: RUF067
 __all__ = [
     "AgentEvent",
     "ApprovalRequestEvent",
+    "ConversationLoadedEvent",
+    "ConversationsListEvent",
     "DoneEvent",
     "MCPToolEvent",
+    "Message",
     "StatusEvent",
     "TextChunk",
     "ToolPhase",

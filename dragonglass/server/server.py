@@ -14,7 +14,7 @@ from uvicorn import Config, Server
 
 from dragonglass.agent import VaultAgent
 from dragonglass.config import Settings, get_settings
-from dragonglass.mcp.search import create_search_server
+from dragonglass.mcp import create_search_server
 from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     is_embedding_model,

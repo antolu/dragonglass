@@ -21,11 +21,17 @@ from pydantic import JsonValue
 
 from dragonglass import paths
 from dragonglass._version import version
-from dragonglass.agent import AgentEvent, DoneEvent, MCPToolEvent, VaultAgent
-from dragonglass.agent.types import StatusEvent, _Message
+from dragonglass.agent import (
+    AgentEvent,
+    DoneEvent,
+    MCPToolEvent,
+    Message,
+    StatusEvent,
+    VaultAgent,
+)
 from dragonglass.config import LLMBackend, get_settings, invalidate_settings
 from dragonglass.log_context import bind_request_id
-from dragonglass.mcp.telemetry import drain_tool_events
+from dragonglass.mcp import drain_tool_events
 from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     Command,
@@ -201,7 +207,7 @@ class ConnectionHandler:
             self._conversations.current_id,
         )
 
-        provisional_history: list[_Message] | None = None
+        provisional_history: list[Message] | None = None
         if text:
             if not self._conversations.current_id:
                 self._conversations.current_id = str(uuid.uuid4())

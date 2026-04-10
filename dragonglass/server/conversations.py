@@ -6,11 +6,11 @@ import pathlib
 import time
 
 from dragonglass import paths
-from dragonglass.agent import history_to_events
-from dragonglass.agent.types import (
+from dragonglass.agent import (
     ConversationLoadedEvent,
     ConversationsListEvent,
-    _Message,
+    Message,
+    history_to_events,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class ConversationStore:
     def get_path(conversation_id: str) -> pathlib.Path:
         return paths.CONVERSATIONS_DIR / f"{conversation_id}.json"
 
-    def save(self, conversation_id: str, history: list[_Message]) -> None:
+    def save(self, conversation_id: str, history: list[Message]) -> None:
         path = self.get_path(conversation_id)
         title = "New Chat"
         for msg in history:
@@ -92,7 +92,7 @@ class ConversationStore:
         events = history_to_events(data["history"])
         return ConversationLoadedEvent(id=conversation_id, history=events)
 
-    def get_history(self, conversation_id: str) -> list[_Message] | None:
+    def get_history(self, conversation_id: str) -> list[Message] | None:
         path = self.get_path(conversation_id)
         if not path.exists():
             return None
