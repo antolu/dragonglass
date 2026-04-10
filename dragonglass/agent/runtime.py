@@ -12,6 +12,7 @@ import litellm
 from mcp import ClientSession
 from mcp.types import TextContent
 from opencode_ai import AsyncOpencode
+from pydantic import JsonValue
 
 from dragonglass.agent.approval import DragonglassTool, compute_diff, needs_approval
 from dragonglass.agent.mcp import (
@@ -35,7 +36,6 @@ from dragonglass.agent.types import (
     AgentEvent,
     ApprovalRequestEvent,
     DoneEvent,
-    JsonValue,
     MCPToolEvent,
     StatusEvent,
     TextChunk,

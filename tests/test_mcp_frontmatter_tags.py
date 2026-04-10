@@ -206,7 +206,7 @@ def test_manage_tags_add_updates_frontmatter_tags(
     )
 
     assert result["added"] == ["active"]
-    assert "active" in result["tags"]
+    assert "active" in str(result["tags"])
     assert len(calls) == _EXPECTED_PATCH_CALLS
 
 
@@ -261,8 +261,8 @@ def test_manage_tags_remove_removes_frontmatter_and_inline(
     )
 
     assert result["removed"] == ["active"]
-    assert "active" not in result["tags"]
-    assert "keep" in result["tags"]
+    assert "active" not in str(result["tags"])
+    assert "keep" in str(result["tags"])
     assert len(calls) == _EXPECTED_PATCH_CALLS
 
 

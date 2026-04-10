@@ -17,9 +17,9 @@ from http import HTTPStatus
 
 import httpx
 import tomli_w
+from pydantic import JsonValue
 
 from dragonglass import paths
-from dragonglass.agent.types import JsonValue
 from dragonglass.config import LLMBackend, Settings, get_settings, invalidate_settings
 from dragonglass.paths import OPENCODE_CONFIG_FILE
 

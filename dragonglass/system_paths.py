@@ -5,8 +5,10 @@ import os
 import pathlib
 import platform
 import shutil
+import typing
 
-from dragonglass.config import Settings, get_settings
+if typing.TYPE_CHECKING:
+    from dragonglass.config import Settings
 
 
 def _split_path_entries(value: str) -> list[str]:
@@ -47,14 +49,14 @@ def resolve_tool_paths(
     settings: Settings | None = None,
     extra: dict[str, str] | None = None,
 ) -> list[str]:
-    active_settings = settings or get_settings()
     entries: list[str] = []
 
     entries.extend(_split_path_entries(os.environ.get("PATH", "")))
 
-    settings_path = active_settings.env_vars.get("PATH")
-    if settings_path:
-        entries.extend(_split_path_entries(settings_path))
+    if settings is not None:
+        settings_path = settings.env_vars.get("PATH")
+        if settings_path:
+            entries.extend(_split_path_entries(settings_path))
 
     if extra and "PATH" in extra:
         entries.extend(_split_path_entries(extra["PATH"]))

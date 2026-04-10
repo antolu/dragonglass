@@ -6,10 +6,10 @@ import logging
 import typing
 
 import httpx
+from pydantic import JsonValue
 
-from dragonglass.agent.types import JsonValue
 from dragonglass.config import Settings
-from dragonglass.mcp.search import (
+from dragonglass.mcp.search.frontmatter import (
     _delete_frontmatter_key_lines,
     _rebuild_note_with_frontmatter,
     _remove_inline_tags,

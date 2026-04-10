@@ -4,7 +4,7 @@ import dataclasses
 import enum
 import typing
 
-JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
+from pydantic import JsonValue
 
 
 class _ToolFunction(typing.TypedDict):

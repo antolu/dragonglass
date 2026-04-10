@@ -9,8 +9,9 @@ import typing
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from pydantic import JsonValue
 
-from dragonglass.agent.types import JsonValue, _Tool, _ToolFunction
+from dragonglass.agent.types import _Tool, _ToolFunction
 from dragonglass.config import Settings
 from dragonglass.system_paths import resolve_tool_paths
 

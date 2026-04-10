@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from dragonglass.agent.types import JsonValue
+from pydantic import JsonValue
 
 _MAX_TOOL_RESULT_CHARS = 4000
 _EVENT_TUPLE_LEN = 2

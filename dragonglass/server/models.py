@@ -5,7 +5,9 @@ import enum
 import json
 import typing
 
-from dragonglass.agent.types import AgentEvent, JsonValue
+from pydantic import JsonValue
+
+from dragonglass.agent.types import AgentEvent
 
 
 class OllamaModelRecord(typing.TypedDict, total=False):

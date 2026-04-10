@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dragonglass.agent.types import JsonValue
+from pydantic import JsonValue
+
 from dragonglass.server.server import (
     is_embedding_model,
     parse_ollama_models,

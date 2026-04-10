@@ -17,11 +17,12 @@ import httpx
 import tomli_w
 import websockets.exceptions
 from opencode_ai import AsyncOpencode
+from pydantic import JsonValue
 
 from dragonglass import paths
 from dragonglass._version import version
 from dragonglass.agent import AgentEvent, DoneEvent, MCPToolEvent, VaultAgent
-from dragonglass.agent.types import JsonValue, StatusEvent, _Message
+from dragonglass.agent.types import StatusEvent, _Message
 from dragonglass.config import LLMBackend, get_settings, invalidate_settings
 from dragonglass.log_context import bind_request_id
 from dragonglass.mcp.telemetry import drain_tool_events
