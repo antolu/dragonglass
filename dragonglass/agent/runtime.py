@@ -8,6 +8,7 @@ import logging
 import typing
 import uuid
 
+import fastmcp.exceptions
 import litellm
 from mcp import ClientSession
 from mcp.types import TextContent
@@ -26,7 +27,6 @@ from dragonglass.agent.mcp import (
 )
 from dragonglass.agent.opencode import run_opencode_turn
 from dragonglass.agent.parsing import (
-    _extract_tool_errors,
     _is_error_result,
     _is_validation_error_result,
     _truncate_result,
@@ -642,23 +642,25 @@ class VaultAgent:
                     Message(role="tool", tool_call_id=tc.id, content=result)
                 )
 
+    async def _call_search_tool(self, name: str, args: dict[str, JsonValue]) -> str:
+        try:
+            result = await self._search.call_tool(name, args)
+            first = result.content[0] if result.content else None
+            text = first.text if isinstance(first, TextContent) else "[]"
+            return _truncate_result(text)
+        except fastmcp.exceptions.ValidationError as exc:
+            logger.warning("search tool %r validation error: %s", name, exc)
+            return (
+                f"Tool '{name}' called with wrong arguments. {exc}. "
+                "Check the tool schema and use the exact parameter names and types."
+            )
+        except Exception as exc:
+            logger.warning("search server error calling %r: %s", name, exc)
+            return f"Search server error: {exc}"
+
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
         if name in _SEARCH_TOOLS:
-            try:
-                result = await self._search.call_tool(name, args)
-                first = result.content[0] if result.content else None
-                text = first.text if isinstance(first, TextContent) else "[]"
-                return _truncate_result(text)
-            except Exception as exc:
-                msg = str(exc)
-                logger.warning("search server error calling %r: %s", name, msg)
-                error_hint = _extract_tool_errors(msg)
-                if error_hint:
-                    return (
-                        f"Tool '{name}' called with wrong arguments. {error_hint}. "
-                        "Check the tool schema and use the exact parameter names and types."
-                    )
-                return f"Search server error: {exc}"
+            return await self._call_search_tool(name, args)
 
         exhausted = True
         for session in self._stdio_sessions:
@@ -669,6 +671,8 @@ class VaultAgent:
                     call_result = await session.call_tool(name, args)
                     first = call_result.content[0] if call_result.content else None
                     text = first.text if isinstance(first, TextContent) else ""
+                    if call_result.isError:
+                        return f"Tool '{name}' error: {text}"
                     return _truncate_result(text)
             except Exception:
                 logger.warning(
