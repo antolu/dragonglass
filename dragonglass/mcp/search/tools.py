@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import time
 import typing
@@ -49,6 +50,43 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             f"id={session.id}",
         )
         return {"session_id": session.id, "status": "created"}
+
+    @m.tool(name="dragonglass_get_date_context")
+    def get_date_context(
+        offset_days: int = 0,
+    ) -> dict[str, str | list[dict[str, str]]]:
+        """Return the date, day of week, and week calendar anchored at today + offset_days.
+
+        Call this when the user refers to dates relatively (e.g. "next Sunday",
+        "last week", "yesterday") so you can resolve the correct ISO date before
+        searching the vault. Use offset_days to shift the anchor: -7 for last week,
+        +7 for next week, -14 for two weeks ago, etc.
+        """
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+        today = datetime.date.today()
+        anchor = today + datetime.timedelta(days=offset_days)
+        monday = anchor - datetime.timedelta(days=anchor.weekday())
+        week = [
+            {
+                "day": day_names[i],
+                "date": (monday + datetime.timedelta(days=i)).isoformat(),
+            }
+            for i in range(7)
+        ]
+        return {
+            "today": today.isoformat(),
+            "anchor": anchor.isoformat(),
+            "day_of_week": day_names[anchor.weekday()],
+            "week": week,
+        }
 
     @m.tool(name="dragonglass_keyword_search")
     async def keyword_search(
