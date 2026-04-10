@@ -1,6 +1,9 @@
 import AppKit
+import OSLog
 import SwiftUI
 import UserNotifications
+
+private let logger = Logger(subsystem: subsystem, category: "AppDelegate")
 
 @main
 struct DragonglassApp: App {
@@ -34,7 +37,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var backend: BackendManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { granted, error in
+            if let error {
+                logger.error("notification authorization failed error=\(error.localizedDescription, privacy: .public)")
+            } else {
+                logger.info("notification authorization granted=\(granted)")
+            }
+        }
         // remapDictationKeyToF13() — on ice until intelligenceplatformd interception is resolved
     }
 

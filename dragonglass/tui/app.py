@@ -7,7 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
-from dragonglass.agent.agent import (
+from dragonglass.agent import (
     DoneEvent,
     MCPToolEvent,
     StatusEvent,

@@ -8,7 +8,7 @@ import logging
 
 import websockets
 
-from dragonglass.agent.agent import (
+from dragonglass.agent import (
     AgentEvent,
     DoneEvent,
     MCPToolEvent,
@@ -16,7 +16,8 @@ from dragonglass.agent.agent import (
     TextChunk,
     UsageEvent,
 )
-from dragonglass.agent.types import ToolPhase
+from dragonglass.config import Settings, get_settings
+from dragonglass.mcp import ToolPhase
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,23 @@ _EVENT_MAP: dict[str, type[AgentEvent]] = {
 
 
 class AgentClient:
-    def __init__(self, host: str = "localhost", port: int = 51363) -> None:
-        self.uri = f"ws://{host}:{port}"
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        active_settings = settings or get_settings()
+        self.uri = active_settings.websocket_uri(host=host, port=port)
         self._websocket: websockets.WebSocketClientProtocol | None = None
         self._queue: asyncio.Queue[AgentEvent] = asyncio.Queue()
         self._receive_task: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
+        logger.info("client: connecting uri=%s", self.uri)
         self._websocket = await websockets.connect(self.uri)
         self._receive_task = asyncio.create_task(self._receive_loop())
+        logger.info("client: connected uri=%s", self.uri)
 
     async def _receive_loop(self) -> None:
         assert self._websocket is not None
@@ -61,6 +70,7 @@ class AgentClient:
             await self._queue.put(DoneEvent())
 
     async def run(self, text: str) -> collections.abc.AsyncGenerator[AgentEvent]:
+        logger.info("client: run start text_len=%d", len(text))
         if self._websocket is None or self._websocket.closed:
             try:
                 await self.connect()
@@ -80,6 +90,7 @@ class AgentClient:
 
         assert self._websocket is not None
         await self._websocket.send(json.dumps({"command": "chat", "text": text}))
+        logger.debug("client: sent chat command text_len=%d", len(text))
 
         while True:
             event = await self._queue.get()

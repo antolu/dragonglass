@@ -3,7 +3,12 @@ import Combine
 import WhisperKit
 import os
 
-private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "STTManager")
+private let logger = Logger(subsystem: subsystem, category: "STTManager")
+
+/// Silence window given to Whisper after recording stops to emit the final segment.
+private let whisperDrainDelay: Duration = .milliseconds(500)
+/// Debounce window after the last speech segment before auto-firing the transcription.
+private let autoSendDelay: Duration = .seconds(1)
 
 @MainActor
 final class STTManager: ObservableObject {
@@ -290,7 +295,7 @@ final class STTManager: ObservableObject {
 
         Task {
             // Give Whisper ~500ms of silence to finalize the last segment
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(for: whisperDrainDelay)
             await transcriber?.stopStreamTranscription()
             // After stop, take whatever the last emitted text was (includes currentText)
             await MainActor.run {
@@ -377,7 +382,7 @@ final class STTManager: ObservableObject {
     private func scheduleAutoSend() {
         autoSendTask?.cancel()
         autoSendTask = Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(for: autoSendDelay)
             guard !Task.isCancelled else { return }
             await MainActor.run { self.readyToFire = true }
         }

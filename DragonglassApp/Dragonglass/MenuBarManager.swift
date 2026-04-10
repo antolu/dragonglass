@@ -1,6 +1,9 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
+
+private let logger = Logger(subsystem: subsystem, category: "MenuBarManager")
 
 @MainActor
 class MenuBarManager: NSObject, ObservableObject {
@@ -19,6 +22,7 @@ class MenuBarManager: NSObject, ObservableObject {
         hotkeyManager: HotkeyManager
     ) {
         guard self.backend == nil else { return }
+        logger.info("setup")
         self.backend = backend
         self.client = client
         self.sttManager = sttManager
@@ -53,6 +57,7 @@ class MenuBarManager: NSObject, ObservableObject {
 
         if isReady {
             if statusItem == nil {
+                logger.info("refresh ready=true creating status item")
                 statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
                 if let button = statusItem?.button {
                     button.action = #selector(togglePopover)
@@ -76,6 +81,7 @@ class MenuBarManager: NSObject, ObservableObject {
                 self.popover = p
             }
         } else {
+            logger.info("refresh ready=false tearing down status item")
             statusItem = nil
             popover = nil
         }
@@ -83,6 +89,7 @@ class MenuBarManager: NSObject, ObservableObject {
 
     func showPopover() {
         guard let statusButton = statusItem?.button, let popover, !popover.isShown else { return }
+        logger.debug("showPopover")
         let closeOnFocusLoss = UserDefaults.standard.bool(forKey: "closePopoverOnFocusLoss")
         popover.behavior = closeOnFocusLoss ? .semitransient : .transient
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -105,8 +112,10 @@ class MenuBarManager: NSObject, ObservableObject {
     @objc func togglePopover(_ sender: AnyObject?) {
         guard let popover else { return }
         if popover.isShown {
+            logger.debug("togglePopover close")
             popover.performClose(sender)
         } else {
+            logger.debug("togglePopover open")
             showPopover()
         }
     }

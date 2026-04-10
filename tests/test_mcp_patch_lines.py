@@ -8,7 +8,7 @@ from typing import Self
 import httpx
 import pytest
 
-import dragonglass.mcp.search as mcp_search
+import dragonglass.mcp.edit as mcp_search
 from dragonglass.config import Settings
 from dragonglass.search.session import new_session
 
@@ -244,7 +244,7 @@ def test_patch_note_lines_propagates_hash_mismatch(
         )
     )
 
-    assert "modified since it was last read" in result["error"]
+    assert "modified since it was last read" in str(result["error"])
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:stalehash"
 
 

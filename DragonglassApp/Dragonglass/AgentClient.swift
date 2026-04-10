@@ -1,5 +1,13 @@
 import Foundation
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: subsystem, category: "AgentClient")
+private let cachedToolPathEnvKey = "dragonglass.tool_path_env"
+private let cachedToolBinariesKey = "dragonglass.tool_binaries"
+
+/// Time between connection-readiness polls while waiting for the WebSocket to establish.
+private let connectionRetryInterval: Duration = .milliseconds(50)
 
 struct ApprovalRequest: Identifiable {
     let id: String
@@ -225,14 +233,16 @@ class AgentClient: ObservableObject {
     }
 
     private var webSocketTask: URLSessionWebSocketTask?
-    private let url = URL(string: "ws://localhost:51363")!
+    private let url = BackendPaths.backendWebSocketURL
 
     func connect() {
+        logger.info("connect start url=\(self.url.absoluteString, privacy: .public)")
         webSocketTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask?.resume()
         isConnected = true
         receiveMessage()
         refreshState()
+        logger.info("connect ready")
     }
 
     func disconnect() {
@@ -270,6 +280,14 @@ class AgentClient: ObservableObject {
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
                                     self.llmBackend = config.llmBackend
+                                    if let toolPathEnv = config.toolPathEnv {
+                                        UserDefaults.standard.set(toolPathEnv, forKey: cachedToolPathEnvKey)
+                                    }
+                                    if let toolBinaries = config.toolBinaries,
+                                       let data = try? JSONEncoder().encode(toolBinaries),
+                                       let json = String(data: data, encoding: .utf8) {
+                                        UserDefaults.standard.set(json, forKey: cachedToolBinariesKey)
+                                    }
                                     if (config.opencodeAvailable ?? true) == false,
                                        self.llmBackend == "opencode" {
                                         self.llmBackend = "litellm"
@@ -292,7 +310,7 @@ class AgentClient: ObservableObject {
                                     break
                                 }
                             } catch {
-                                print("[AgentClient] Failed to decode event: \(error) from message: \(text)")
+                                logger.warning("decode event failed error=\(error.localizedDescription, privacy: .public)")
                             }
                         }
                     default: break
@@ -300,12 +318,14 @@ class AgentClient: ObservableObject {
                     self.receiveMessage()
                 case .failure:
                     self.isConnected = false
+                    logger.warning("receiveMessage failed and disconnected")
                 }
             }
         }
     }
 
     func sendChat(text: String, model: String? = nil) {
+        logger.info("sendChat text_len=\(text.count) model=\((model ?? "default"), privacy: .public)")
         isThinking = true
         events.append(.userMessage(text))
         var command: [String: Any] = [
@@ -324,7 +344,7 @@ class AgentClient: ObservableObject {
             // Wait briefly for connection to establish
             for _ in 0..<10 {
                 if isConnected { break }
-                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms chunks
+                try? await Task.sleep(for: connectionRetryInterval)
             }
         }
 
@@ -381,6 +401,7 @@ class AgentClient: ObservableObject {
     }
 
     func refreshState() {
+        logger.debug("refreshState")
         send(["command": "get_config"])
         fetchModels()
     }
@@ -390,6 +411,7 @@ class AgentClient: ObservableObject {
     }
 
     func setBackend(_ backend: String) {
+        logger.info("setBackend backend=\(backend, privacy: .public)")
         availableModels = []
         selectedModel = ""
         llmBackend = backend
@@ -398,6 +420,7 @@ class AgentClient: ObservableObject {
 
     func setSelectedModel(_ model: String) {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        logger.info("setSelectedModel model=\(trimmedModel, privacy: .public)")
         let command: [String: Any] = [
             "command": "set_config",
             "config": ["selected_model": trimmedModel]
@@ -407,33 +430,39 @@ class AgentClient: ObservableObject {
     }
 
     func startNewChat() {
+        logger.info("startNewChat")
         send(["command": "new_chat"])
         events = []
         activeConversationId = nil
     }
 
     func fetchConversations() {
+        logger.debug("fetchConversations")
         send(["command": "list_conversations"])
     }
 
     func loadConversation(id: String) {
+        logger.info("loadConversation id=\(id, privacy: .public)")
         send(["command": "load_conversation", "id": id])
     }
 
     func deleteConversation(id: String) {
+        logger.info("deleteConversation id=\(id, privacy: .public)")
         send(["command": "delete_conversation", "id": id])
     }
 
     func openNote(path: String) {
+        logger.info("openNote path=\(path, privacy: .public)")
         send(["command": "open_note", "path": path])
     }
 
     private func send(_ dict: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let string = String(data: data, encoding: .utf8) else { return }
+        logger.debug("send payload_chars=\(string.count)")
         webSocketTask?.send(.string(string)) { error in
             if let error = error {
-                print("WebSocket send error: \(error)")
+                logger.error("websocket send error=\(error.localizedDescription, privacy: .public)")
             }
         }
     }

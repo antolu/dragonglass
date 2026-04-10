@@ -1,50 +1,49 @@
 from __future__ import annotations
 
 import dataclasses
-import enum
 import typing
 
-JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
+from pydantic import JsonValue
 
 
-class _ToolFunction(typing.TypedDict):
+class ToolFunction(typing.TypedDict):
     name: str
     description: str
     parameters: dict[str, JsonValue]
 
 
-class _Tool(typing.TypedDict):  # noqa: PYI049
+class Tool(typing.TypedDict):
     type: str
-    function: _ToolFunction
+    function: ToolFunction
 
 
-class _FunctionCall(typing.TypedDict):
+class FunctionCall(typing.TypedDict):
     name: str
     arguments: str
 
 
 @dataclasses.dataclass
-class _FallbackFunction:
+class FallbackFunction:
     name: str
     arguments: str
 
 
 @dataclasses.dataclass
-class _FallbackToolCall:
+class FallbackToolCall:
     id: str
-    function: _FallbackFunction
+    function: FallbackFunction
 
 
-class _ToolCallMsg(typing.TypedDict):
+class ToolCallMsg(typing.TypedDict):
     id: str
     type: str
-    function: _FunctionCall
+    function: FunctionCall
 
 
-class _Message(typing.TypedDict, total=False):  # noqa: PYI049
+class Message(typing.TypedDict, total=False):
     role: str
     content: str
-    tool_calls: list[_ToolCallMsg]
+    tool_calls: list[ToolCallMsg]
     tool_call_id: str
 
 
@@ -74,12 +73,6 @@ class UsageEvent:
 @dataclasses.dataclass
 class UserMessageEvent:
     message: str
-
-
-class ToolPhase(enum.StrEnum):
-    DONE = "done"
-    ERROR = "error"
-    VALIDATION_ERROR = "validation_error"
 
 
 @dataclasses.dataclass

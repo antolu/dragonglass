@@ -3,57 +3,112 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 import contextlib
-import difflib
 import json
 import logging
-import os
-import re
-import subprocess
 import typing
 import uuid
 
-import httpx
 import litellm
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
 from mcp.types import TextContent
 from opencode_ai import AsyncOpencode
+from pydantic import JsonValue
 
+from dragonglass.agent.approval import DragonglassTool, needs_approval
+from dragonglass.agent.mcp import (
+    _EXCLUDED_MCP_TOOLS,
+    _EXTRA_MCP_SERVERS,
+    _check_node_version,
+    _get_mcp_env,
+    _StdioSessionContext,
+    fastmcp_tool_to_litellm,
+    mcp_tool_to_litellm,
+)
 from dragonglass.agent.opencode import run_opencode_turn
+from dragonglass.agent.parsing import (
+    _extract_tool_errors,
+    _is_error_result,
+    _is_validation_error_result,
+    _truncate_result,
+    parse_tool_calls_from_text,
+)
 from dragonglass.agent.prompts import load_system_prompt
 from dragonglass.agent.types import (
     AgentEvent,
     ApprovalRequestEvent,
     DoneEvent,
-    JsonValue,
+    FallbackFunction,
+    FallbackToolCall,
+    FunctionCall,
     MCPToolEvent,
+    Message,
     StatusEvent,
     TextChunk,
-    ToolPhase,
+    Tool,
+    ToolCallMsg,
     UsageEvent,
     UserMessageEvent,
-    _FallbackFunction,
-    _FallbackToolCall,
-    _FunctionCall,
-    _Message,
-    _Tool,
-    _ToolCallMsg,
-    _ToolFunction,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings
-from dragonglass.mcp.search import (
-    _delete_frontmatter_key_lines,
-    _rebuild_note_with_frontmatter,
-    _remove_inline_tags,
-    _set_frontmatter_key_lines,
-    _split_frontmatter_block,
-    create_search_server,
-)
+from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
 
 logger = logging.getLogger(__name__)
 
+_TOOL_STATUS: dict[str, str] = {
+    "fetch": "fetching",
+    "sequentialthinking": "thinking",
+    DragonglassTool.OPEN_NOTE: "opening",
+    DragonglassTool.RUN_COMMAND: "running command",
+    DragonglassTool.MANAGE_FRONTMATTER: "updating frontmatter",
+    DragonglassTool.MANAGE_TAGS: "updating tags",
+}
 
-def history_to_events(history: list[_Message]) -> list[AgentEvent]:
+_SEARCH_TOOLS: frozenset[str] = frozenset({
+    DragonglassTool.NEW_SEARCH_SESSION,
+    DragonglassTool.KEYWORD_SEARCH,
+    DragonglassTool.VECTOR_SEARCH,
+    DragonglassTool.RUN_COMMAND,
+    DragonglassTool.READ_NOTE_WITH_HASH,
+    DragonglassTool.REPLACE_LINES,
+    DragonglassTool.INSERT_AFTER_LINE,
+    DragonglassTool.DELETE_LINES,
+    DragonglassTool.MANAGE_FRONTMATTER,
+    DragonglassTool.MANAGE_TAGS,
+})
+
+
+class CompletionKwargs(typing.TypedDict, total=False):
+    model: str
+    messages: list[Message]
+    stream: bool
+    temperature: float | None
+    top_p: float | None
+    top_k: int | None
+    topK: int | None
+    min_p: float | None
+    presence_penalty: float | None
+    repetition_penalty: float | None
+    api_base: str
+    tools: list[Tool]
+
+
+def resolve_model_name(model_override: str | None, default_model: str) -> str:
+    if model_override is None:
+        return default_model
+
+    override = model_override.strip()
+    if not override:
+        return default_model
+    if "/" in override:
+        return override
+
+    if "/" in default_model:
+        provider, _ = default_model.split("/", 1)
+        return f"{provider}/{override}"
+    return override
+
+
+def history_to_events(history: list[Message]) -> list[AgentEvent]:
     tool_results: dict[str, str] = {
         msg["tool_call_id"]: str(msg.get("content") or "")
         for msg in history
@@ -78,7 +133,7 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
                     parsed = json.loads(raw_args)
                 except json.JSONDecodeError:
                     parsed = {}
-                if tool_name == "dragonglass_read_note_with_hash" and parsed.get(
+                if tool_name == DragonglassTool.READ_NOTE_WITH_HASH and parsed.get(
                     "path"
                 ):
                     message = f"Reading: {parsed['path']}"
@@ -93,240 +148,6 @@ def history_to_events(history: list[_Message]) -> list[AgentEvent]:
                     )
                 )
     return events
-
-
-_EVENT_TUPLE_LEN = 2
-_MAX_TOOL_RESULT_CHARS = 4000
-
-
-def _truncate_result(text: str) -> str:
-    if len(text) <= _MAX_TOOL_RESULT_CHARS:
-        return text
-    return (
-        text[:_MAX_TOOL_RESULT_CHARS]
-        + f"\n[truncated — {len(text) - _MAX_TOOL_RESULT_CHARS} chars omitted]"
-    )
-
-
-def _is_validation_error_result(result: str) -> bool:
-    return result.startswith("Tool '") and "called with wrong arguments" in result
-
-
-def _is_error_result(result: str) -> bool:
-    if _is_validation_error_result(result):
-        return False
-    if result.startswith(("Search server error:", "Tool '")):
-        return True
-    try:
-        data = json.loads(result)
-        return isinstance(data, dict) and "error" in data
-    except json.JSONDecodeError:
-        return False
-
-
-_TOOL_PERMISSIONS: dict[str, str] = {
-    "dragonglass_replace_lines": "edit",
-    "dragonglass_insert_after_line": "edit",
-    "dragonglass_delete_lines": "delete",
-    "dragonglass_manage_frontmatter": "edit",
-    "dragonglass_manage_tags": "edit",
-}
-
-_TOOL_STATUS: dict[str, str] = {
-    "fetch": "fetching",
-    "sequentialthinking": "thinking",
-    "dragonglass_open_note": "opening",
-    "dragonglass_run_command": "running command",
-    "dragonglass_manage_frontmatter": "updating frontmatter",
-    "dragonglass_manage_tags": "updating tags",
-}
-
-
-def _fmt_args(args: dict[str, JsonValue]) -> str:
-    return ", ".join(f"{k}={json.dumps(v)}" for k, v in args.items())
-
-
-def _extract_tool_errors(msg: str) -> str | None:
-    """Extract descriptive error messages from FastMCP/Pydantic validation errors."""
-    lines = msg.splitlines()
-    for i, line in enumerate(lines):
-        lowered = line.lower()
-        # 1. Handle "missing required argument: 'path'" (same line)
-        # 2. "['path'] argument is required" (same line)
-        rx_same_line = re.compile(
-            r"(?:missing|required) (?:argument|parameter)[:\s]+['\"]?([a-zA-Z0-9_]+)['\"]?|"
-            r"['\"]?([a-zA-Z0-9_]+)['\"]? (?:argument|parameter)?\s*(?:is|missing) required",
-            re.IGNORECASE,
-        )
-        matches = [m for group in rx_same_line.findall(line) for m in group if m]
-        if matches:
-            return f"Missing required parameter(s): {', '.join(matches)}"
-
-        # 3. Handle Pydantic multi-line errors:
-        # queries
-        #   Input should be a valid list [type=list_type, input_value='...', input_type=str]
-        if (
-            any(
-                kw in lowered
-                for kw in ("input should be", "missing required", "field required")
-            )
-            and i > 0
-            and (param := lines[i - 1].strip())
-            and " " not in param
-            and not param.endswith("]")
-        ):
-            if "missing" in lowered or ("required" in lowered and "field" in lowered):
-                return f"Missing required parameter: '{param}'"
-            return f"Parameter '{param}' is invalid: {line.strip()}"
-
-    return None
-
-
-def parse_tool_calls_from_text(
-    text: str,
-) -> list[tuple[str, dict[str, JsonValue]]]:
-    """Parse Qwen3-style XML tool calls from free text.
-
-    Handles the case where the model emits tool calls inside its <think> block
-    (reasoning_content) rather than as structured tool_calls. Format:
-
-        <tool_call>
-        <function=name>
-        <parameter=key>value</parameter>
-        </function>
-        </tool_call>
-    """
-    results: list[tuple[str, dict[str, JsonValue]]] = []
-    for block in re.findall(r"<tool_call>(.*?)</tool_call>", text, re.DOTALL):
-        fn_match = re.search(r"<function=([^>]+)>", block)
-        if not fn_match:
-            continue
-        name = fn_match.group(1).strip()
-        params: dict[str, JsonValue] = {}
-        for pm in re.finditer(
-            r"<parameter=([^>]+)>(.*?)</parameter>", block, re.DOTALL
-        ):
-            key = pm.group(1).strip()
-            val_raw = pm.group(2).strip()
-            try:
-                params[key] = json.loads(val_raw)
-            except json.JSONDecodeError:
-                params[key] = val_raw
-        results.append((name, params))
-    return results
-
-
-def _summarize_turn(
-    tool_calls_made: list[tuple[str, dict[str, JsonValue], str]],
-) -> str:
-    if not tool_calls_made:
-        return ""
-    lines = []
-    for name, args, result in tool_calls_made:
-        preview = result[:120].replace("\n", " ").strip()
-        lines.append(f"- {name}({_fmt_args(args)}) → {preview}")
-    return "Actions taken:\n" + "\n".join(lines)
-
-
-def resolve_model_name(model_override: str | None, default_model: str) -> str:
-    if model_override is None:
-        return default_model
-
-    override = model_override.strip()
-    if not override:
-        return default_model
-    if "/" in override:
-        return override
-
-    if "/" in default_model:
-        provider, _ = default_model.split("/", 1)
-        return f"{provider}/{override}"
-    return override
-
-
-_EXCLUDED_MCP_TOOLS: frozenset[str] = frozenset()
-
-
-def _get_mcp_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    env = dict(os.environ)
-    if extra:
-        env.update(extra)
-
-    # Augment PATH to include common locations for npx, uvx, etc.
-    # Homebrew paths come before /usr/local/bin to prefer newer binaries
-    # (e.g. /usr/local/bin/node may be an old legacy install on Apple Silicon macs).
-    paths = env.get("PATH", "").split(os.pathsep)
-    new_paths = [
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-        os.path.expanduser("~/.local/bin"),
-        "/usr/local/bin",
-    ]
-    # Add existing paths, avoiding duplicates
-    for p in paths:
-        if p and p not in new_paths:
-            new_paths.append(p)
-
-    env["PATH"] = os.pathsep.join(new_paths)
-    return env
-
-
-# @hono/node-server (a dependency of obsidian-mcp-server) requires Node >= 18.14.1.
-_MIN_NODE_MAJOR = 18
-
-
-def _check_node_version(env: dict[str, str]) -> None:
-    """Raise RuntimeError if node is missing or below _MIN_NODE_MAJOR."""
-    try:
-        result = subprocess.run(
-            ["node", "--version"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"node not found in PATH; install Node.js >= {_MIN_NODE_MAJOR}"
-        ) from exc
-
-    raw = result.stdout.strip()
-    if not raw.startswith("v"):
-        raise RuntimeError(f"unexpected output from node --version: {raw!r}")
-
-    try:
-        major = int(raw[1:].split(".")[0])
-    except (ValueError, IndexError) as exc:
-        raise RuntimeError(f"could not parse node version: {raw!r}") from exc
-
-    if major < _MIN_NODE_MAJOR:
-        raise RuntimeError(
-            f"node {raw[1:]} is too old; "
-            f"dragonglass requires node >= {_MIN_NODE_MAJOR} "
-            f"(obsidian-mcp-server dependency @hono/node-server requires >= 18.14.1)"
-        )
-
-    logger.debug("node %s OK (>= %d required)", raw, _MIN_NODE_MAJOR)
-
-
-# Sequential thinking MCP server disabled: the module is complex and
-# caused runtime issues when launched from the macOS app. Keep the
-# config here for reference; to re-enable, restore the block below and
-# the connection attempt in _connect_mcp_servers().
-# _THINKING_SERVER = StdioServerParameters(
-#     command="npx",
-#     args=["@modelcontextprotocol/server-sequential-thinking"],
-#     env=_get_mcp_env(),
-# )
-
-_EXTRA_MCP_SERVERS = [
-    StdioServerParameters(
-        command="uvx",
-        args=["mcp-server-fetch"],
-        env=_get_mcp_env(),
-    ),
-]
 
 
 def _status_for_tool(name: str, args: dict[str, JsonValue]) -> str:
@@ -352,12 +173,21 @@ def _status_for_tool(name: str, args: dict[str, JsonValue]) -> str:
     return prefix
 
 
+def _coerce_json_map(value: JsonValue) -> dict[str, JsonValue]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, JsonValue] = {
+        key: item for key, item in value.items() if isinstance(key, str)
+    }
+    return result
+
+
 class VaultAgent:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._history: list[_Message] = []
+        self._history: list[Message] = []
         self._system_prompt: str | None = None
-        self._litellm_tools: list[_Tool] = []
+        self._litellm_tools: list[Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = contextlib.AsyncExitStack()
         self._search = create_search_server(get_settings())
@@ -370,10 +200,22 @@ class VaultAgent:
 
     async def initialise(self) -> None:
         settings = get_settings()
+        logger.info(
+            "agent initialise backend=%s model=%s vector_search=%s",
+            settings.llm_backend,
+            settings.llm_model,
+            settings.vector_search_url,
+        )
         self._system_prompt, self.agents_note_found = await load_system_prompt(
             settings, opencode=settings.llm_backend == LLMBackend.opencode
         )
         await self._connect_mcp_servers()
+        logger.info(
+            "agent ready tools=%d stdio_sessions=%d agents_note_found=%s",
+            len(self._litellm_tools),
+            len(self._stdio_sessions),
+            self.agents_note_found,
+        )
 
     def clear_history(self) -> None:
         self._history = []
@@ -381,13 +223,11 @@ class VaultAgent:
         self._opencode_session_id = None
         self._session_approved.clear()
 
-    def get_history(self) -> list[_Message]:
+    def get_history(self) -> list[Message]:
         return list(self._history)
 
-    def set_history(self, history: list[_Message]) -> None:
+    def set_history(self, history: list[Message]) -> None:
         self._history = list(history)
-        # We don't necessarily know the total tokens from loaded history,
-        # but we can reset or approximate if we had it. For now just reset.
         self._total_tokens = 0
 
     async def _connect_mcp_servers(self) -> None:
@@ -402,8 +242,13 @@ class VaultAgent:
                 for tool in result.tools:
                     if tool.name in _EXCLUDED_MCP_TOOLS:
                         continue
-                    lt_tool = _mcp_tool_to_litellm(tool)
-                    self._litellm_tools.append(lt_tool)
+                    self._litellm_tools.append(mcp_tool_to_litellm(tool))
+                logger.info(
+                    "connected MCP server command=%s args=%s tools=%d",
+                    params.command,
+                    params.args,
+                    len(result.tools),
+                )
             except Exception:
                 logger.warning(
                     "failed to connect MCP server %s %s",
@@ -415,31 +260,26 @@ class VaultAgent:
         if not self._stdio_sessions:
             logger.warning("no MCP servers connected; agent will run without tools")
 
-        # Sequential thinking MCP server currently disabled to avoid
-        # launching complex external dependencies at runtime. If you need
-        # it later, re-enable the _THINKING_SERVER definition above and
-        # restore the connection logic here.
         logger.debug("sequential thinking MCP server disabled")
 
         for tool in await self._search.list_tools():
-            lt_tool = _Tool(
-                type="function",
-                function=_ToolFunction(
-                    name=getattr(tool, "name", ""),
-                    description=getattr(tool, "description", "") or "",
-                    parameters=getattr(tool, "inputSchema", {}),
-                ),
-            )
-            self._litellm_tools.append(lt_tool)
+            self._litellm_tools.append(fastmcp_tool_to_litellm(tool))
+        logger.info("registered search tools total=%d", len(self._litellm_tools))
 
     async def run(
         self, user_message: str, model_override: str | None = None
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         assert self._system_prompt is not None, "call initialise() first"
+        logger.info(
+            "agent run start message_len=%d model_override=%s history_len=%d",
+            len(user_message),
+            model_override,
+            len(self._history),
+        )
         history_len_before = len(self._history)
-        self._history.append(_Message(role="user", content=user_message))
-        messages: list[_Message] = [
-            _Message(role="system", content=self._system_prompt),
+        self._history.append(Message(role="user", content=user_message))
+        messages: list[Message] = [
+            Message(role="system", content=self._system_prompt),
             *self._history,
         ]
         gen = self._agent_loop(messages, model_override=model_override)
@@ -458,142 +298,11 @@ class VaultAgent:
 
         new_messages = messages[2 + history_len_before :]
         self._history.extend(new_messages)
-
-    def _needs_approval(  # noqa: PLR0911
-        self,
-        tool_name: str,
-        args: dict[str, JsonValue],
-        settings: Settings,
-    ) -> str | None:
-        perm = _TOOL_PERMISSIONS.get(tool_name)
-        if perm is None:
-            return None
-        if (
-            tool_name == "dragonglass_manage_frontmatter"
-            and args.get("operation") == "get"
-        ):
-            return None
-        if tool_name == "dragonglass_manage_tags" and args.get("operation") == "list":
-            return None
-        if perm == "edit" and settings.auto_allow_edit:
-            return None
-        if perm == "delete" and settings.auto_allow_delete:
-            return None
-        if perm == "create" and settings.auto_allow_create:
-            return None
-        if perm in self._session_approved:
-            return None
-        return perm
-
-    @staticmethod
-    async def _compute_diff(  # noqa: PLR0912, PLR0914, PLR0915
-        tool_name: str,
-        args: dict[str, JsonValue],
-    ) -> tuple[str, str, str]:
-        settings = get_settings()
-        path = str(args.get("path", ""))
-        if not path:
-            return "", "", tool_name
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{settings.vector_search_url}/notes/read",
-                    params={"path": path},
-                )
-            if resp.status_code != 200:  # noqa: PLR2004
-                return path, "", f"{tool_name} on {path}"
-            data = resp.json()
-            original = str(data.get("content", ""))
-        except Exception:
-            logger.warning("approval gate: failed to fetch %r for diff", path)
-            return path, "", f"{tool_name} on {path}"
-
-        original_lines = original.splitlines(keepends=True)
-
-        try:
-            if tool_name == "dragonglass_replace_lines":
-                start = int(typing.cast(int, args.get("start_line", 1)))
-                end = int(typing.cast(int, args.get("end_line", start)))
-                replacement = str(args.get("replacement", ""))
-                new_lines = list(original_lines)
-                new_lines[start - 1 : end] = [
-                    ln if ln.endswith("\n") else ln + "\n"
-                    for ln in replacement.splitlines()
-                ]
-                description = f"Replace lines {start}-{end} in {path}"
-
-            elif tool_name == "dragonglass_insert_after_line":
-                line = int(typing.cast(int, args.get("line", 0)))
-                text = str(args.get("text", ""))
-                new_lines = list(original_lines)
-                insert_lines = [
-                    ln if ln.endswith("\n") else ln + "\n" for ln in text.splitlines()
-                ]
-                new_lines[line:line] = insert_lines
-                description = f"Insert after line {line} in {path}"
-
-            elif tool_name == "dragonglass_delete_lines":
-                start = int(typing.cast(int, args.get("start_line", 1)))
-                end = int(typing.cast(int, args.get("end_line", start)))
-                new_lines = list(original_lines)
-                del new_lines[start - 1 : end]
-                description = f"Delete lines {start}-{end} in {path}"
-
-            elif tool_name == "dragonglass_manage_frontmatter":
-                op = str(args.get("operation", ""))
-                key = str(args.get("key", ""))
-                value = args.get("value")
-                fm_lines, rest, had = _split_frontmatter_block(original)
-                if op == "set":
-                    fm_lines = _set_frontmatter_key_lines(fm_lines, key, value)
-                elif op == "delete":
-                    fm_lines, _ = _delete_frontmatter_key_lines(fm_lines, key)
-                new_content = _rebuild_note_with_frontmatter(fm_lines, rest, had)
-                new_lines = new_content.splitlines(keepends=True)
-                description = f"Frontmatter {op} '{key}' in {path}"
-
-            elif tool_name == "dragonglass_manage_tags":
-                op = str(args.get("operation", ""))
-                tags = args.get("tags", [])
-                tags_list = tags if isinstance(tags, list) else []
-                fm_lines, rest, had = _split_frontmatter_block(original)
-                if op == "remove":
-                    body = rest.lstrip("\n")
-                    updated_body = _remove_inline_tags(
-                        body, {str(t) for t in tags_list}
-                    )
-                    new_content = _rebuild_note_with_frontmatter(
-                        fm_lines,
-                        f"\n{updated_body}" if rest.startswith("\n") else updated_body,
-                        had,
-                    )
-                    new_lines = new_content.splitlines(keepends=True)
-                else:
-                    new_lines = original_lines
-                description = f"Tags {op} {tags_list!r} in {path}"
-
-            else:
-                return path, "", f"{tool_name} on {path}"
-
-        except Exception:
-            logger.warning(
-                "approval gate: diff computation failed for %r",
-                tool_name,
-                exc_info=True,
-            )
-            return path, "", f"{tool_name} on {path}"
-
-        diff_lines = list(
-            difflib.unified_diff(
-                original_lines,
-                new_lines,
-                fromfile=f"a/{path}",
-                tofile=f"b/{path}",
-                n=3,
-            )
+        logger.info(
+            "agent run done history_added=%d history_total=%d",
+            len(new_messages),
+            len(self._history),
         )
-        return path, "".join(diff_lines), description
 
     def resolve_approval(
         self,
@@ -613,7 +322,7 @@ class VaultAgent:
 
     async def _agent_loop(  # noqa: PLR0912, PLR0914, PLR0915
         self,
-        messages: list[_Message],
+        messages: list[Message],
         model_override: str | None = None,
     ) -> collections.abc.AsyncGenerator[AgentEvent]:
         seen_calls: dict[tuple[str, str], str] = {}
@@ -628,7 +337,6 @@ class VaultAgent:
 
             if settings.llm_backend == LLMBackend.opencode:
                 if not self._opencode_session_id:
-                    # We create session lazily on first turn
                     client = AsyncOpencode(base_url=settings.opencode_url)
                     try:
                         model_name_for_session = resolve_model_name(
@@ -676,7 +384,7 @@ class VaultAgent:
                 )
                 async for event in run_opencode_turn(
                     self._opencode_session_id,
-                    messages[-1]["content"],  # Raw user message
+                    messages[-1]["content"],
                     model_id,
                     provider_id,
                     settings,
@@ -689,14 +397,14 @@ class VaultAgent:
             if model_name.startswith("ollama/"):
                 model_name = "ollama_chat/" + model_name[len("ollama/") :]
 
-            kwargs: dict[str, typing.Any] = {
+            kwargs: CompletionKwargs = {
                 "model": model_name,
                 "messages": messages,
                 "stream": True,
                 "temperature": settings.llm_temperature,
                 "top_p": settings.llm_top_p,
                 "top_k": settings.llm_top_k,
-                "topK": settings.llm_top_k,  # Gemini mapping
+                "topK": settings.llm_top_k,
                 "min_p": settings.llm_min_p,
                 "presence_penalty": settings.llm_presence_penalty,
                 "repetition_penalty": settings.llm_repetition_penalty,
@@ -730,7 +438,7 @@ class VaultAgent:
 
             stream = await litellm.acompletion(**kwargs)
             full_text = ""
-            accumulated_tool_calls: dict[str, _ToolCallMsg] = {}
+            accumulated_tool_calls: dict[str, ToolCallMsg] = {}
             usage_emitted = False
             final_reasoning = ""
 
@@ -778,10 +486,10 @@ class VaultAgent:
 
                     existing = accumulated_tool_calls.get(tc_id)
                     if existing is None:
-                        accumulated_tool_calls[tc_id] = _ToolCallMsg(
+                        accumulated_tool_calls[tc_id] = ToolCallMsg(
                             id=tc_id,
                             type="function",
-                            function=_FunctionCall(
+                            function=FunctionCall(
                                 name=name_delta or "",
                                 arguments=args_delta or "",
                             ),
@@ -798,9 +506,9 @@ class VaultAgent:
 
             msg_content = full_text
             tool_calls = [
-                _FallbackToolCall(
+                FallbackToolCall(
                     id=tc["id"],
-                    function=_FallbackFunction(
+                    function=FallbackFunction(
                         name=tc["function"].get("name", ""),
                         arguments=tc["function"].get("arguments", ""),
                     ),
@@ -817,9 +525,9 @@ class VaultAgent:
                         len(fallback),
                     )
                     tool_calls = [
-                        _FallbackToolCall(
+                        FallbackToolCall(
                             id=f"call_{uuid.uuid4().hex[:8]}",
-                            function=_FallbackFunction(
+                            function=FallbackFunction(
                                 name=name,
                                 arguments=json.dumps(args),
                             ),
@@ -833,13 +541,13 @@ class VaultAgent:
                 msg_content,
             )
 
-            assistant_msg = _Message(role="assistant", content=msg_content)
+            assistant_msg = Message(role="assistant", content=msg_content)
             if tool_calls:
                 assistant_msg["tool_calls"] = [
-                    _ToolCallMsg(
+                    ToolCallMsg(
                         id=tc.id,
                         type="function",
-                        function=_FunctionCall(
+                        function=FunctionCall(
                             name=tc.function.name,
                             arguments=tc.function.arguments,
                         ),
@@ -855,9 +563,11 @@ class VaultAgent:
             for tc in tool_calls:
                 tool_name = tc.function.name
                 try:
-                    args: dict[str, JsonValue] = json.loads(
-                        tc.function.arguments or "{}"
+                    raw_args = typing.cast(
+                        JsonValue,
+                        json.loads(tc.function.arguments or "{}"),
                     )
+                    args = _coerce_json_map(raw_args)
                 except json.JSONDecodeError:
                     logger.warning(
                         "could not parse tool call arguments for %r: %r",
@@ -870,11 +580,11 @@ class VaultAgent:
                 if status:
                     yield StatusEvent(message=status)
 
-                perm = self._needs_approval(tool_name, args, settings)
+                perm = needs_approval(tool_name, args, settings, self._session_approved)
                 if perm is not None:
                     request_id = uuid.uuid4().hex
-                    path, diff_text, description = await VaultAgent._compute_diff(
-                        tool_name, args
+                    path, diff_text, description = await compute_diff(
+                        tool_name, args, settings.vector_search_url
                     )
                     gate = asyncio.Event()
                     self._approval_gates[request_id] = gate
@@ -929,23 +639,11 @@ class VaultAgent:
                     )
 
                 messages.append(
-                    _Message(role="tool", tool_call_id=tc.id, content=result)
+                    Message(role="tool", tool_call_id=tc.id, content=result)
                 )
 
     async def _call_tool(self, name: str, args: dict[str, JsonValue]) -> str:
-        search_tools = {
-            "dragonglass_new_search_session",
-            "dragonglass_keyword_search",
-            "dragonglass_vector_search",
-            "dragonglass_run_command",
-            "dragonglass_read_note_with_hash",
-            "dragonglass_replace_lines",
-            "dragonglass_insert_after_line",
-            "dragonglass_delete_lines",
-            "dragonglass_manage_frontmatter",
-            "dragonglass_manage_tags",
-        }
-        if name in search_tools:
+        if name in _SEARCH_TOOLS:
             try:
                 result = await self._search.call_tool(name, args)
                 first = result.content[0] if result.content else None
@@ -954,7 +652,6 @@ class VaultAgent:
             except Exception as exc:
                 msg = str(exc)
                 logger.warning("search server error calling %r: %s", name, msg)
-
                 error_hint = _extract_tool_errors(msg)
                 if error_hint:
                     return (
@@ -985,32 +682,3 @@ class VaultAgent:
 
     async def close(self) -> None:
         await self._exit_stack.aclose()
-
-
-class _StdioSessionContext:
-    def __init__(self, params: StdioServerParameters) -> None:
-        self._params = params
-        self._inner_stack = contextlib.AsyncExitStack()
-
-    async def __aenter__(self) -> ClientSession:
-        read, write = await self._inner_stack.enter_async_context(
-            stdio_client(self._params)
-        )
-        session = ClientSession(read, write)
-        await self._inner_stack.enter_async_context(session)
-        await session.initialize()
-        return session
-
-    async def __aexit__(self, *args: object) -> None:
-        await self._inner_stack.aclose()
-
-
-def _mcp_tool_to_litellm(tool: object) -> _Tool:
-    return _Tool(
-        type="function",
-        function=_ToolFunction(
-            name=getattr(tool, "name", ""),
-            description=getattr(tool, "description", "") or "",
-            parameters=getattr(tool, "inputSchema", {}),
-        ),
-    )

@@ -13,11 +13,12 @@ from dragonglass import paths
 from dragonglass.agent.headless import run_headless
 from dragonglass.config import get_settings
 from dragonglass.log import LOG_FILE, setup_logging
-from dragonglass.mcp.search import create_search_server
-from dragonglass.server.main import DEFAULT_PORT, run, start_server_daemon
+from dragonglass.mcp import create_search_server
+from dragonglass.server import DEFAULT_PORT, run, start_server_daemon
 
 _PID_FILE = paths.DATA_DIR / "dragonglass.pid"
 _LOG_FILE = str(LOG_FILE)
+_SERVER_STARTUP_WAIT_SECONDS = 1.0
 
 
 @click.group()
@@ -44,7 +45,7 @@ def chat() -> None:
             click.echo("server not running, starting it...")
             start_server_daemon()
             # Brief wait for it to bind
-            time.sleep(1.0)
+            time.sleep(_SERVER_STARTUP_WAIT_SECONDS)
 
     asyncio.run(run_headless())
 

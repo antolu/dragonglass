@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: subsystem, category: "ObsidianSetup")
+
+/// Interval between Obsidian health checks during vault setup.
+private let obsidianHealthPollInterval: Duration = .seconds(2)
 
 enum SetupStep {
     case pickVault
@@ -28,6 +34,7 @@ class ObsidianSetupViewModel: ObservableObject {
     }
 
     func pickVault() {
+        logger.info("pickVault start")
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -44,8 +51,10 @@ class ObsidianSetupViewModel: ObservableObject {
         let appJson = vaultURL.appendingPathComponent(".obsidian/app.json")
         guard FileManager.default.fileExists(atPath: appJson.path) else {
             vaultError = "Not a valid Obsidian vault — .obsidian/app.json not found."
+            logger.warning("validate vault failed path=\(vaultURL.path, privacy: .public)")
             return
         }
+        logger.info("validate vault ok path=\(vaultURL.path, privacy: .public)")
         vaultError = nil
         vaultPath = vaultURL.path
         UserDefaults.standard.set(vaultPath, forKey: "obsidianDir")
@@ -54,6 +63,7 @@ class ObsidianSetupViewModel: ObservableObject {
 
     func installPlugin() {
         guard let pluginDir else { return }
+        logger.info("installPlugin start dir=\(pluginDir.path, privacy: .public)")
         installError = nil
 
         do {
@@ -85,6 +95,7 @@ class ObsidianSetupViewModel: ObservableObject {
             startHealthPolling()
         } catch {
             installError = "Installation failed: \(error.localizedDescription)"
+            logger.error("installPlugin failed error=\(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -108,19 +119,20 @@ class ObsidianSetupViewModel: ObservableObject {
     private func writeDragonglassConfig() {
         guard let pluginDir else { return }
         let configPath = pluginDir.appendingPathComponent("dragonglass.json")
-        let config = ["port": 51362]
+        let config = ["port": BackendPaths.obsidianPort]
         if let data = try? JSONSerialization.data(withJSONObject: config) {
             try? data.write(to: configPath)
         }
     }
 
     func startHealthPolling() {
+        logger.info("startHealthPolling")
         isPolling = true
         healthPollTask = Task {
             while !isHealthy && !Task.isCancelled {
                 await checkHealth()
                 if !isHealthy {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    try? await Task.sleep(for: obsidianHealthPollInterval)
                 }
             }
             isPolling = false
@@ -128,16 +140,17 @@ class ObsidianSetupViewModel: ObservableObject {
     }
 
     private func checkHealth() async {
-        guard let url = URL(string: "http://127.0.0.1:51362/health") else { return }
+        let url = BackendPaths.obsidianHealthURL
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             if let http = response as? HTTPURLResponse, http.statusCode == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                json["status"] as? String == "ok" {
                 isHealthy = true
+                logger.info("checkHealth ready")
             }
         } catch {
-            // not yet healthy
+            logger.debug("checkHealth pending")
         }
     }
 
