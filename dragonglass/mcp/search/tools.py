@@ -9,18 +9,18 @@ import httpx
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.mcp.search.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
-from dragonglass.mcp.search.notes import (
+from dragonglass.mcp.edit.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
+from dragonglass.mcp.edit.notes import (
     do_manage_frontmatter,
     do_patch_note_lines,
     do_read_note_with_hash,
 )
+from dragonglass.mcp.edit.tags import do_manage_tags
 from dragonglass.mcp.search.queries import (
     _do_keyword_search,
     _do_vector_search,
     _StringList,
 )
-from dragonglass.mcp.search.tags import do_manage_tags
 from dragonglass.mcp.telemetry import ToolPhase, emit_tool_event
 from dragonglass.search.session import new_session
 

@@ -8,7 +8,7 @@ from typing import Self
 import httpx
 import pytest
 
-import dragonglass.mcp.search as mcp_search
+import dragonglass.mcp.edit as mcp_search
 from dragonglass.config import Settings
 from dragonglass.search.session import new_session
 

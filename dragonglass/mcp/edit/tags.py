@@ -6,7 +6,7 @@ import typing
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.mcp.search.frontmatter import (
+from dragonglass.mcp.edit.frontmatter import (
     ManageTagsArgs,
     _body_from_frontmatter_rest,
     _collect_inline_tags,
@@ -18,7 +18,7 @@ from dragonglass.mcp.search.frontmatter import (
     set_frontmatter_key_lines,
     split_frontmatter_block,
 )
-from dragonglass.mcp.search.notes import _patch_entire_note, do_read_note_with_hash
+from dragonglass.mcp.edit.notes import _patch_entire_note, do_read_note_with_hash
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ import typing
 import httpx
 
 from dragonglass.config import Settings
-from dragonglass.mcp.search.frontmatter import (
+from dragonglass.mcp.edit.frontmatter import (
     ManageFrontmatterArgs,
     PatchLinesArgs,
     _get_frontmatter_key_value,

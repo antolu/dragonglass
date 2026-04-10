@@ -14,7 +14,7 @@ from mcp.types import TextContent
 from opencode_ai import AsyncOpencode
 from pydantic import JsonValue
 
-from dragonglass.agent.approval import DragonglassTool, compute_diff, needs_approval
+from dragonglass.agent.approval import DragonglassTool, needs_approval
 from dragonglass.agent.mcp import (
     _EXCLUDED_MCP_TOOLS,
     _EXTRA_MCP_SERVERS,
@@ -49,7 +49,7 @@ from dragonglass.agent.types import (
     _ToolCallMsg,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings
-from dragonglass.mcp import ToolPhase, create_search_server
+from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
 
 logger = logging.getLogger(__name__)
 
