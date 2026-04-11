@@ -10,6 +10,14 @@ private let whisperDrainDelay: Duration = .milliseconds(500)
 /// Debounce window after the last speech segment before auto-firing the transcription.
 private let autoSendDelay: Duration = .seconds(1)
 
+struct ModelDownloadState {
+    var fraction: Double
+    var bytesReceived: Int64
+    var totalBytes: Int64
+    var bytesPerSecond: Double
+    var eta: TimeInterval?
+}
+
 @MainActor
 final class STTManager: ObservableObject {
     @Published var isRecording = false
@@ -17,7 +25,7 @@ final class STTManager: ObservableObject {
     @Published var isModelLoading = false
     @Published var pendingText: String?
     @Published var readyToFire = false
-    @Published var downloadProgress: [String: Double] = [:]
+    @Published var downloadProgress: [String: ModelDownloadState] = [:]
     @Published var availableModels: [String] = []
     @Published var modelSizes: [String: Int] = [:]
     @Published var localModels: [String] = []
@@ -152,8 +160,10 @@ final class STTManager: ObservableObject {
     func downloadModel(_ modelName: String) {
         guard downloadProgress[modelName] == nil else { return }
         logger.debug("Starting download for model: \(modelName)")
-        downloadProgress[modelName] = 0.0
+        downloadProgress[modelName] = ModelDownloadState(fraction: 0, bytesReceived: 0, totalBytes: 0, bytesPerSecond: 0, eta: nil)
         let downloadBase = URL(fileURLWithPath: localModelPath)
+        var lastBytes: Int64 = 0
+        var lastTime = Date()
         Task {
             do {
                 _ = try await WhisperKit.download(
@@ -161,8 +171,23 @@ final class STTManager: ObservableObject {
                     downloadBase: downloadBase,
                     from: Self.repoName,
                     progressCallback: { [weak self] progress in
+                        let now = Date()
+                        let received = progress.completedUnitCount
+                        let total = progress.totalUnitCount
+                        let elapsed = now.timeIntervalSince(lastTime)
+                        let delta = received - lastBytes
+                        let speed = elapsed > 0 ? Double(delta) / elapsed : 0
+                        let remaining = speed > 0 && total > received ? Double(total - received) / speed : nil
+                        lastBytes = received
+                        lastTime = now
                         Task { @MainActor in
-                            self?.downloadProgress[modelName] = progress.fractionCompleted
+                            self?.downloadProgress[modelName] = ModelDownloadState(
+                                fraction: progress.fractionCompleted,
+                                bytesReceived: received,
+                                totalBytes: total,
+                                bytesPerSecond: speed,
+                                eta: remaining
+                            )
                         }
                     }
                 )

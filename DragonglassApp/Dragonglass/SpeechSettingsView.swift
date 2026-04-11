@@ -214,7 +214,16 @@ struct ModelRowView: View {
 
     private var isLocal: Bool { sttManager.localModels.contains(modelName) }
     private var isActive: Bool { sttManager.selectedModel == modelName }
-    private var progress: Double? { sttManager.downloadProgress[modelName] }
+    private var downloadState: ModelDownloadState? { sttManager.downloadProgress[modelName] }
+
+    private func formatSpeed(_ bps: Double) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bps), countStyle: .file) + "/s"
+    }
+
+    private func formatETA(_ seconds: TimeInterval) -> String {
+        if seconds < 60 { return "\(Int(seconds))s" }
+        return "\(Int(seconds / 60))m \(Int(seconds.truncatingRemainder(dividingBy: 60)))s"
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -229,13 +238,25 @@ struct ModelRowView: View {
 
             Spacer()
 
-            if let p = progress {
-                ProgressView(value: p)
-                    .frame(width: 70)
-                    .controlSize(.small)
-                Text("\(Int(p * 100))%")
+            if let state = downloadState {
+                VStack(alignment: .trailing, spacing: 1) {
+                    ProgressView(value: state.fraction)
+                        .frame(width: 70)
+                        .controlSize(.small)
+                    HStack(spacing: 4) {
+                        Text("\(Int(state.fraction * 100))%")
+                        if state.bytesPerSecond > 0 {
+                            Text("·")
+                            Text(formatSpeed(state.bytesPerSecond))
+                            if let eta = state.eta {
+                                Text("·")
+                                Text(formatETA(eta))
+                            }
+                        }
+                    }
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                }
             } else if isLocal {
                 Text(diskSize())
                     .font(.caption2)
@@ -261,7 +282,7 @@ struct ModelRowView: View {
         .onTapGesture {
             if isLocal {
                 sttManager.switchModel(to: modelName)
-            } else if progress == nil {
+            } else if downloadState == nil {
                 confirmDownload = true
             }
         }
