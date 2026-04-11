@@ -86,10 +86,40 @@ final class STTManager: ObservableObject {
             .path
     }
 
+    private static let completeMarker = ".complete"
+
+    private func sentinelURL(for modelName: String) -> URL {
+        URL(fileURLWithPath: modelRepoPath)
+            .appendingPathComponent(modelName)
+            .appendingPathComponent(Self.completeMarker)
+    }
+
+    private func isModelComplete(_ modelName: String) -> Bool {
+        FileManager.default.fileExists(atPath: sentinelURL(for: modelName).path)
+    }
+
+    private func writeCompleteSentinel(for modelName: String) {
+        let url = sentinelURL(for: modelName)
+        try? Data().write(to: url)
+    }
+
+    private static let requiredModelFiles = ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc", "config.json"]
+
+    private func looksComplete(_ modelName: String) -> Bool {
+        let folder = URL(fileURLWithPath: modelRepoPath).appendingPathComponent(modelName)
+        return Self.requiredModelFiles.allSatisfy {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
+    }
+
     func refreshLocalModels() {
         try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: modelRepoPath)) ?? []
-        let models = contents.filter { !$0.hasPrefix(".") }
+        for name in contents where !name.hasPrefix(".") && !isModelComplete(name) && looksComplete(name) {
+            logger.debug("Grandfathering existing complete model: \(name)")
+            writeCompleteSentinel(for: name)
+        }
+        let models = contents.filter { !$0.hasPrefix(".") && isModelComplete($0) }
         localModels = models
         logger.debug("Refreshed local models: \(models)")
     }
@@ -137,6 +167,7 @@ final class STTManager: ObservableObject {
                     }
                 )
                 logger.debug("Download completed for: \(modelName)")
+                self.writeCompleteSentinel(for: modelName)
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: modelName)
                     self.refreshLocalModels()
