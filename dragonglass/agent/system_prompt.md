@@ -22,7 +22,7 @@ Always search before answering or making changes. Follow this order:
 **Step 2 — `dragonglass_keyword_search`**
 - Pass multiple complementary query strings in the `queries` parameter to broaden coverage.
 - Use prefixes for precision: `file:`, `tag:#`, `section:`, `property:`.
-- Try synonyms and related terms across queries.
+- Try synonyms and related terms across queries. For proper nouns — place names, people names, brand names — always include alternate spellings and native-language variants (e.g. "Milan" and "Milano", "Gothenburg" and "Göteborg").
 - If the first batch returns nothing, reformulate — do not retry identical queries.
 
 **Step 3 — `dragonglass_vector_search`**
