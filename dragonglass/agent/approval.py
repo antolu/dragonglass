@@ -17,6 +17,7 @@ class DragonglassTool(enum.StrEnum):
     MANAGE_FRONTMATTER = "dragonglass_manage_frontmatter"
     MANAGE_TAGS = "dragonglass_manage_tags"
     NEW_SEARCH_SESSION = "dragonglass_new_search_session"
+    GET_DATE_CONTEXT = "dragonglass_get_date_context"
     KEYWORD_SEARCH = "dragonglass_keyword_search"
     VECTOR_SEARCH = "dragonglass_vector_search"
     RUN_COMMAND = "dragonglass_run_command"

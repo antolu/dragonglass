@@ -17,6 +17,8 @@ Core rules:
 
 Always search before answering or making changes. Follow this order:
 
+**Step 0 — `dragonglass_get_date_context`** (when needed). If the query involves a relative or ambiguous date ("next Sunday", "last week", "yesterday", a month and day without a year), call this first to get the concrete ISO dates before searching.
+
 **Step 1 — `dragonglass_new_search_session`** (mandatory). `dragonglass_keyword_search` and `dragonglass_vector_search` require an active session.
 
 **Step 2 — `dragonglass_keyword_search`**
@@ -70,6 +72,8 @@ For edits inside an existing file, follow this flow:
 - Use `dragonglass_manage_frontmatter` for get/set/delete operations.
 
 ## Tool Reference
+
+**`dragonglass_get_date_context`** — returns today's date and a week calendar anchored at today + `offset_days` (default 0). Use to resolve relative date expressions: pass `-7` for last week, `+7` for next week, `-14` for two weeks ago, etc.
 
 **`dragonglass_read_note_with_hash`** — returns content with line numbers (e.g., `L10: content`) and captures the hash of the ENTIRE file. Use optional `start_line` and `end_line` for targeted reading or verification.
 

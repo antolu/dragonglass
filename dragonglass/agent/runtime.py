@@ -65,6 +65,7 @@ _TOOL_STATUS: dict[str, str] = {
 
 _SEARCH_TOOLS: frozenset[str] = frozenset({
     DragonglassTool.NEW_SEARCH_SESSION,
+    DragonglassTool.GET_DATE_CONTEXT,
     DragonglassTool.KEYWORD_SEARCH,
     DragonglassTool.VECTOR_SEARCH,
     DragonglassTool.RUN_COMMAND,
