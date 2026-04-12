@@ -10,6 +10,14 @@ private let whisperDrainDelay: Duration = .milliseconds(500)
 /// Debounce window after the last speech segment before auto-firing the transcription.
 private let autoSendDelay: Duration = .seconds(1)
 
+struct ModelDownloadState {
+    var fraction: Double
+    var bytesReceived: Int64
+    var totalBytes: Int64
+    var bytesPerSecond: Double
+    var eta: TimeInterval?
+}
+
 @MainActor
 final class STTManager: ObservableObject {
     @Published var isRecording = false
@@ -17,7 +25,7 @@ final class STTManager: ObservableObject {
     @Published var isModelLoading = false
     @Published var pendingText: String?
     @Published var readyToFire = false
-    @Published var downloadProgress: [String: Double] = [:]
+    @Published var downloadProgress: [String: ModelDownloadState] = [:]
     @Published var availableModels: [String] = []
     @Published var modelSizes: [String: Int] = [:]
     @Published var localModels: [String] = []
@@ -47,12 +55,14 @@ final class STTManager: ObservableObject {
     private var streamTranscriber: AudioStreamTranscriber?
     private var streamTask: Task<Void, Never>?
     private var autoSendTask: Task<Void, Never>?
+    private var dirWatchSource: DispatchSourceFileSystemObject?
 
     init() {
         logger.debug("Initializing STTManager")
         checkMicPermission()
         checkAccessibilityPermission()
         refreshLocalModels()
+        startDirectoryWatcher()
         Task { await fetchAvailableModels() }
         Task { try? await ensureLoaded() }
     }
@@ -86,10 +96,66 @@ final class STTManager: ObservableObject {
             .path
     }
 
+    private static let completeMarker = ".complete"
+
+    private func startDirectoryWatcher() {
+        try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
+        let fd = open(modelRepoPath, O_EVTONLY)
+        guard fd >= 0 else {
+            logger.warning("Could not open model directory for watching")
+            return
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            self?.refreshLocalModels()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        dirWatchSource = source
+        logger.debug("Directory watcher started on \(self.modelRepoPath)")
+    }
+
+    func stopDirectoryWatcher() {
+        dirWatchSource?.cancel()
+        dirWatchSource = nil
+    }
+
+    private func sentinelURL(for modelName: String) -> URL {
+        URL(fileURLWithPath: modelRepoPath)
+            .appendingPathComponent(modelName)
+            .appendingPathComponent(Self.completeMarker)
+    }
+
+    private func isModelComplete(_ modelName: String) -> Bool {
+        FileManager.default.fileExists(atPath: sentinelURL(for: modelName).path)
+    }
+
+    private func writeCompleteSentinel(for modelName: String) {
+        let url = sentinelURL(for: modelName)
+        try? Data().write(to: url)
+    }
+
+    private static let requiredModelFiles = ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc", "config.json"]
+
+    private func looksComplete(_ modelName: String) -> Bool {
+        let folder = URL(fileURLWithPath: modelRepoPath).appendingPathComponent(modelName)
+        return Self.requiredModelFiles.allSatisfy {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
+    }
+
     func refreshLocalModels() {
         try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: modelRepoPath)) ?? []
-        let models = contents.filter { !$0.hasPrefix(".") }
+        for name in contents where !name.hasPrefix(".") && !isModelComplete(name) && looksComplete(name) {
+            logger.debug("Grandfathering existing complete model: \(name)")
+            writeCompleteSentinel(for: name)
+        }
+        let models = contents.filter { !$0.hasPrefix(".") && isModelComplete($0) }
         localModels = models
         logger.debug("Refreshed local models: \(models)")
     }
@@ -122,8 +188,10 @@ final class STTManager: ObservableObject {
     func downloadModel(_ modelName: String) {
         guard downloadProgress[modelName] == nil else { return }
         logger.debug("Starting download for model: \(modelName)")
-        downloadProgress[modelName] = 0.0
+        downloadProgress[modelName] = ModelDownloadState(fraction: 0, bytesReceived: 0, totalBytes: 0, bytesPerSecond: 0, eta: nil)
         let downloadBase = URL(fileURLWithPath: localModelPath)
+        var lastBytes: Int64 = 0
+        var lastTime = Date()
         Task {
             do {
                 _ = try await WhisperKit.download(
@@ -131,12 +199,28 @@ final class STTManager: ObservableObject {
                     downloadBase: downloadBase,
                     from: Self.repoName,
                     progressCallback: { [weak self] progress in
+                        let now = Date()
+                        let received = progress.completedUnitCount
+                        let total = progress.totalUnitCount
+                        let elapsed = now.timeIntervalSince(lastTime)
+                        let delta = received - lastBytes
+                        let speed = elapsed > 0 ? Double(delta) / elapsed : 0
+                        let remaining = speed > 0 && total > received ? Double(total - received) / speed : nil
+                        lastBytes = received
+                        lastTime = now
                         Task { @MainActor in
-                            self?.downloadProgress[modelName] = progress.fractionCompleted
+                            self?.downloadProgress[modelName] = ModelDownloadState(
+                                fraction: progress.fractionCompleted,
+                                bytesReceived: received,
+                                totalBytes: total,
+                                bytesPerSecond: speed,
+                                eta: remaining
+                            )
                         }
                     }
                 )
                 logger.debug("Download completed for: \(modelName)")
+                self.writeCompleteSentinel(for: modelName)
                 await MainActor.run {
                     self.downloadProgress.removeValue(forKey: modelName)
                     self.refreshLocalModels()
