@@ -7,6 +7,7 @@ struct InputBarView: View {
     @Binding var inputText: String
     let onSend: () -> Void
     let onSTT: (String) -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack {
@@ -14,6 +15,7 @@ struct InputBarView: View {
                 .textFieldStyle(.plain)
                 .onSubmit(onSend)
                 .disabled(client.isThinking)
+                .focused($isFocused)
 
             MicButton()
                 .environmentObject(sttManager)
@@ -38,6 +40,7 @@ struct InputBarView: View {
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear { isFocused = true }
         .onChange(of: sttManager.pendingText) { _, text in
             if let text { inputText = text }
         }

@@ -34,6 +34,9 @@ struct CollapsedToolSummary: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .textSelection(.disabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isExpanded.toggle() }
             }
         )
     }
