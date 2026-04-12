@@ -99,6 +99,9 @@ struct SpeechSettingsView: View {
                     .font(.caption2)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture { modelsExpanded.toggle() }
         }
         .font(.caption)
     }

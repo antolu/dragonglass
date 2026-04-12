@@ -64,7 +64,7 @@ struct SettingsView: View {
                                 .environmentObject(sttManager)
                                 .environmentObject(hotkeyManager)
                         }
-                        DisclosureGroup("Advanced") {
+                        DisclosureGroup {
                             VStack(alignment: .leading, spacing: 12) {
                                 settingsSection("Environment Variables") {
                                     EnvironmentSettingsSection(
@@ -76,6 +76,10 @@ struct SettingsView: View {
                                 }
                             }
                             .padding(.top, 8)
+                        } label: {
+                            Text("Advanced")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
                         .font(.caption)
                         .foregroundColor(.secondary)
