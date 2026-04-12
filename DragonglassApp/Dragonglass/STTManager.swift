@@ -55,12 +55,14 @@ final class STTManager: ObservableObject {
     private var streamTranscriber: AudioStreamTranscriber?
     private var streamTask: Task<Void, Never>?
     private var autoSendTask: Task<Void, Never>?
+    private var dirWatchSource: DispatchSourceFileSystemObject?
 
     init() {
         logger.debug("Initializing STTManager")
         checkMicPermission()
         checkAccessibilityPermission()
         refreshLocalModels()
+        startDirectoryWatcher()
         Task { await fetchAvailableModels() }
         Task { try? await ensureLoaded() }
     }
@@ -95,6 +97,32 @@ final class STTManager: ObservableObject {
     }
 
     private static let completeMarker = ".complete"
+
+    private func startDirectoryWatcher() {
+        try? FileManager.default.createDirectory(atPath: modelRepoPath, withIntermediateDirectories: true)
+        let fd = open(modelRepoPath, O_EVTONLY)
+        guard fd >= 0 else {
+            logger.warning("Could not open model directory for watching")
+            return
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            self?.refreshLocalModels()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        dirWatchSource = source
+        logger.debug("Directory watcher started on \(self.modelRepoPath)")
+    }
+
+    func stopDirectoryWatcher() {
+        dirWatchSource?.cancel()
+        dirWatchSource = nil
+    }
 
     private func sentinelURL(for modelName: String) -> URL {
         URL(fileURLWithPath: modelRepoPath)
