@@ -10,6 +10,7 @@ from dragonglass.hybrid_search import (
     LLMCompletionFn,
     SearchEngine,
     SearchHit,
+    SearchSession,
     SemanticResult,
     SemanticSearchBackend,
     VectorSearchBackend,
@@ -92,8 +93,8 @@ class MockSemanticBackend(SemanticSearchBackend):
 def test_keyword_search_delegates_to_backend() -> None:
     backend = MockKeywordBackend([SearchHit(path="a.md"), SearchHit(path="b.md")])
     engine = SearchEngine(keyword_backend=backend)
-    engine.new_session()
-    hits = asyncio.run(engine.keyword_search(["foo", "bar"]))
+    session = engine.new_session()
+    hits = asyncio.run(engine.keyword_search(session, ["foo", "bar"]))
     assert len(hits) == 2  # noqa: PLR2004
     assert hits[0].path == "a.md"
     assert backend.calls == [["foo", "bar"]]
@@ -102,24 +103,23 @@ def test_keyword_search_delegates_to_backend() -> None:
 def test_keyword_search_updates_session() -> None:
     backend = MockKeywordBackend([SearchHit(path="note.md")])
     engine = SearchEngine(keyword_backend=backend)
-    engine.new_session()
-    asyncio.run(engine.keyword_search(["query"]))
-    assert engine.session is not None
-    assert "note.md" in engine.session.file_paths
+    session = engine.new_session()
+    asyncio.run(engine.keyword_search(session, ["query"]))
+    assert any(h.path == "note.md" for h in session.keyword_hits)
 
 
 def test_keyword_search_no_backend_raises() -> None:
     engine = SearchEngine()
-    engine.new_session()
+    session = engine.new_session()
     with pytest.raises(RuntimeError, match="No keyword search backend"):
-        asyncio.run(engine.keyword_search(["query"]))
+        asyncio.run(engine.keyword_search(session, ["query"]))
 
 
 def test_vector_search_delegates_to_backend() -> None:
     backend = MockVectorBackend([SearchHit(path="x.md", score=0.7)])
     engine = SearchEngine(vector_backend=backend)
-    engine.new_session()
-    hits = asyncio.run(engine.vector_search("meaning", top_n=5, min_score=0.4))
+    session = engine.new_session()
+    hits = asyncio.run(engine.vector_search(session, "meaning", top_n=5, min_score=0.4))
     assert len(hits) == 1
     assert hits[0].path == "x.md"
     assert hits[0].score == pytest.approx(0.7)
@@ -127,18 +127,18 @@ def test_vector_search_delegates_to_backend() -> None:
 
 def test_vector_search_no_backend_raises() -> None:
     engine = SearchEngine()
-    engine.new_session()
+    session = engine.new_session()
     with pytest.raises(RuntimeError, match="No vector search backend"):
-        asyncio.run(engine.vector_search("query"))
+        asyncio.run(engine.vector_search(session, "query"))
 
 
 def test_vector_search_uses_allowlist_from_session() -> None:
     kw_backend = MockKeywordBackend([SearchHit(path="a.md"), SearchHit(path="b.md")])
     vec_backend = MockVectorBackend([SearchHit(path="a.md", score=0.8)])
     engine = SearchEngine(keyword_backend=kw_backend, vector_backend=vec_backend)
-    engine.new_session()
-    asyncio.run(engine.keyword_search(["query"]))
-    asyncio.run(engine.vector_search("meaning"))
+    session = engine.new_session()
+    asyncio.run(engine.keyword_search(session, ["query"]))
+    asyncio.run(engine.vector_search(session, "meaning"))
     assert vec_backend.last_call is not None
     assert vec_backend.last_call.allowlist == ["a.md", "b.md"]
 
@@ -147,9 +147,9 @@ def test_vector_search_bumps_min_score_with_allowlist() -> None:
     kw_backend = MockKeywordBackend([SearchHit(path="a.md")])
     vec_backend = MockVectorBackend([])
     engine = SearchEngine(keyword_backend=kw_backend, vector_backend=vec_backend)
-    engine.new_session()
-    asyncio.run(engine.keyword_search(["query"]))
-    asyncio.run(engine.vector_search("meaning", min_score=0.3))
+    session = engine.new_session()
+    asyncio.run(engine.keyword_search(session, ["query"]))
+    asyncio.run(engine.vector_search(session, "meaning", min_score=0.3))
     assert vec_backend.last_call is not None
     assert vec_backend.last_call.min_score == pytest.approx(0.5)
 
@@ -157,8 +157,8 @@ def test_vector_search_bumps_min_score_with_allowlist() -> None:
 def test_vector_search_no_allowlist_uses_provided_min_score() -> None:
     vec_backend = MockVectorBackend([])
     engine = SearchEngine(vector_backend=vec_backend)
-    engine.new_session()
-    asyncio.run(engine.vector_search("meaning", min_score=0.3))
+    session = engine.new_session()
+    asyncio.run(engine.vector_search(session, "meaning", min_score=0.3))
     assert vec_backend.last_call is not None
     assert vec_backend.last_call.min_score == pytest.approx(0.3)
     assert vec_backend.last_call.allowlist is None
@@ -180,9 +180,9 @@ def test_semantic_search_passes_backends_and_llm() -> None:
         semantic_backend=sem_backend,
         llm=my_llm,
     )
-    engine.new_session()
+    session = engine.new_session()
     results = asyncio.run(
-        engine.semantic_search("query", system_prompt="be concise", top_n=3)
+        engine.semantic_search(session, "query", system_prompt="be concise", top_n=3)
     )
     assert len(results) == 1
     assert results[0].path == "r.md"
@@ -196,22 +196,41 @@ def test_semantic_search_passes_backends_and_llm() -> None:
 
 def test_semantic_search_no_backend_raises() -> None:
     engine = SearchEngine()
-    engine.new_session()
+    session = engine.new_session()
     with pytest.raises(RuntimeError, match="No semantic search backend"):
-        asyncio.run(engine.semantic_search("query"))
+        asyncio.run(engine.semantic_search(session, "query"))
 
 
 def test_new_session_creates_session() -> None:
     engine = SearchEngine()
-    assert engine.session is None
     session = engine.new_session()
-    assert engine.session is session
+    assert isinstance(session, SearchSession)
     assert session.id is not None
 
 
-def test_new_session_replaces_previous() -> None:
+def test_new_session_returns_independent_sessions() -> None:
     engine = SearchEngine()
     s1 = engine.new_session()
     s2 = engine.new_session()
     assert s1 is not s2
-    assert engine.session is s2
+    assert s1.id != s2.id
+
+
+def test_vector_search_stores_hits_in_session() -> None:
+    backend = MockVectorBackend([SearchHit(path="x.md", score=0.8)])
+    engine = SearchEngine(vector_backend=backend)
+    session = engine.new_session()
+    asyncio.run(engine.vector_search(session, "query"))
+    assert any(h.path == "x.md" for h in session.vector_hits)
+
+
+def test_session_allowlist_override() -> None:
+    session = SearchSession()
+    session.set_allowlist(["forced.md"])
+    assert session.allowlist == ["forced.md"]
+
+
+def test_session_allowlist_from_keyword_hits() -> None:
+    session = SearchSession()
+    session.add_keyword_hits([SearchHit(path="b.md"), SearchHit(path="a.md")])
+    assert session.allowlist == ["a.md", "b.md"]
