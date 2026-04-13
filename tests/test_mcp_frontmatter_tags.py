@@ -10,7 +10,7 @@ import pytest
 
 import dragonglass.mcp.edit as mcp_search
 from dragonglass.config import Settings
-from dragonglass.search.session import new_session
+from dragonglass.hybrid_search import SearchSession
 
 _EXPECTED_PATCH_CALLS = 2
 _EXPECTED_END_LINE = 6
@@ -68,7 +68,7 @@ def install_fake_client(
 def test_manage_frontmatter_get_returns_existing_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = "---\ntitle: Note\nstatus: active\n---\n\nBody"
 
@@ -97,6 +97,7 @@ def test_manage_frontmatter_get_returns_existing_value(
                 "operation": "get",
                 "key": "status",
             },
+            session,
         )
     )
 
@@ -108,7 +109,7 @@ def test_manage_frontmatter_get_returns_existing_value(
 def test_manage_frontmatter_set_updates_entire_note(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = "---\ntitle: Note\nstatus: active\n---\n\nBody"
 
@@ -152,6 +153,7 @@ def test_manage_frontmatter_set_updates_entire_note(
                 "key": "status",
                 "value": "done",
             },
+            session,
         )
     )
 
@@ -162,7 +164,7 @@ def test_manage_frontmatter_set_updates_entire_note(
 def test_manage_tags_add_updates_frontmatter_tags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = "---\ntitle: Note\ntags:\n  - project\n---\n\nBody #inline"
 
@@ -202,6 +204,7 @@ def test_manage_tags_add_updates_frontmatter_tags(
                 "operation": "add",
                 "tags": ["#active", "project"],
             },
+            session,
         )
     )
 
@@ -213,7 +216,7 @@ def test_manage_tags_add_updates_frontmatter_tags(
 def test_manage_tags_remove_removes_frontmatter_and_inline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = (
         "---\ntitle: Note\ntags:\n  - project\n  - active\n---\n"
@@ -257,6 +260,7 @@ def test_manage_tags_remove_removes_frontmatter_and_inline(
                 "operation": "remove",
                 "tags": ["active"],
             },
+            session,
         )
     )
 
@@ -269,7 +273,7 @@ def test_manage_tags_remove_removes_frontmatter_and_inline(
 def test_manage_tags_list_returns_union_of_frontmatter_and_inline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = "---\ntags:\n  - project\n---\n\nBody #active #project"
 
@@ -296,6 +300,7 @@ def test_manage_tags_list_returns_union_of_frontmatter_and_inline(
                 "path": "Notes/Test.md",
                 "operation": "list",
             },
+            session,
         )
     )
 
@@ -306,7 +311,7 @@ def test_manage_tags_list_returns_union_of_frontmatter_and_inline(
 def test_manage_frontmatter_preserves_other_frontmatter_lines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
     note_content = (
         "---\n"
@@ -361,6 +366,7 @@ def test_manage_frontmatter_preserves_other_frontmatter_lines(
                 "key": "status",
                 "value": "archived",
             },
+            session,
         )
     )
 
