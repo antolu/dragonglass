@@ -6,6 +6,7 @@ from typing import Self
 
 import httpx
 import pytest
+from pydantic import JsonValue
 
 from dragonglass.search.backends import ObsidianHttpBackend
 
@@ -14,12 +15,12 @@ class FakeResponse:
     def __init__(
         self,
         status_code: int,
-        payload: list[dict[str, object]] | dict[str, object],
+        payload: JsonValue,
     ) -> None:
         self.status_code = status_code
         self._payload = payload
 
-    def json(self) -> list[dict[str, object]] | dict[str, object]:
+    def json(self) -> JsonValue:
         return self._payload
 
     def raise_for_status(self) -> None:
@@ -34,7 +35,7 @@ class FakeResponse:
 class FakeAsyncClient:
     def __init__(self, response: FakeResponse) -> None:
         self._response = response
-        self.calls: list[tuple[str, object]] = []
+        self.calls: list[tuple[str, dict[str, JsonValue] | None]] = []
 
     async def __aenter__(self) -> Self:
         return self
@@ -50,8 +51,8 @@ class FakeAsyncClient:
     async def post(
         self,
         url: str,
-        params: dict[str, object] | None = None,
-        json: dict[str, object] | None = None,
+        params: dict[str, JsonValue] | None = None,
+        json: dict[str, JsonValue] | None = None,
     ) -> FakeResponse:
         self.calls.append((url, params or json))
         return self._response
