@@ -3,12 +3,12 @@ from __future__ import annotations
 import abc
 import typing
 
-from dragonglass.hybrid_search._types import KeywordHit, SemanticResult, VectorHit
+from dragonglass.hybrid_search._types import SearchHit, SemanticResult
 
 
 class KeywordSearchBackend(abc.ABC):
     @abc.abstractmethod
-    async def keyword_search(self, queries: list[str]) -> list[KeywordHit]: ...
+    async def keyword_search(self, queries: list[str]) -> list[SearchHit]: ...
 
 
 class VectorSearchBackend(abc.ABC):
@@ -20,7 +20,7 @@ class VectorSearchBackend(abc.ABC):
         top_n: int = 10,
         min_score: float = 0.35,
         allowlist: list[str] | None = None,
-    ) -> list[VectorHit]: ...
+    ) -> list[SearchHit]: ...
 
 
 class LLMCompletionFn(typing.Protocol):

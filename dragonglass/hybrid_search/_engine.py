@@ -9,7 +9,7 @@ from dragonglass.hybrid_search._interfaces import (
     VectorSearchBackend,
 )
 from dragonglass.hybrid_search._session import SearchSession
-from dragonglass.hybrid_search._types import KeywordHit, SemanticResult, VectorHit
+from dragonglass.hybrid_search._types import SearchHit, SemanticResult
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class SearchEngine:
     def session(self) -> SearchSession | None:
         return self._session
 
-    async def keyword_search(self, queries: list[str]) -> list[KeywordHit]:
+    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
         if self._keyword_backend is None:
             raise RuntimeError("No keyword search backend configured")
         hits = await self._keyword_backend.keyword_search(queries)
@@ -54,7 +54,7 @@ class SearchEngine:
         *,
         top_n: int = 10,
         min_score: float = 0.35,
-    ) -> list[VectorHit]:
+    ) -> list[SearchHit]:
         if self._vector_backend is None:
             raise RuntimeError("No vector search backend configured")
         allowlist = self._session.allowlist if self._session else None

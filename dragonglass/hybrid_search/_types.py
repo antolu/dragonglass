@@ -4,14 +4,9 @@ import dataclasses
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class KeywordHit:
+class SearchHit:
     path: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class VectorHit:
-    path: str
-    score: float
+    score: float | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
