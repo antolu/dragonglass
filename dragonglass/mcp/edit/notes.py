@@ -6,6 +6,7 @@ import typing
 import httpx
 
 from dragonglass.config import Settings
+from dragonglass.hybrid_search import SearchSession
 from dragonglass.mcp.edit.frontmatter import (
     ManageFrontmatterArgs,
     PatchLinesArgs,
@@ -16,7 +17,6 @@ from dragonglass.mcp.edit.frontmatter import (
     set_frontmatter_key_lines,
     split_frontmatter_block,
 )
-from dragonglass.search.session import get_current_session, new_session
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,7 @@ def _parse_response_json(resp: httpx.Response) -> dict[str, typing.Any] | None:
 async def do_read_note_with_hash(  # noqa: PLR0911
     settings: Settings,
     path: str,
+    session: SearchSession,
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> dict[str, typing.Any]:
@@ -62,11 +63,6 @@ async def do_read_note_with_hash(  # noqa: PLR0911
         start_line,
         end_line,
     )
-    session = get_current_session()
-    if not session:
-        return {
-            "error": "No active search session. Call dragonglass_new_search_session first."
-        }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -89,14 +85,11 @@ async def do_read_note_with_hash(  # noqa: PLR0911
                 lines = content.splitlines()
                 total_lines = len(lines)
 
-                # Format content with line numbers
-                # We use L{n}: format to be clear for the LLM
                 formatted_lines = [f"L{i + 1}: {line}" for i, line in enumerate(lines)]
 
                 if start_line is not None or end_line is not None:
                     s = (start_line if start_line is not None else 1) - 1
                     e = end_line if end_line is not None else total_lines
-                    # Clamp values
                     s = max(0, min(s, total_lines))
                     e = max(s, min(e, total_lines))
                     display_lines = formatted_lines[s:e]
@@ -147,9 +140,8 @@ async def do_read_note_with_hash(  # noqa: PLR0911
 async def do_patch_note_lines(  # noqa: PLR0911
     settings: Settings,
     args: PatchLinesArgs,
+    session: SearchSession,
 ) -> dict[str, typing.Any]:
-    session = get_current_session() or new_session()
-
     path = args["path"]
     resolved_expected_hash = args["expected_hash"] or session.get_last_read_hash(path)
     if not resolved_expected_hash:
@@ -226,12 +218,13 @@ async def do_patch_note_lines(  # noqa: PLR0911
         return {"error": str(exc)}
 
 
-async def patch_entire_note(
+async def patch_entire_note(  # noqa: PLR0913, PLR0917
     settings: Settings,
     path: str,
     expected_hash: str,
     original_content: str,
     new_content: str,
+    session: SearchSession,
 ) -> dict[str, typing.Any]:
     total_lines = len(original_content.splitlines())
     end_line = total_lines if total_lines > 0 else 1
@@ -244,12 +237,14 @@ async def patch_entire_note(
             "replacement": new_content,
             "expected_hash": expected_hash,
         },
+        session,
     )
 
 
 async def do_manage_frontmatter(  # noqa: PLR0911
     settings: Settings,
     args: ManageFrontmatterArgs,
+    session: SearchSession,
 ) -> dict[str, typing.Any]:
     path = args["path"]
     operation = args["operation"]
@@ -263,7 +258,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
     if not key:
         return {"error": "key is required"}
 
-    read_result = await do_read_note_with_hash(settings, path)
+    read_result = await do_read_note_with_hash(settings, path, session)
     if "error" in read_result:
         return read_result
 
@@ -312,7 +307,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             had_frontmatter,
         )
         patch_result = await patch_entire_note(
-            settings, path, content_hash, content, new_content
+            settings, path, content_hash, content, new_content, session
         )
         if "error" in patch_result:
             logger.warning(
@@ -360,7 +355,7 @@ async def do_manage_frontmatter(  # noqa: PLR0911
             had_frontmatter,
         )
         patch_result = await patch_entire_note(
-            settings, path, content_hash, content, new_content
+            settings, path, content_hash, content, new_content, session
         )
         if "error" in patch_result:
             logger.warning(

@@ -6,6 +6,7 @@ import typing
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
+from dragonglass.hybrid_search import SearchSession
 from dragonglass.mcp.edit.frontmatter import (
     ManageTagsArgs,
     _body_from_frontmatter_rest,
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
     settings: Settings,
     args: ManageTagsArgs,
+    session: SearchSession,
 ) -> dict[str, JsonValue]:
 
     path = args["path"]
@@ -41,7 +43,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
         len(normalized_tags),
     )
 
-    read_result = await do_read_note_with_hash(settings, path)
+    read_result = await do_read_note_with_hash(settings, path, session)
     if "error" in read_result:
         return read_result
 
@@ -106,6 +108,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             content_hash,
             content,
             new_content,
+            session,
         )
         if "error" in patch_result:
             logger.warning(
@@ -160,6 +163,7 @@ async def do_manage_tags(  # noqa: PLR0911, PLR0912, PLR0914
             content_hash,
             content,
             new_content,
+            session,
         )
         if "error" in patch_result:
             logger.warning(
