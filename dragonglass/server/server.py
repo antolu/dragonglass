@@ -15,7 +15,9 @@ from uvicorn import Config, Server
 
 from dragonglass.agent import VaultAgent
 from dragonglass.config import Settings, get_settings
+from dragonglass.hybrid_search import SearchEngine
 from dragonglass.mcp import create_search_server
+from dragonglass.search import ObsidianHttpBackend
 from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     is_embedding_model,
@@ -148,7 +150,9 @@ class DragonglassServer:
                 with contextlib.suppress(Exception):
                     os.kill(pid, signal.SIGKILL)
 
-        mcp_server = create_search_server(settings)
+        backend = ObsidianHttpBackend(base_url=settings.vector_search_url)
+        engine = SearchEngine(keyword_backend=backend, vector_backend=backend)
+        mcp_server = create_search_server(engine, settings)
 
         def run_uvicorn() -> None:
             config = Config(

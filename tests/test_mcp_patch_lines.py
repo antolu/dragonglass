@@ -10,7 +10,7 @@ import pytest
 
 import dragonglass.mcp.edit as mcp_search
 from dragonglass.config import Settings
-from dragonglass.search.session import new_session
+from dragonglass.hybrid_search import SearchSession
 
 
 class FakeResponse:
@@ -67,7 +67,7 @@ def install_fake_client(
 
 
 def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
 
     def response_for_url(
@@ -90,7 +90,9 @@ def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> Non
     install_fake_client(monkeypatch, response_for_url, calls)
     settings = Settings(vector_search_url="http://vector.local")
 
-    result = asyncio.run(mcp_search.do_read_note_with_hash(settings, "Notes/Test.md"))
+    result = asyncio.run(
+        mcp_search.do_read_note_with_hash(settings, "Notes/Test.md", session)
+    )
 
     assert result["content_hash"] == "sha256:oldhash"
     assert session.get_last_read_hash("Notes/Test.md") == "sha256:oldhash"
@@ -103,7 +105,7 @@ def test_read_note_with_hash_stores_hash(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_read_note_with_hash_line_numbers_and_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = new_session()
+    session = SearchSession()
     calls: list[tuple[str, dict[str, object], str]] = []
 
     def response_for_url(
@@ -126,7 +128,7 @@ def test_read_note_with_hash_line_numbers_and_range(
     # Read specific range: lines 2 to 3
     result = asyncio.run(
         mcp_search.do_read_note_with_hash(
-            settings, "Notes/Range.md", start_line=2, end_line=3
+            settings, "Notes/Range.md", session, start_line=2, end_line=3
         )
     )
 
@@ -139,7 +141,7 @@ def test_read_note_with_hash_line_numbers_and_range(
 
 
 def test_patch_note_lines_requires_previous_hash() -> None:
-    new_session()
+    session = SearchSession()
     settings = Settings(vector_search_url="http://vector.local")
 
     result = asyncio.run(
@@ -152,6 +154,7 @@ def test_patch_note_lines_requires_previous_hash() -> None:
                 "replacement": "updated",
                 "expected_hash": None,
             },
+            session,
         )
     )
 
@@ -161,7 +164,7 @@ def test_patch_note_lines_requires_previous_hash() -> None:
 def test_patch_note_lines_uses_stored_hash_when_expected_omitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = new_session()
+    session = SearchSession()
     session.set_last_read_hash("Notes/Test.md", "sha256:storedhash")
     calls: list[tuple[str, dict[str, object], str]] = []
 
@@ -196,6 +199,7 @@ def test_patch_note_lines_uses_stored_hash_when_expected_omitted(
                 "replacement": "patched",
                 "expected_hash": None,
             },
+            session,
         )
     )
 
@@ -208,7 +212,7 @@ def test_patch_note_lines_uses_stored_hash_when_expected_omitted(
 def test_patch_note_lines_propagates_hash_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = new_session()
+    session = SearchSession()
     session.set_last_read_hash("Notes/Test.md", "sha256:stalehash")
     calls: list[tuple[str, dict[str, object], str]] = []
 
@@ -241,6 +245,7 @@ def test_patch_note_lines_propagates_hash_mismatch(
                 "replacement": "patched",
                 "expected_hash": None,
             },
+            session,
         )
     )
 
@@ -251,7 +256,7 @@ def test_patch_note_lines_propagates_hash_mismatch(
 def test_patch_note_lines_explicit_expected_hash_overrides_stored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = new_session()
+    session = SearchSession()
     session.set_last_read_hash("Notes/Test.md", "sha256:storedhash")
     calls: list[tuple[str, dict[str, object], str]] = []
 
@@ -286,6 +291,7 @@ def test_patch_note_lines_explicit_expected_hash_overrides_stored(
                 "replacement": "patched",
                 "expected_hash": "sha256:explicit",
             },
+            session,
         )
     )
 
