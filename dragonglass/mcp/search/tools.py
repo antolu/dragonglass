@@ -12,7 +12,7 @@ import pydantic
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.hybrid_search import SearchEngine
+from dragonglass.hybrid_search import SearchEngine, SearchSession
 from dragonglass.mcp.edit.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
 from dragonglass.mcp.edit.notes import (
     do_manage_frontmatter,
@@ -42,6 +42,11 @@ _StringList = typing.Annotated[
 def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR0915
     m = fastmcp.FastMCP("search")
 
+    active_session: list[SearchSession] = []
+
+    def _get_session() -> SearchSession | None:
+        return active_session[0] if active_session else None
+
     def _safe_value_preview(value: JsonValue, limit: int = 160) -> str:
         text = str(value)
         if len(text) <= limit:
@@ -54,6 +59,8 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         MUST be called before starting keyword or vector searches.
         """
         session = engine.new_session()
+        active_session.clear()
+        active_session.append(session)
         emit_tool_event(
             "dragonglass_new_search_session",
             ToolPhase.DONE,
@@ -118,32 +125,30 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         if not queries:
             return {"error": "At least one search query is required"}
 
+        session = _get_session()
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
+
         started = time.monotonic()
         try:
-            hits = await engine.keyword_search(queries)
+            await engine.keyword_search(session, queries)
         except RuntimeError as exc:
             return {"error": str(exc)}
         elapsed = time.monotonic() - started
 
-        session = engine.session
-        all_paths = session.allowlist if session else []
         terms = ", ".join(str(q) for q in queries)
         emit_tool_event(
             "dragonglass_keyword_search",
             ToolPhase.DONE,
             f"Keyword search: {terms}",
-            f"{len(all_paths)} files found ({elapsed:.2f}s)",
+            f"{len(session.keyword_hits)} files found ({elapsed:.2f}s)",
         )
-        hits_json: list[JsonValue] = [
-            {"path": h.path, "score": h.score}
-            if h.score is not None
-            else {"path": h.path}
-            for h in hits
-        ]
         return {
-            "total_found": len(all_paths),
+            "total_found": len(session.keyword_hits),
             "query_count": len(queries),
-            "hits": typing.cast(list[JsonValue], hits_json),
+            "preview_paths": typing.cast(list[JsonValue], session.allowlist[:10]),
         }
 
     @m.tool(name="dragonglass_vector_search")
@@ -157,12 +162,23 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
             top_n: maximum number of results to return (default: 10).
             min_score: minimum similarity score [0..1] (default: 0.35).
         """
+        session = _get_session()
+        if session is None:
+            return [
+                {
+                    "error": "No active search session. Call dragonglass_new_search_session first."
+                }
+            ]
+
         started = time.monotonic()
         try:
-            hits = await engine.vector_search(query, top_n=top_n, min_score=min_score)
+            hits = await engine.vector_search(
+                session, query, top_n=top_n, min_score=min_score
+            )
         except RuntimeError as exc:
             return [{"error": str(exc)}]
         elapsed = time.monotonic() - started
+
         result: list[dict[str, JsonValue]] = [
             {"path": h.path, "score": h.score} for h in hits
         ]
@@ -222,7 +238,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
 
         Must be called before patch_note_lines unless expected_hash is provided.
         """
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
@@ -263,7 +279,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash). The hash covers the entire file.
         """
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
@@ -310,7 +326,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash).
         """
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
@@ -357,7 +373,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash).
         """
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
@@ -397,7 +413,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         value: JsonValue = None,
     ) -> dict[str, JsonValue]:
         """Get, set, or delete a frontmatter key."""
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
@@ -433,7 +449,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
         tags: list[str] | None = None,
     ) -> dict[str, JsonValue]:
         """Add, remove, or list note tags."""
-        session = engine.session
+        session = _get_session()
         if session is None:
             return {
                 "error": "No active search session. Call dragonglass_new_search_session first."
