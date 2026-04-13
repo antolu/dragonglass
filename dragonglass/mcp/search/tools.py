@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import time
 import typing
 
 import fastmcp
 import httpx
+import pydantic
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
+from dragonglass.hybrid_search import SearchEngine
 from dragonglass.mcp.edit.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
 from dragonglass.mcp.edit.notes import (
     do_manage_frontmatter,
@@ -17,18 +20,26 @@ from dragonglass.mcp.edit.notes import (
     do_read_note_with_hash,
 )
 from dragonglass.mcp.edit.tags import do_manage_tags
-from dragonglass.mcp.search.queries import (
-    _do_keyword_search,
-    _do_vector_search,
-    _StringList,
-)
 from dragonglass.mcp.telemetry import ToolPhase, emit_tool_event
-from dragonglass.search.session import new_session
 
 logger = logging.getLogger(__name__)
 
 
-def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR0915
+def _coerce_json_string_to_list(v: JsonValue) -> JsonValue:
+    if isinstance(v, str):
+        try:
+            return typing.cast(JsonValue, json.loads(v))
+        except (json.JSONDecodeError, TypeError):
+            return [v]
+    return v
+
+
+_StringList = typing.Annotated[
+    list[str], pydantic.BeforeValidator(_coerce_json_string_to_list)
+]
+
+
+def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR0915
     m = fastmcp.FastMCP("search")
 
     def _safe_value_preview(value: JsonValue, limit: int = 160) -> str:
@@ -42,7 +53,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         """Create a new search session. Destroys any previous session.
         MUST be called before starting keyword or vector searches.
         """
-        session = new_session()
+        session = engine.new_session()
         emit_tool_event(
             "dragonglass_new_search_session",
             ToolPhase.DONE,
@@ -108,22 +119,26 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             return {"error": "At least one search query is required"}
 
         started = time.monotonic()
-        result = await _do_keyword_search(settings, queries)
+        try:
+            await engine.keyword_search(queries)
+        except RuntimeError as exc:
+            return {"error": str(exc)}
         elapsed = time.monotonic() - started
+
+        session = engine.session
+        all_paths = session.allowlist if session else []
         terms = ", ".join(str(q) for q in queries)
-        phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
-        detail = (
-            _safe_value_preview(result.get("error"))
-            if "error" in result
-            else f"{result.get('total_found', 0)} files found ({elapsed:.2f}s)"
-        )
         emit_tool_event(
             "dragonglass_keyword_search",
-            phase,
+            ToolPhase.DONE,
             f"Keyword search: {terms}",
-            detail,
+            f"{len(all_paths)} files found ({elapsed:.2f}s)",
         )
-        return result
+        return {
+            "total_found": len(all_paths),
+            "query_count": len(queries),
+            "preview_paths": typing.cast(list[JsonValue], all_paths[:10]),
+        }
 
     @m.tool(name="dragonglass_vector_search")
     async def vector_search(
@@ -137,21 +152,19 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
             min_score: minimum similarity score [0..1] (default: 0.35).
         """
         started = time.monotonic()
-        result = await _do_vector_search(settings, query, top_n, min_score)
+        try:
+            hits = await engine.vector_search(query, top_n=top_n, min_score=min_score)
+        except RuntimeError as exc:
+            return [{"error": str(exc)}]
         elapsed = time.monotonic() - started
-        errs = [item.get("error") for item in result if isinstance(item, dict)]
-        errs = [e for e in errs if isinstance(e, str)]
-        phase = ToolPhase.ERROR if errs else ToolPhase.DONE
-        detail = (
-            _safe_value_preview(errs[0])
-            if errs
-            else f"{len(result)} hits ({elapsed:.2f}s)"
-        )
+        result: list[dict[str, JsonValue]] = [
+            {"path": h.path, "score": h.score} for h in hits
+        ]
         emit_tool_event(
             "dragonglass_vector_search",
-            phase,
+            ToolPhase.DONE,
             f"Vector search: {_safe_value_preview(query, 80)}",
-            detail,
+            f"{len(result)} hits ({elapsed:.2f}s)",
         )
         return result
 
@@ -203,8 +216,15 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
 
         Must be called before patch_note_lines unless expected_hash is provided.
         """
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
-        result = await do_read_note_with_hash(settings, path, start_line, end_line)
+        result = await do_read_note_with_hash(
+            settings, path, session, start_line, end_line
+        )
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
@@ -237,6 +257,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash). The hash covers the entire file.
         """
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
         result = await do_patch_note_lines(
             settings,
@@ -247,6 +272,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                 "replacement": replacement,
                 "expected_hash": expected_hash,
             },
+            session,
         )
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
@@ -278,6 +304,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash).
         """
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
         result = await do_patch_note_lines(
             settings,
@@ -288,6 +319,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                 "replacement": text,
                 "expected_hash": expected_hash,
             },
+            session,
         )
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
@@ -319,6 +351,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         If expected_hash is omitted, uses the hash from the current session
         (captured by read_note_with_hash).
         """
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
         result = await do_patch_note_lines(
             settings,
@@ -329,6 +366,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
                 "replacement": "",
                 "expected_hash": expected_hash,
             },
+            session,
         )
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
@@ -353,6 +391,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         value: JsonValue = None,
     ) -> dict[str, JsonValue]:
         """Get, set, or delete a frontmatter key."""
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
         args: ManageFrontmatterArgs = {
             "path": path,
@@ -361,7 +404,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         }
         if operation == "set":
             args["value"] = value
-        result = await do_manage_frontmatter(settings, args)
+        result = await do_manage_frontmatter(settings, args, session)
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
@@ -384,6 +427,11 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         tags: list[str] | None = None,
     ) -> dict[str, JsonValue]:
         """Add, remove, or list note tags."""
+        session = engine.session
+        if session is None:
+            return {
+                "error": "No active search session. Call dragonglass_new_search_session first."
+            }
         started = time.monotonic()
         args: ManageTagsArgs = {
             "path": path,
@@ -391,7 +439,7 @@ def create_search_server(settings: Settings) -> fastmcp.FastMCP:  # noqa: PLR091
         }
         if tags is not None:
             args["tags"] = tags
-        result = await do_manage_tags(settings, args)
+        result = await do_manage_tags(settings, args, session)
         elapsed = time.monotonic() - started
         phase = ToolPhase.ERROR if "error" in result else ToolPhase.DONE
         detail = (
