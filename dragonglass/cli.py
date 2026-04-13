@@ -12,8 +12,10 @@ import dotenv
 from dragonglass import paths
 from dragonglass.agent.headless import run_headless
 from dragonglass.config import get_settings
+from dragonglass.hybrid_search import SearchEngine
 from dragonglass.log import LOG_FILE, setup_logging
 from dragonglass.mcp import create_search_server
+from dragonglass.search import ObsidianHttpBackend
 from dragonglass.server import DEFAULT_PORT, run, start_server_daemon
 
 _PID_FILE = paths.DATA_DIR / "dragonglass.pid"
@@ -77,7 +79,10 @@ def stop() -> None:
 def mcp() -> None:
     """Run the MCP server (STDIO)."""
     setup_logging(rollover=False)
-    server = create_search_server(get_settings())
+    settings = get_settings()
+    backend = ObsidianHttpBackend(base_url=settings.vector_search_url)
+    engine = SearchEngine(keyword_backend=backend, vector_backend=backend)
+    server = create_search_server(engine, settings)
     server.run()
 
 

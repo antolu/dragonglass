@@ -50,7 +50,9 @@ from dragonglass.agent.types import (
     UserMessageEvent,
 )
 from dragonglass.config import LLMBackend, Settings, get_settings
+from dragonglass.hybrid_search import SearchEngine
 from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
+from dragonglass.search import ObsidianHttpBackend
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +354,9 @@ class VaultAgent:
         self._litellm_tools: list[Tool] = []
         self._stdio_sessions: list[ClientSession] = []
         self._exit_stack = contextlib.AsyncExitStack()
-        self._search = create_search_server(get_settings())
+        backend = ObsidianHttpBackend(base_url=settings.vector_search_url)
+        self._engine = SearchEngine(keyword_backend=backend, vector_backend=backend)
+        self._search = create_search_server(self._engine, settings)
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
         self._opencode_session_id: str | None = None
