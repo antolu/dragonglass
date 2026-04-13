@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 
 import pytest
 
@@ -25,10 +26,18 @@ class MockKeywordBackend(KeywordSearchBackend):
         return self.hits
 
 
+@dataclasses.dataclass
+class VectorSearchCall:
+    query: str
+    top_n: int
+    min_score: float
+    allowlist: list[str] | None
+
+
 class MockVectorBackend(VectorSearchBackend):
     def __init__(self, hits: list[SearchHit]) -> None:
         self.hits = hits
-        self.last_call: dict[str, object] = {}
+        self.last_call: VectorSearchCall | None = None
 
     async def vector_search(
         self,
@@ -38,19 +47,26 @@ class MockVectorBackend(VectorSearchBackend):
         min_score: float = 0.35,
         allowlist: list[str] | None = None,
     ) -> list[SearchHit]:
-        self.last_call = {
-            "query": query,
-            "top_n": top_n,
-            "min_score": min_score,
-            "allowlist": allowlist,
-        }
+        self.last_call = VectorSearchCall(
+            query=query, top_n=top_n, min_score=min_score, allowlist=allowlist
+        )
         return self.hits
+
+
+@dataclasses.dataclass
+class SemanticSearchCall:
+    query: str
+    keyword_backend: KeywordSearchBackend | None
+    vector_backend: VectorSearchBackend | None
+    llm: LLMCompletionFn | None
+    system_prompt: str | None
+    top_n: int
 
 
 class MockSemanticBackend(SemanticSearchBackend):
     def __init__(self, results: list[SemanticResult]) -> None:
         self.results = results
-        self.last_call: dict[str, object] = {}
+        self.last_call: SemanticSearchCall | None = None
 
     async def semantic_search(  # noqa: PLR0913
         self,
@@ -62,14 +78,14 @@ class MockSemanticBackend(SemanticSearchBackend):
         system_prompt: str | None = None,
         top_n: int = 10,
     ) -> list[SemanticResult]:
-        self.last_call = {
-            "query": query,
-            "keyword_backend": keyword_backend,
-            "vector_backend": vector_backend,
-            "llm": llm,
-            "system_prompt": system_prompt,
-            "top_n": top_n,
-        }
+        self.last_call = SemanticSearchCall(
+            query=query,
+            keyword_backend=keyword_backend,
+            vector_backend=vector_backend,
+            llm=llm,
+            system_prompt=system_prompt,
+            top_n=top_n,
+        )
         return self.results
 
 
@@ -123,7 +139,8 @@ def test_vector_search_uses_allowlist_from_session() -> None:
     engine.new_session()
     asyncio.run(engine.keyword_search(["query"]))
     asyncio.run(engine.vector_search("meaning"))
-    assert vec_backend.last_call["allowlist"] == ["a.md", "b.md"]
+    assert vec_backend.last_call is not None
+    assert vec_backend.last_call.allowlist == ["a.md", "b.md"]
 
 
 def test_vector_search_bumps_min_score_with_allowlist() -> None:
@@ -133,7 +150,8 @@ def test_vector_search_bumps_min_score_with_allowlist() -> None:
     engine.new_session()
     asyncio.run(engine.keyword_search(["query"]))
     asyncio.run(engine.vector_search("meaning", min_score=0.3))
-    assert vec_backend.last_call["min_score"] == pytest.approx(0.5)
+    assert vec_backend.last_call is not None
+    assert vec_backend.last_call.min_score == pytest.approx(0.5)
 
 
 def test_vector_search_no_allowlist_uses_provided_min_score() -> None:
@@ -141,8 +159,9 @@ def test_vector_search_no_allowlist_uses_provided_min_score() -> None:
     engine = SearchEngine(vector_backend=vec_backend)
     engine.new_session()
     asyncio.run(engine.vector_search("meaning", min_score=0.3))
-    assert vec_backend.last_call["min_score"] == pytest.approx(0.3)
-    assert vec_backend.last_call["allowlist"] is None
+    assert vec_backend.last_call is not None
+    assert vec_backend.last_call.min_score == pytest.approx(0.3)
+    assert vec_backend.last_call.allowlist is None
 
 
 def test_semantic_search_passes_backends_and_llm() -> None:
@@ -167,11 +186,12 @@ def test_semantic_search_passes_backends_and_llm() -> None:
     )
     assert len(results) == 1
     assert results[0].path == "r.md"
-    assert sem_backend.last_call["keyword_backend"] is kw_backend
-    assert sem_backend.last_call["vector_backend"] is vec_backend
-    assert sem_backend.last_call["llm"] is my_llm
-    assert sem_backend.last_call["system_prompt"] == "be concise"
-    assert sem_backend.last_call["top_n"] == 3  # noqa: PLR2004
+    assert sem_backend.last_call is not None
+    assert sem_backend.last_call.keyword_backend is kw_backend
+    assert sem_backend.last_call.vector_backend is vec_backend
+    assert sem_backend.last_call.llm is my_llm
+    assert sem_backend.last_call.system_prompt == "be concise"
+    assert sem_backend.last_call.top_n == 3  # noqa: PLR2004
 
 
 def test_semantic_search_no_backend_raises() -> None:
