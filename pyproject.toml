@@ -5,18 +5,26 @@ description = "LLM-powered Obsidian vault agent with TUI"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-  "litellm >= 1.81.13, < 1.82.7",
-  "textual >= 8.0.0",
+  # hybrid_search package (dragonglass.hybrid_search) — no deps beyond stdlib
+  # search / obsidian backend (dragonglass.search)
   "httpx >= 0.28.1",
+  # agent
+  "litellm >= 1.81.13, < 1.82.7",
+  "opencode-ai == 0.1.0a36",
+  "mcp >= 1.26.0",
+  # mcp server
+  "fastmcp >= 3.0.0",
+  # config
   "pydantic >= 2.12.5",
   "pydantic-settings >= 2.13.0",
-  "mcp >= 1.26.0",
   "python-dotenv >= 1.2.1",
-  "fastmcp >= 3.0.0",
-  "click >= 8.1",
+  # tui
+  "textual >= 8.0.0",
+  # server
   "websockets >= 12.0",
+  # misc
+  "click >= 8.1",
   "tomli-w >= 1.0.0",
-  "opencode-ai == 0.1.0a36",
 ]
 
 [[project.authors]]
