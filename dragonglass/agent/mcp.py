@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import pathlib
 import subprocess
+import sys
 import types
 import typing
 
@@ -68,13 +70,26 @@ def _check_node_version(env: dict[str, str]) -> None:
     logger.debug("node %s OK (>= %d required)", raw, _MIN_NODE_MAJOR)
 
 
-_EXTRA_MCP_SERVERS = [
-    StdioServerParameters(
-        command="uvx",
-        args=["mcp-server-fetch"],
-        env=_get_mcp_env(),
-    ),
-]
+def _build_extra_mcp_servers() -> list[StdioServerParameters]:
+    try:
+        import mcp_server_fetch as _fetch_mod  # noqa: F401, PLC0415
+
+        fetch_bin = pathlib.Path(sys.executable).parent / "mcp-server-fetch"
+        return [
+            StdioServerParameters(
+                command=str(fetch_bin),
+                args=[],
+                env=_get_mcp_env(),
+            )
+        ]
+    except ImportError:
+        logger.warning(
+            "mcp-server-fetch not installed (install dragonglass[fetch]); fetch MCP tool disabled"
+        )
+        return []
+
+
+_EXTRA_MCP_SERVERS = _build_extra_mcp_servers()
 
 
 class MCPToolLike(typing.Protocol):
