@@ -5,6 +5,10 @@ import OSLog
 private let logger = Logger(subsystem: subsystem, category: "BackendManager")
 
 enum BackendPhase: Equatable {
+    case checkingBundle
+    case downloadingBundle(progress: Double, label: String)
+    case installingBundle
+    case bundleError(String)
     case installing
     case starting
     case ready
@@ -83,30 +87,21 @@ class BackendManager: ObservableObject {
             phase = .failed("Missing bundled backend version metadata (version.txt). Rebuild app.")
             return
         }
-        guard getBundledPythonVersion() != nil else {
-            phase = .failed("Missing bundled python metadata (python_version.txt). Rebuild app.")
-            return
-        }
-        guard Bundle.main.url(forResource: "wheels", withExtension: nil) != nil else {
-            phase = .failed("Missing bundled wheels directory. Rebuild app.")
-            return
-        }
-        let installedVersion = getInstalledVersion()
+        let installedBundleVersion = getInstalledBundleVersion()
+        let needsBundle = !FileManager.default.fileExists(atPath: paths.dragonglassPath.path)
+            || bundledVersion != installedBundleVersion
 
-        let needsInstall = !FileManager.default.fileExists(atPath: paths.dragonglassPath.path)
-            || bundledVersion != installedVersion
-
-        if needsInstall {
-            logger.info("startBackend install required bundled=\(bundledVersion, privacy: .public) installed=\((installedVersion ?? "none"), privacy: .public)")
-            phase = .installing
+        if needsBundle {
+            logger.info("bundle install required bundled=\(bundledVersion, privacy: .public) installed=\((installedBundleVersion ?? "none"), privacy: .public)")
+            phase = .checkingBundle
             do {
+                let systemPython = findPython3()
                 if FileManager.default.fileExists(atPath: paths.venvDir.path) {
                     try? FileManager.default.removeItem(at: paths.venvDir)
                 }
-                try await installVenv(paths: paths)
-                try? bundledVersion.write(to: paths.appSupportDir.appendingPathComponent("installed_version.txt"), atomically: true, encoding: .utf8)
+                try await runBundleInstall(appVersion: bundledVersion, systemPython: systemPython)
             } catch {
-                phase = .failed("Installation failed: \(error.localizedDescription)")
+                phase = .bundleError("Bundle installation failed: \(error.localizedDescription)")
                 return
             }
         }
@@ -247,6 +242,58 @@ class BackendManager: ObservableObject {
             return nil
         }
         return version.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func getInstalledBundleVersion() -> String? {
+        let url = paths.appSupportDir.appendingPathComponent("installed_bundle_version.txt")
+        guard let version = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return version.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func runBundleInstall(appVersion: String, systemPython: String) async throws {
+        let installer = BundleInstaller(paths: paths)
+        for try await event in installer.install(appVersion: appVersion, systemPython: systemPython) {
+            switch event {
+            case .progress(let message, let fraction):
+                phase = .downloadingBundle(progress: fraction, label: message)
+            case .done:
+                phase = .installingBundle
+            case .error(let message):
+                throw NSError(
+                    domain: "BundleInstaller",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+            }
+        }
+    }
+
+    func triggerOfflineInstall(bundleURL: URL) {
+        Task {
+            guard let bundledVersion = getBundledVersion() else { return }
+            let systemPython = findPython3()
+            let installer = BundleInstaller(paths: paths)
+            do {
+                for try await event in installer.installOffline(
+                    bundlePath: bundleURL,
+                    appVersion: bundledVersion,
+                    systemPython: systemPython
+                ) {
+                    switch event {
+                    case .progress(let message, let fraction):
+                        phase = .downloadingBundle(progress: fraction, label: message)
+                    case .done:
+                        phase = .installingBundle
+                    case .error(let message):
+                        phase = .bundleError(message)
+                        return
+                    }
+                }
+                await startBackend()
+            } catch {
+                phase = .bundleError(error.localizedDescription)
+            }
+        }
     }
 
     private func findAndKillExistingBackend() async {
