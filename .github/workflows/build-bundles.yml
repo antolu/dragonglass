@@ -1,0 +1,97 @@
+name: Build Dependency Bundles
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build bundles for'
+        required: true
+
+jobs:
+  build-bundle:
+    name: Build bundle (Python ${{ matrix.python-version }})
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install build deps
+        run: pip install setuptools>=61 setuptools-scm[toml]~=10.0 wheel
+
+      - name: Get app version
+        id: version
+        run: echo "version=$(python -c 'import setuptools_scm; print(setuptools_scm.get_version(local_scheme="no-local-version"))')" >> $GITHUB_OUTPUT
+
+      - name: Build bundle
+        run: |
+          python scripts/build_bundle.py \
+            --python-version ${{ matrix.python-version }} \
+            --app-version ${{ steps.version.outputs.version }} \
+            --output-dir dist/bundles
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-py${{ matrix.python-version }}
+          path: dist/bundles/*.tar.gz
+
+  publish-manifest:
+    name: Publish manifest + bundles to release
+    needs: build-bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install setuptools-scm
+        run: pip install setuptools>=61 setuptools-scm[toml]~=10.0
+
+      - name: Get app version
+        id: version
+        run: echo "version=$(python -c 'import setuptools_scm; print(setuptools_scm.get_version(local_scheme="no-local-version"))')" >> $GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-py*
+          path: dist/bundles
+          merge-multiple: true
+
+      - name: Generate manifest
+        run: |
+          python scripts/generate_manifest.py \
+            --bundles-dir dist/bundles \
+            --app-version ${{ steps.version.outputs.version }} \
+            --output dist/manifest.json
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/bundles/*.tar.gz
+            dist/manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
