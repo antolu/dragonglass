@@ -5,29 +5,28 @@ import asyncio
 import pytest
 
 from dragonglass.hybrid_search import (
-    KeywordHit,
     KeywordSearchBackend,
     LLMCompletionFn,
     SearchEngine,
+    SearchHit,
     SemanticResult,
     SemanticSearchBackend,
-    VectorHit,
     VectorSearchBackend,
 )
 
 
 class MockKeywordBackend(KeywordSearchBackend):
-    def __init__(self, hits: list[KeywordHit]) -> None:
+    def __init__(self, hits: list[SearchHit]) -> None:
         self.hits = hits
         self.calls: list[list[str]] = []
 
-    async def keyword_search(self, queries: list[str]) -> list[KeywordHit]:
+    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
         self.calls.append(queries)
         return self.hits
 
 
 class MockVectorBackend(VectorSearchBackend):
-    def __init__(self, hits: list[VectorHit]) -> None:
+    def __init__(self, hits: list[SearchHit]) -> None:
         self.hits = hits
         self.last_call: dict[str, object] = {}
 
@@ -38,7 +37,7 @@ class MockVectorBackend(VectorSearchBackend):
         top_n: int = 10,
         min_score: float = 0.35,
         allowlist: list[str] | None = None,
-    ) -> list[VectorHit]:
+    ) -> list[SearchHit]:
         self.last_call = {
             "query": query,
             "top_n": top_n,
@@ -75,7 +74,7 @@ class MockSemanticBackend(SemanticSearchBackend):
 
 
 def test_keyword_search_delegates_to_backend() -> None:
-    backend = MockKeywordBackend([KeywordHit(path="a.md"), KeywordHit(path="b.md")])
+    backend = MockKeywordBackend([SearchHit(path="a.md"), SearchHit(path="b.md")])
     engine = SearchEngine(keyword_backend=backend)
     engine.new_session()
     hits = asyncio.run(engine.keyword_search(["foo", "bar"]))
@@ -85,7 +84,7 @@ def test_keyword_search_delegates_to_backend() -> None:
 
 
 def test_keyword_search_updates_session() -> None:
-    backend = MockKeywordBackend([KeywordHit(path="note.md")])
+    backend = MockKeywordBackend([SearchHit(path="note.md")])
     engine = SearchEngine(keyword_backend=backend)
     engine.new_session()
     asyncio.run(engine.keyword_search(["query"]))
@@ -101,12 +100,13 @@ def test_keyword_search_no_backend_raises() -> None:
 
 
 def test_vector_search_delegates_to_backend() -> None:
-    backend = MockVectorBackend([VectorHit(path="x.md", score=0.7)])
+    backend = MockVectorBackend([SearchHit(path="x.md", score=0.7)])
     engine = SearchEngine(vector_backend=backend)
     engine.new_session()
     hits = asyncio.run(engine.vector_search("meaning", top_n=5, min_score=0.4))
     assert len(hits) == 1
     assert hits[0].path == "x.md"
+    assert hits[0].score == pytest.approx(0.7)
 
 
 def test_vector_search_no_backend_raises() -> None:
@@ -117,8 +117,8 @@ def test_vector_search_no_backend_raises() -> None:
 
 
 def test_vector_search_uses_allowlist_from_session() -> None:
-    kw_backend = MockKeywordBackend([KeywordHit(path="a.md"), KeywordHit(path="b.md")])
-    vec_backend = MockVectorBackend([VectorHit(path="a.md", score=0.8)])
+    kw_backend = MockKeywordBackend([SearchHit(path="a.md"), SearchHit(path="b.md")])
+    vec_backend = MockVectorBackend([SearchHit(path="a.md", score=0.8)])
     engine = SearchEngine(keyword_backend=kw_backend, vector_backend=vec_backend)
     engine.new_session()
     asyncio.run(engine.keyword_search(["query"]))
@@ -127,7 +127,7 @@ def test_vector_search_uses_allowlist_from_session() -> None:
 
 
 def test_vector_search_bumps_min_score_with_allowlist() -> None:
-    kw_backend = MockKeywordBackend([KeywordHit(path="a.md")])
+    kw_backend = MockKeywordBackend([SearchHit(path="a.md")])
     vec_backend = MockVectorBackend([])
     engine = SearchEngine(keyword_backend=kw_backend, vector_backend=vec_backend)
     engine.new_session()

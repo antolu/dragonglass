@@ -8,16 +8,15 @@ from dragonglass.hybrid_search._interfaces import (
     VectorSearchBackend,
 )
 from dragonglass.hybrid_search._session import SearchSession
-from dragonglass.hybrid_search._types import KeywordHit, SemanticResult, VectorHit
+from dragonglass.hybrid_search._types import SearchHit, SemanticResult
 
 __all__ = [
-    "KeywordHit",
     "KeywordSearchBackend",
     "LLMCompletionFn",
     "SearchEngine",
+    "SearchHit",
     "SearchSession",
     "SemanticResult",
     "SemanticSearchBackend",
-    "VectorHit",
     "VectorSearchBackend",
 ]

@@ -8,6 +8,7 @@ dependencies = [
   # hybrid_search package (dragonglass.hybrid_search) — no deps beyond stdlib
   # search / obsidian backend (dragonglass.search)
   "httpx >= 0.28.1",
+  "pydantic >= 2.12.5",
   # agent
   "litellm >= 1.81.13, < 1.82.7",
   "opencode-ai == 0.1.0a36",

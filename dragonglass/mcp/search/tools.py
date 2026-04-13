@@ -120,7 +120,7 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
 
         started = time.monotonic()
         try:
-            await engine.keyword_search(queries)
+            hits = await engine.keyword_search(queries)
         except RuntimeError as exc:
             return {"error": str(exc)}
         elapsed = time.monotonic() - started
@@ -134,10 +134,16 @@ def create_search_server(engine: SearchEngine, settings: Settings) -> fastmcp.Fa
             f"Keyword search: {terms}",
             f"{len(all_paths)} files found ({elapsed:.2f}s)",
         )
+        hits_json: list[JsonValue] = [
+            {"path": h.path, "score": h.score}
+            if h.score is not None
+            else {"path": h.path}
+            for h in hits
+        ]
         return {
             "total_found": len(all_paths),
             "query_count": len(queries),
-            "preview_paths": typing.cast(list[JsonValue], all_paths[:10]),
+            "hits": typing.cast(list[JsonValue], hits_json),
         }
 
     @m.tool(name="dragonglass_vector_search")

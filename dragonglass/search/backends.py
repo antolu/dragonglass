@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import typing
 
 import httpx
+from pydantic import JsonValue
 
 from dragonglass.hybrid_search import (
-    KeywordHit,
     KeywordSearchBackend,
-    VectorHit,
+    SearchHit,
     VectorSearchBackend,
 )
 
@@ -27,7 +28,7 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
 
     async def _keyword_search_one(
         self, client: httpx.AsyncClient, query: str, seen: set[str]
-    ) -> list[KeywordHit]:
+    ) -> list[SearchHit]:
         try:
             resp = await client.post(
                 f"{self._base_url}/search/simple/",
@@ -36,7 +37,7 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
             logger.debug("keyword_search query=%r status=%d", query, resp.status_code)
             if resp.status_code == httpx.codes.OK:
                 return [
-                    KeywordHit(path=r["filename"])
+                    SearchHit(path=r["filename"])
                     for r in resp.json()
                     if r.get("filename") and r["filename"] not in seen
                 ]
@@ -44,8 +45,8 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
             logger.exception("keyword search failed for query %r", query)
         return []
 
-    async def keyword_search(self, queries: list[str]) -> list[KeywordHit]:
-        hits: list[KeywordHit] = []
+    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
+        hits: list[SearchHit] = []
         seen: set[str] = set()
         async with httpx.AsyncClient(
             timeout=self._keyword_timeout, verify=False
@@ -63,14 +64,14 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
         top_n: int = 10,
         min_score: float = 0.35,
         allowlist: list[str] | None = None,
-    ) -> list[VectorHit]:
-        payload: dict[str, object] = {
+    ) -> list[SearchHit]:
+        payload: dict[str, JsonValue] = {
             "text": query,
             "top_n": top_n,
             "min_score": min_score,
         }
         if allowlist:
-            payload["allowlist"] = allowlist
+            payload["allowlist"] = typing.cast(JsonValue, allowlist)
         try:
             async with httpx.AsyncClient(timeout=self._vector_timeout) as client:
                 resp = await client.post(
@@ -80,7 +81,7 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
                 resp.raise_for_status()
                 body = resp.json()
                 results = body.get("results", []) if isinstance(body, dict) else []
-                hits: list[VectorHit] = []
+                hits: list[SearchHit] = []
                 for r in results:
                     if not isinstance(r, dict):
                         continue
@@ -92,7 +93,7 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
                         continue
                     path = r.get("path", "")
                     if isinstance(path, str):
-                        hits.append(VectorHit(path=path, score=score))
+                        hits.append(SearchHit(path=path, score=score))
                 logger.debug(
                     "vector_search returned=%d after_filter=%d",
                     len(results),

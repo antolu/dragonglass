@@ -5,6 +5,7 @@ import json
 import sys
 
 import fastmcp
+import pytest
 
 if sys.version_info >= (3, 12):
     from typing import override
@@ -14,21 +15,20 @@ else:
 import dragonglass.mcp.search as mcp_search
 from dragonglass.config import Settings
 from dragonglass.hybrid_search import (
-    KeywordHit,
     KeywordSearchBackend,
     SearchEngine,
-    VectorHit,
+    SearchHit,
     VectorSearchBackend,
 )
 
 
 class MockObsidianBackend(KeywordSearchBackend, VectorSearchBackend):
-    def __init__(self, keyword_hits: list[KeywordHit]) -> None:
+    def __init__(self, keyword_hits: list[SearchHit]) -> None:
         self.keyword_hits = keyword_hits
         self.keyword_calls: list[list[str]] = []
 
     @override
-    async def keyword_search(self, queries: list[str]) -> list[KeywordHit]:
+    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
         self.keyword_calls.append(queries)
         return self.keyword_hits
 
@@ -40,11 +40,11 @@ class MockObsidianBackend(KeywordSearchBackend, VectorSearchBackend):
         top_n: int = 10,
         min_score: float = 0.35,
         allowlist: list[str] | None = None,
-    ) -> list[VectorHit]:
+    ) -> list[SearchHit]:
         return []
 
 
-def _make_server(hits: list[KeywordHit]) -> tuple[fastmcp.FastMCP, MockObsidianBackend]:
+def _make_server(hits: list[SearchHit]) -> tuple[fastmcp.FastMCP, MockObsidianBackend]:
     backend = MockObsidianBackend(hits)
     engine = SearchEngine(keyword_backend=backend, vector_backend=backend)
     engine.new_session()
@@ -55,8 +55,8 @@ def _make_server(hits: list[KeywordHit]) -> tuple[fastmcp.FastMCP, MockObsidianB
 
 def test_keyword_search_with_list_of_queries() -> None:
     server, backend = _make_server([
-        KeywordHit(path="Note1.md"),
-        KeywordHit(path="Note2.md"),
+        SearchHit(path="Note1.md"),
+        SearchHit(path="Note2.md"),
     ])
 
     result = asyncio.run(
@@ -67,11 +67,12 @@ def test_keyword_search_with_list_of_queries() -> None:
     data = json.loads(result.content[0].text)
 
     assert data["total_found"] == 2  # noqa: PLR2004
+    assert len(data["hits"]) == 2  # noqa: PLR2004
     assert backend.keyword_calls == [["query1", "query2"]]
 
 
 def test_keyword_search_with_single_string_queries() -> None:
-    server, backend = _make_server([KeywordHit(path="Note1.md")])
+    server, backend = _make_server([SearchHit(path="Note1.md")])
 
     result = asyncio.run(
         server.call_tool("dragonglass_keyword_search", {"queries": "query1"})
@@ -83,7 +84,7 @@ def test_keyword_search_with_single_string_queries() -> None:
 
 
 def test_keyword_search_with_query_alias() -> None:
-    server, backend = _make_server([KeywordHit(path="Note1.md")])
+    server, backend = _make_server([SearchHit(path="Note1.md")])
 
     result = asyncio.run(
         server.call_tool("dragonglass_keyword_search", {"query": "query1"})
@@ -92,6 +93,24 @@ def test_keyword_search_with_query_alias() -> None:
 
     assert data["total_found"] == 1
     assert backend.keyword_calls == [["query1"]]
+
+
+def test_keyword_search_returns_hits_with_scores() -> None:
+    server, _ = _make_server([
+        SearchHit(path="Note1.md", score=0.9),
+        SearchHit(path="Note2.md"),
+    ])
+
+    result = asyncio.run(
+        server.call_tool("dragonglass_keyword_search", {"queries": ["q"]})
+    )
+    data = json.loads(result.content[0].text)
+
+    hits = data["hits"]
+    assert hits[0]["path"] == "Note1.md"
+    assert hits[0]["score"] == pytest.approx(0.9)
+    assert hits[1]["path"] == "Note2.md"
+    assert "score" not in hits[1]
 
 
 def test_keyword_search_no_queries_error() -> None:
