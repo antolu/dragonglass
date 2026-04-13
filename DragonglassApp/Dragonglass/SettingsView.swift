@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var client: AgentClient
     @EnvironmentObject var sttManager: STTManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
+    @EnvironmentObject var updateChecker: UpdateChecker
 
     @State private var config: DragonglassConfig?
     @State private var baselineConfig: DragonglassConfig?
@@ -63,6 +64,10 @@ struct SettingsView: View {
                             SpeechSettingsView()
                                 .environmentObject(sttManager)
                                 .environmentObject(hotkeyManager)
+                        }
+                        settingsSection("Updates") {
+                            UpdatesSettingsSection()
+                                .environmentObject(updateChecker)
                         }
                         DisclosureGroup {
                             VStack(alignment: .leading, spacing: 12) {

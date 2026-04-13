@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var backend: BackendManager
@@ -195,6 +196,44 @@ struct ContentView: View {
         VStack {
             Spacer()
             switch backend.phase {
+            case .checkingBundle:
+                ProgressView("Checking for dependency bundle...")
+            case .downloadingBundle(let progress, let label):
+                VStack(spacing: 8) {
+                    Text(label)
+                        .foregroundColor(.secondary)
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .frame(width: 260)
+                }
+            case .installingBundle:
+                ProgressView("Installing dependencies...")
+            case .bundleError(let message):
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundColor(.red)
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    HStack(spacing: 12) {
+                        Button("Retry") {
+                            Task { await backend.startBackend() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Install from file…") {
+                            let panel = NSOpenPanel()
+                            panel.allowedContentTypes = [.init(filenameExtension: "gz")!]
+                            panel.title = "Select dependency bundle (.tar.gz)"
+                            panel.prompt = "Install"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                backend.triggerOfflineInstall(bundleURL: url)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                    }
+                }
             case .installing:
                 ProgressView("Installing dependencies...")
             case .starting:
