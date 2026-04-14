@@ -161,7 +161,7 @@ final class STTManager: ObservableObject {
     }
 
     func fetchAvailableModels() async {
-        let remote = await WhisperKit.recommendedRemoteModels()
+        let remote = await WhisperKit.recommendedRemoteModels(downloadBase: URL(fileURLWithPath: localModelPath))
         var models = remote.supported.sorted()
         for m in localModels where !models.contains(m) {
             models.insert(m, at: 0)
