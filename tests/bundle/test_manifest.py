@@ -59,7 +59,7 @@ def test_find_matching_bundle_exact() -> None:
             "runtime": {"os": "darwin", "arch": "arm64", "python": "3.11"},
         },
     ])
-    entry = find_matching_bundle(rt, manifest)
+    entry = find_matching_bundle(rt, "abc", manifest)
     assert entry is not None
     assert entry["runtime"]["python"] == "3.13"
 
@@ -75,7 +75,7 @@ def test_find_matching_bundle_no_match() -> None:
             "runtime": {"os": "linux", "arch": "x86_64", "python": "3.13"},
         }
     ])
-    assert find_matching_bundle(rt, manifest) is None
+    assert find_matching_bundle(rt, "abc", manifest) is None
 
 
 def test_verify_file_hash_correct() -> None:
@@ -93,3 +93,54 @@ def test_verify_file_hash_wrong() -> None:
         path = pathlib.Path(f.name)
     assert verify_file_hash(path, "deadbeef" * 8) is False
     path.unlink()
+
+
+def test_parse_manifest_new_schema() -> None:
+    data = json.dumps({
+        "app_version": "1.2.3",
+        "created": "2026-04-16T12:00:00Z",
+        "python_bundles": [
+            {
+                "filename": "dragonglass-deps-abc123def456-darwin-arm64-py3.13.tar.gz",
+                "sha256": "aaa",
+                "size": 100,
+                "deps_hash": "abc123def456",
+                "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
+            }
+        ],
+        "opencode_bundle": None,
+    }).encode()
+    manifest = parse_manifest(data)
+    assert manifest["python_bundles"][0]["deps_hash"] == "abc123def456"
+    assert manifest["opencode_bundle"] is None
+
+
+def test_find_matching_bundle_uses_deps_hash() -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    manifest = _make_manifest([
+        {
+            "filename": "dragonglass-deps-abc123def456-darwin-arm64-py3.13.tar.gz",
+            "sha256": "aaa",
+            "size": 100,
+            "deps_hash": "abc123def456",
+            "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
+        }
+    ])
+    entry = find_matching_bundle(rt, "abc123def456", manifest)
+    assert entry is not None
+    assert entry["deps_hash"] == "abc123def456"
+
+
+def test_find_matching_bundle_rejects_wrong_deps_hash() -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    manifest = _make_manifest([
+        {
+            "filename": "dragonglass-deps-abc123def456-darwin-arm64-py3.13.tar.gz",
+            "sha256": "aaa",
+            "size": 100,
+            "deps_hash": "abc123def456",
+            "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
+        }
+    ])
+    entry = find_matching_bundle(rt, "wronghash0000", manifest)
+    assert entry is None

@@ -5,7 +5,11 @@ import json
 import logging
 import pathlib
 
-from dragonglass.bundle.types import BundleEntry, BundleManifest, RuntimeTuple
+from dragonglass.bundle.types import (
+    BundleEntry,
+    BundleManifest,
+    RuntimeTuple,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +30,19 @@ def parse_manifest(data: bytes) -> BundleManifest:
 
 
 def find_matching_bundle(
-    rt: RuntimeTuple, manifest: BundleManifest
+    rt: RuntimeTuple, deps_hash: str, manifest: BundleManifest
 ) -> BundleEntry | None:
     for entry in manifest["python_bundles"]:
         r = entry["runtime"]
-        if r["os"] == rt.os and r["arch"] == rt.arch and r["python"] == rt.python:
+        if (
+            r["os"] == rt.os
+            and r["arch"] == rt.arch
+            and r["python"] == rt.python
+            and (not deps_hash or entry["deps_hash"] == deps_hash)
+        ):
             logger.debug("found matching bundle %s", entry["filename"])
             return entry
-    logger.debug("no bundle matched runtime %s", rt)
+    logger.debug("no bundle matched runtime %s deps_hash %s", rt, deps_hash)
     return None
 
 

@@ -65,6 +65,13 @@ def _extract_bundle(
     logger.info("extracted bundle to %s", dest)
 
 
+def _create_venv(system_python: str, venv_python: pathlib.Path) -> None:
+    venv_dir = venv_python.parent.parent
+    cmd = [system_python, "-m", "venv", str(venv_dir)]
+    logger.info("creating venv: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
 def _run_pip_install(
     venv_python: pathlib.Path,
     wheelhouse: pathlib.Path,
@@ -107,7 +114,7 @@ def install_online(
     manifest_bytes = fetch_bytes(build_manifest_url(tag))
     manifest = parse_manifest(manifest_bytes)
 
-    entry = find_matching_bundle(rt, manifest)
+    entry = find_matching_bundle(rt, "", manifest)
     if entry is None:
         raise RuntimeError(
             f"No bundle found for runtime {rt}; check GitHub releases for supported platforms."

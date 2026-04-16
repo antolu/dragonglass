@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Generate manifest.json from all bundle archives in a directory.
+"""Generate manifest.json from built bundle archives.
 
 Usage:
     python scripts/generate_manifest.py \
-        --bundles-dir dist/bundles \
+        --python-bundles-dir dist/bundles/python \
+        --opencode-bundle dist/bundles/opencode/dragonglass-opencode-HASH-darwin-arm64.tar.gz \
         --app-version 1.2.3 \
         --output manifest.json
 """
@@ -26,47 +27,68 @@ def sha256_file(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
-_BUNDLE_RE = re.compile(
-    r"dragonglass-deps-(?P<ver>[^-]+)-(?P<os>[^-]+)-(?P<arch>[^-]+)-py(?P<python>[\d.]+)\.tar\.gz"
+_PYTHON_BUNDLE_RE = re.compile(
+    r"dragonglass-deps-(?P<deps_hash>[a-f0-9]{12})-(?P<os>[^-]+)-(?P<arch>[^-]+)-py(?P<python>[\d.]+)\.tar\.gz"
+)
+
+_OPENCODE_BUNDLE_RE = re.compile(
+    r"dragonglass-opencode-(?P<deps_hash>[a-f0-9]{12})-(?P<os>[^-]+)-(?P<arch>[^-]+)\.tar\.gz"
 )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bundles-dir", type=pathlib.Path, required=True)
+    parser.add_argument("--python-bundles-dir", type=pathlib.Path, required=True)
+    parser.add_argument("--opencode-bundle", type=pathlib.Path, default=None)
     parser.add_argument("--app-version", required=True)
     parser.add_argument(
         "--output", type=pathlib.Path, default=pathlib.Path("manifest.json")
     )
     args = parser.parse_args()
 
-    bundles = []
-    for path in sorted(args.bundles_dir.glob("*.tar.gz")):
-        m = _BUNDLE_RE.match(path.name)
+    python_bundles = []
+    for path in sorted(args.python_bundles_dir.glob("*.tar.gz")):
+        m = _PYTHON_BUNDLE_RE.match(path.name)
         if not m:
             print(f"skipping unrecognised filename: {path.name}")
             continue
         digest = sha256_file(path)
         size = path.stat().st_size
-        bundles.append({
+        python_bundles.append({
             "filename": path.name,
             "sha256": digest,
             "size": size,
+            "deps_hash": m.group("deps_hash"),
             "runtime": {
                 "os": m.group("os"),
                 "arch": m.group("arch"),
                 "python": m.group("python"),
             },
         })
-        print(f"  {path.name}  sha256={digest[:16]}...")
+        print(f"  python {path.name}  sha256={digest[:16]}...")
+
+    opencode_entry = None
+    if args.opencode_bundle and args.opencode_bundle.exists():
+        m = _OPENCODE_BUNDLE_RE.match(args.opencode_bundle.name)
+        if m:
+            digest = sha256_file(args.opencode_bundle)
+            size = args.opencode_bundle.stat().st_size
+            opencode_entry = {
+                "filename": args.opencode_bundle.name,
+                "sha256": digest,
+                "size": size,
+                "deps_hash": m.group("deps_hash"),
+            }
+            print(f"  opencode {args.opencode_bundle.name}  sha256={digest[:16]}...")
 
     manifest = {
         "app_version": args.app_version,
-        "bundles": bundles,
+        "python_bundles": python_bundles,
+        "opencode_bundle": opencode_entry,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
     args.output.write_text(json.dumps(manifest, indent=2))
-    print(f"manifest written to {args.output} ({len(bundles)} bundles)")
+    print(f"manifest written to {args.output} ({len(python_bundles)} python bundles)")
 
 
 if __name__ == "__main__":
