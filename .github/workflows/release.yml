@@ -69,7 +69,7 @@ jobs:
           zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" "Dragonglass.app"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: Dragonglass-*.zip
           draft: false
