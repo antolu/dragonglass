@@ -38,7 +38,7 @@ def find_matching_bundle(
             r["os"] == rt.os
             and r["arch"] == rt.arch
             and r["python"] == rt.python
-            and (not deps_hash or entry["deps_hash"] == deps_hash)
+            and entry["deps_hash"] == deps_hash
         ):
             logger.debug("found matching bundle %s", entry["filename"])
             return entry
