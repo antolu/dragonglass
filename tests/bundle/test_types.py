@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import dataclasses
 
-from dragonglass.bundle.types import BundleEntry, BundleManifest, RuntimeTuple
+from dragonglass.bundle.types import (
+    BundleEntry,
+    BundleManifest,
+    OpencodeBundleEntry,
+    RuntimeTuple,
+)
 
 
 def test_runtime_tuple_fields() -> None:
@@ -26,6 +31,7 @@ def test_bundle_entry_required_keys() -> None:
         "filename": "dragonglass-deps-1.0.0-darwin-arm64-py3.13.tar.gz",
         "sha256": "abc123",
         "size": 100_000_000,
+        "deps_hash": "abc123",
         "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
     }
     assert entry["filename"].endswith(".tar.gz")
@@ -34,7 +40,40 @@ def test_bundle_entry_required_keys() -> None:
 def test_manifest_structure() -> None:
     manifest: BundleManifest = {
         "app_version": "1.0.0",
-        "bundles": [],
         "created": "2026-01-01T00:00:00Z",
+        "python_bundles": [],
+        "opencode_bundle": None,
     }
     assert manifest["app_version"] == "1.0.0"
+
+
+def test_bundle_entry_has_deps_hash() -> None:
+    entry: BundleEntry = {
+        "filename": "dragonglass-deps-abc123def456-darwin-arm64-py3.13.tar.gz",
+        "sha256": "abc",
+        "size": 100,
+        "deps_hash": "abc123def456",
+        "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
+    }
+    assert entry["deps_hash"] == "abc123def456"
+
+
+def test_opencode_bundle_entry_shape() -> None:
+    entry: OpencodeBundleEntry = {
+        "filename": "dragonglass-opencode-def789abc012-darwin-arm64.tar.gz",
+        "sha256": "def",
+        "size": 200,
+        "deps_hash": "def789abc012",
+    }
+    assert entry["deps_hash"] == "def789abc012"
+
+
+def test_bundle_manifest_has_python_and_opencode_sections() -> None:
+    manifest: BundleManifest = {
+        "app_version": "1.2.3",
+        "created": "2026-04-16T12:00:00Z",
+        "python_bundles": [],
+        "opencode_bundle": None,
+    }
+    assert manifest["python_bundles"] == []
+    assert manifest["opencode_bundle"] is None

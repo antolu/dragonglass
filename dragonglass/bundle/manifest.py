@@ -17,18 +17,18 @@ def parse_manifest(data: bytes) -> BundleManifest:
         raise ValueError(f"invalid manifest: {exc}") from exc
     if not isinstance(obj, dict):
         raise ValueError("invalid manifest: expected object")  # noqa: TRY004
-    for key in ("app_version", "bundles", "created"):
+    for key in ("app_version", "python_bundles", "created"):
         if key not in obj:
             raise ValueError(f"invalid manifest: missing field {key!r}")
-    if not isinstance(obj["bundles"], list):
-        raise ValueError("invalid manifest: 'bundles' must be a list")  # noqa: TRY004
+    if not isinstance(obj["python_bundles"], list):
+        raise ValueError("invalid manifest: 'python_bundles' must be a list")  # noqa: TRY004
     return obj  # type: ignore[return-value]
 
 
 def find_matching_bundle(
     rt: RuntimeTuple, manifest: BundleManifest
 ) -> BundleEntry | None:
-    for entry in manifest["bundles"]:
+    for entry in manifest["python_bundles"]:
         r = entry["runtime"]
         if r["os"] == rt.os and r["arch"] == rt.arch and r["python"] == rt.python:
             logger.debug("found matching bundle %s", entry["filename"])

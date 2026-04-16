@@ -18,8 +18,9 @@ from dragonglass.bundle.types import BundleEntry, BundleManifest, RuntimeTuple
 def _make_manifest(bundles: list[BundleEntry]) -> BundleManifest:
     return {
         "app_version": "1.0.0",
-        "bundles": bundles,
         "created": "2026-01-01T00:00:00Z",
+        "python_bundles": bundles,
+        "opencode_bundle": None,
     }
 
 
@@ -27,7 +28,7 @@ def test_parse_manifest_valid() -> None:
     raw = json.dumps(_make_manifest([]))
     manifest = parse_manifest(raw.encode())
     assert manifest["app_version"] == "1.0.0"
-    assert manifest["bundles"] == []
+    assert manifest["python_bundles"] == []
 
 
 def test_parse_manifest_invalid_json() -> None:
@@ -47,12 +48,14 @@ def test_find_matching_bundle_exact() -> None:
             "filename": "dragonglass-deps-1.0.0-darwin-arm64-py3.13.tar.gz",
             "sha256": "abc",
             "size": 100,
+            "deps_hash": "abc",
             "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
         },
         {
             "filename": "dragonglass-deps-1.0.0-darwin-arm64-py3.11.tar.gz",
             "sha256": "def",
             "size": 100,
+            "deps_hash": "def",
             "runtime": {"os": "darwin", "arch": "arm64", "python": "3.11"},
         },
     ])
@@ -68,6 +71,7 @@ def test_find_matching_bundle_no_match() -> None:
             "filename": "dragonglass-deps-1.0.0-linux-x86_64-py3.13.tar.gz",
             "sha256": "abc",
             "size": 100,
+            "deps_hash": "abc",
             "runtime": {"os": "linux", "arch": "x86_64", "python": "3.13"},
         }
     ])
