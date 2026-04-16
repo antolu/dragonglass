@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Build a dependency bundle for a given Python version.
+"""Build a Python dependency bundle for a given Python version.
 
 Usage:
     python scripts/build_bundle.py \
         --python-version 3.13 \
-        --app-version 1.2.3 \
-        --output-dir dist/bundles
+        --deps-hash abc123def456 \
+        --output-dir dist/bundles/python
 """
 
 from __future__ import annotations
 
 import argparse
+import email.parser
 import hashlib
 import json
 import pathlib
@@ -19,6 +20,8 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import zipfile
+from datetime import UTC, datetime
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -34,97 +37,128 @@ def detect_arch() -> str:
     return "arm64" if machine in {"arm64", "aarch64"} else machine
 
 
+def extract_wheel_license(whl_path: pathlib.Path, licenses_dir: pathlib.Path) -> None:
+    """Extract license text from a wheel into licenses_dir/python/{name}-{version}.LICENSE."""
+    with zipfile.ZipFile(whl_path) as zf:
+        names = zf.namelist()
+        dist_info = next(
+            (n.split("/")[0] for n in names if n.endswith(".dist-info/METADATA")),
+            None,
+        )
+        if dist_info is None:
+            return
+
+        metadata_path = f"{dist_info}/METADATA"
+        raw = zf.read(metadata_path).decode("utf-8", errors="replace")
+        msg = email.parser.Parser().parsestr(raw)
+        pkg_name = msg.get("Name", "unknown")
+        pkg_version = msg.get("Version", "unknown")
+        license_header = msg.get("License", "")
+
+        record_path = f"{dist_info}/RECORD"
+        license_file_content: str | None = None
+        if record_path in names:
+            record = zf.read(record_path).decode("utf-8", errors="replace")
+            for line in record.splitlines():
+                fname = line.split(",")[0]
+                base = fname.rsplit("/", 1)[-1].upper()
+                if (
+                    base
+                    in {
+                        "LICENSE",
+                        "LICENSE.TXT",
+                        "LICENSE.MD",
+                        "COPYING",
+                        "COPYING.TXT",
+                    }
+                    and fname in names
+                ):
+                    license_file_content = zf.read(fname).decode(
+                        "utf-8", errors="replace"
+                    )
+                    break
+
+        content = license_file_content or license_header or "No license text found."
+        out_path = licenses_dir / "python" / f"{pkg_name}-{pkg_version}.LICENSE"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+
+
 def main() -> None:  # noqa: PLR0914
     parser = argparse.ArgumentParser()
     parser.add_argument("--python-version", required=True)
-    parser.add_argument("--app-version", required=True)
+    parser.add_argument("--deps-hash", required=True)
     parser.add_argument(
-        "--output-dir", type=pathlib.Path, default=pathlib.Path("dist/bundles")
+        "--output-dir", type=pathlib.Path, default=pathlib.Path("dist/bundles/python")
     )
+    parser.add_argument("--wheel-cache-dir", type=pathlib.Path, default=None)
     args = parser.parse_args()
 
     python_version: str = args.python_version
-    app_version: str = args.app_version
+    deps_hash: str = args.deps_hash
     output_dir: pathlib.Path = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     arch = detect_arch()
     os_name = platform.system().lower()
     bundle_name = (
-        f"dragonglass-deps-{app_version}-{os_name}-{arch}-py{python_version}.tar.gz"
+        f"dragonglass-deps-{deps_hash}-{os_name}-{arch}-py{python_version}.tar.gz"
     )
 
-    python_bin = f"python{python_version}"
+    tarball_path = output_dir / bundle_name
+    if tarball_path.exists():
+        print(f"Bundle already exists, skipping build: {tarball_path}")
+        print(f"SHA256: {sha256_file(tarball_path)}")
+        print(f"Output: {tarball_path}")
+        return
+
+    wheel_cache = args.wheel_cache_dir
+    if wheel_cache:
+        wheel_cache.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as td:
         bundle_dir = pathlib.Path(td) / "bundle"
         wheelhouse = bundle_dir / "wheelhouse"
         wheelhouse.mkdir(parents=True)
+        licenses_dir = bundle_dir / "licenses"
 
-        print(f"Downloading wheels for Python {python_version}...")
-        subprocess.run(
-            [
-                python_bin,
-                "-m",
-                "pip",
-                "download",
-                ".",
-                "--dest",
-                str(wheelhouse),
-                "--python-version",
-                python_version,
-                "--only-binary",
-                ":all:",
-                "--platform",
-                f"macosx_11_0_{arch}",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [
-                python_bin,
-                "-m",
-                "pip",
-                "download",
-                ".[fetch]",
-                "--dest",
-                str(wheelhouse),
-                "--python-version",
-                python_version,
-                "--only-binary",
-                ":all:",
-                "--platform",
-                f"macosx_11_0_{arch}",
-            ],
-            check=True,
-        )
+        uv_download_args = [
+            "uv",
+            "pip",
+            "download",
+            "--only-binary",
+            ":all:",
+            "--python-platform",
+            f"macosx_11_0_{arch}",
+            "--python-version",
+            python_version,
+            "--output-dir",
+            str(wheelhouse),
+        ]
+        if wheel_cache:
+            uv_download_args += ["--find-links", str(wheel_cache)]
 
-        opencode_dir = bundle_dir / "opencode"
-        opencode_dir.mkdir()
-        opencode_package_json = pathlib.Path("DragonglassApp/opencode/package.json")
-        shutil.copy2(opencode_package_json, opencode_dir / "package.json")
+        print(f"Downloading wheels for Python {python_version} via uv...")
+        subprocess.run([*uv_download_args, "."], check=True)
+        subprocess.run([*uv_download_args, ".[fetch]"], check=True)
 
-        print("Packing opencode...")
-        pkg_data = json.loads(opencode_package_json.read_text(encoding="utf-8"))
-        opencode_version = pkg_data["dependencies"]["opencode-ai"]
-        subprocess.run(
-            [
-                "npm",
-                "pack",
-                f"opencode-ai@{opencode_version}",
-                "--pack-destination",
-                str(opencode_dir),
-            ],
-            check=True,
-        )
+        if wheel_cache:
+            for whl in wheelhouse.glob("*.whl"):
+                dest = wheel_cache / whl.name
+                if not dest.exists():
+                    shutil.copy2(whl, dest)
+
+        print("Extracting licenses from wheels...")
+        for whl in wheelhouse.glob("*.whl"):
+            extract_wheel_license(whl, licenses_dir)
 
         meta = {
             "runtime": {"os": os_name, "arch": arch, "python": python_version},
-            "app_version": app_version,
+            "deps_hash": deps_hash,
+            "built_at": datetime.now(UTC).isoformat(),
         }
         (bundle_dir / "bundle_meta.json").write_text(json.dumps(meta, indent=2))
 
-        tarball_path = output_dir / bundle_name
         print(f"Creating {tarball_path}...")
         with tarfile.open(tarball_path, "w:gz") as tar:
             tar.add(bundle_dir, arcname="bundle")
