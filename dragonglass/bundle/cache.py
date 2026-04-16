@@ -9,7 +9,7 @@ from dragonglass import paths
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BUNDLE_ROOT = paths.CACHE_DIR / "bundles"
-_DEFAULT_MARKER = paths.CACHE_DIR / "installed_bundle_version.txt"
+_DEFAULT_MARKER = paths.CACHE_DIR / "installed_python_bundle_hash.txt"
 
 
 def get_cached_bundle(

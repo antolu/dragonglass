@@ -38,6 +38,7 @@ def _extract_bundle(
     dest: pathlib.Path,
     *,
     expected_runtime: RuntimeTuple | None = None,
+    expected_deps_hash: str | None = None,
 ) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tarball, "r:gz") as tar:
@@ -49,19 +50,33 @@ def _extract_bundle(
             member.name = str(pathlib.PurePosixPath(*parts[1:]))
             tar.extract(member, dest, filter="data")
 
-    if expected_runtime is not None:
+    if expected_runtime is not None or expected_deps_hash is not None:
         meta_path = dest / "bundle_meta.json"
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            r = meta["runtime"]
-            actual = RuntimeTuple(os=r["os"], arch=r["arch"], python=r["python"])
-        except (KeyError, json.JSONDecodeError, FileNotFoundError) as exc:
+        except (json.JSONDecodeError, FileNotFoundError) as exc:
             raise ValueError(f"cannot read bundle_meta.json: {exc}") from exc
-        if actual != expected_runtime:
-            shutil.rmtree(dest, ignore_errors=True)
-            raise ValueError(
-                f"runtime mismatch: bundle has {actual}, expected {expected_runtime}"
-            )
+
+        if expected_runtime is not None:
+            try:
+                r = meta["runtime"]
+                actual = RuntimeTuple(os=r["os"], arch=r["arch"], python=r["python"])
+            except KeyError as exc:
+                raise ValueError(f"cannot read bundle_meta.json: {exc}") from exc
+            if actual != expected_runtime:
+                shutil.rmtree(dest, ignore_errors=True)
+                raise ValueError(
+                    f"runtime mismatch: bundle has {actual}, expected {expected_runtime}"
+                )
+
+        if expected_deps_hash is not None:
+            actual_hash = meta.get("deps_hash")
+            if actual_hash != expected_deps_hash:
+                shutil.rmtree(dest, ignore_errors=True)
+                raise ValueError(
+                    f"deps_hash mismatch: bundle has {actual_hash!r}, expected {expected_deps_hash!r}"
+                )
+
     logger.info("extracted bundle to %s", dest)
 
 
@@ -95,8 +110,9 @@ def _run_pip_install(
     subprocess.run(cmd, check=True, env=env)
 
 
-def install_online(
+def install_online(  # noqa: PLR0913, PLR0917
     version: str,
+    deps_hash: str,
     venv_python: pathlib.Path,
     opencode_install_dir: pathlib.Path,
     progress: collections.abc.Callable[[str, float], None] | None = None,
@@ -114,7 +130,7 @@ def install_online(
     manifest_bytes = fetch_bytes(build_manifest_url(tag))
     manifest = parse_manifest(manifest_bytes)
 
-    entry = find_matching_bundle(rt, "", manifest)
+    entry = find_matching_bundle(rt, deps_hash, manifest)
     if entry is None:
         raise RuntimeError(
             f"No bundle found for runtime {rt}; check GitHub releases for supported platforms."
@@ -151,7 +167,7 @@ def install_online(
     _install_from_archive(
         cached,
         rt,
-        version,
+        deps_hash,
         venv_python,
         opencode_install_dir,
         _emit,
@@ -161,6 +177,7 @@ def install_online(
 
 def install_offline(  # noqa: PLR0913, PLR0917
     bundle_path: pathlib.Path,
+    deps_hash: str,
     venv_python: pathlib.Path,
     opencode_install_dir: pathlib.Path,
     version: str,
@@ -185,7 +202,7 @@ def install_offline(  # noqa: PLR0913, PLR0917
     _install_from_archive(
         cached,
         rt,
-        version,
+        deps_hash,
         venv_python,
         opencode_install_dir,
         _emit,
@@ -196,7 +213,7 @@ def install_offline(  # noqa: PLR0913, PLR0917
 def _install_from_archive(  # noqa: PLR0913, PLR0917
     tarball: pathlib.Path,
     rt: RuntimeTuple,
-    version: str,
+    deps_hash: str,
     venv_python: pathlib.Path,
     opencode_install_dir: pathlib.Path,
     emit: collections.abc.Callable[[str, float], None],
@@ -206,7 +223,9 @@ def _install_from_archive(  # noqa: PLR0913, PLR0917
     with tempfile.TemporaryDirectory() as td:
         extract_dir = pathlib.Path(td) / "bundle"
         emit("Extracting bundle...", 0.85)
-        _extract_bundle(tarball, extract_dir, expected_runtime=rt)
+        _extract_bundle(
+            tarball, extract_dir, expected_runtime=rt, expected_deps_hash=deps_hash
+        )
 
         wheelhouse = extract_dir / "wheelhouse"
         emit("Installing Python packages...", 0.9)
@@ -220,6 +239,6 @@ def _install_from_archive(  # noqa: PLR0913, PLR0917
             shutil.copytree(opencode_src, opencode_install_dir)
 
     kwargs = {"marker_path": marker_path} if marker_path is not None else {}
-    set_installed_bundle_version(version, **kwargs)
+    set_installed_bundle_version(deps_hash, **kwargs)
     cleanup_old_versions(keep=2)
     emit("Done.", 1.0)

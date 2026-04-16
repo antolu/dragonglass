@@ -48,6 +48,12 @@ def test_get_installed_version_missing(tmp_path: pathlib.Path) -> None:
     assert get_installed_bundle_version(marker_path=marker) is None
 
 
+def test_default_marker_filename_is_python_bundle_hash(tmp_path: pathlib.Path) -> None:
+    marker = tmp_path / "installed_python_bundle_hash.txt"
+    set_installed_bundle_version("abc123def456", marker_path=marker)
+    assert get_installed_bundle_version(marker_path=marker) == "abc123def456"
+
+
 def test_cleanup_old_versions(
     bundle_root: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:

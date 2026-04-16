@@ -24,7 +24,8 @@ def _make_fake_bundle(dest: pathlib.Path, rt: RuntimeTuple) -> tuple[pathlib.Pat
         (bundle_dir / "bundle_meta.json").write_text(
             json.dumps({
                 "runtime": {"os": rt.os, "arch": rt.arch, "python": rt.python},
-                "app_version": "1.0.0",
+                "deps_hash": "abc123def456",
+                "built_at": "2026-04-16T12:00:00Z",
             }),
             encoding="utf-8",
         )
@@ -60,6 +61,29 @@ def test_extract_bundle_runtime_mismatch(tmp_path: pathlib.Path) -> None:
     expected_rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
     with pytest.raises(ValueError, match="runtime mismatch"):
         _extract_bundle(tarball, extract_dir, expected_runtime=expected_rt)
+
+
+def test_extract_bundle_deps_hash_mismatch(tmp_path: pathlib.Path) -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    tarball, _ = _make_fake_bundle(tmp_path, rt)
+    extract_dir = tmp_path / "extracted"
+    with pytest.raises(ValueError, match="deps_hash mismatch"):
+        _extract_bundle(
+            tarball,
+            extract_dir,
+            expected_runtime=rt,
+            expected_deps_hash="wronghash0000",
+        )
+
+
+def test_extract_bundle_deps_hash_matches(tmp_path: pathlib.Path) -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    tarball, _ = _make_fake_bundle(tmp_path, rt)
+    extract_dir = tmp_path / "extracted"
+    _extract_bundle(
+        tarball, extract_dir, expected_runtime=rt, expected_deps_hash="abc123def456"
+    )
+    assert (extract_dir / "bundle_meta.json").exists()
 
 
 def test_run_pip_install_calls_pip(
