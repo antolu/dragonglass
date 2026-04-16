@@ -32,11 +32,11 @@ repos:
         args: [--fix, --exit-non-zero-on-fix, --preview, --unsafe-fixes]
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: "v1.20.0"
+    rev: "v1.20.1"
     hooks:
       - id: mypy
         additional_dependencies:
-          - "pydantic>=2.12.5"
+          - "pydantic>=2.13.1"
           - "pydantic-settings>=2.13.1"
   - repo: https://github.com/realm/SwiftLint
     rev: 0.63.2
