@@ -60,6 +60,7 @@ def _cmd_install(args: argparse.Namespace) -> int:
     try:
         install_online(
             version=args.version,
+            deps_hash=args.deps_hash,
             venv_python=pathlib.Path(args.venv_python),
             opencode_install_dir=pathlib.Path(args.opencode_dir),
             progress=_emit_progress,
@@ -89,6 +90,7 @@ def _cmd_install_offline(args: argparse.Namespace) -> int:
     try:
         install_offline(
             bundle_path=pathlib.Path(args.bundle_path),
+            deps_hash=args.deps_hash,
             venv_python=pathlib.Path(args.venv_python),
             opencode_install_dir=pathlib.Path(args.opencode_dir),
             version=args.version,
@@ -118,6 +120,7 @@ def main() -> None:
     p_install.add_argument("--venv-python", required=True, dest="venv_python")
     p_install.add_argument("--opencode-dir", required=True, dest="opencode_dir")
     p_install.add_argument("--marker-path", default=None, dest="marker_path")
+    p_install.add_argument("--deps-hash", required=True, dest="deps_hash")
 
     p_offline = sub.add_parser("install-offline", help="Install bundle from local file")
     p_offline.add_argument("bundle_path")
@@ -125,6 +128,7 @@ def main() -> None:
     p_offline.add_argument("--venv-python", required=True, dest="venv_python")
     p_offline.add_argument("--opencode-dir", required=True, dest="opencode_dir")
     p_offline.add_argument("--marker-path", default=None, dest="marker_path")
+    p_offline.add_argument("--deps-hash", required=True, dest="deps_hash")
 
     args = parser.parse_args()
     dispatch = {
