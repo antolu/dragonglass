@@ -95,3 +95,6 @@ reportPrivateImportUsage = "none"
 [tool.pytest.ini_options]
 timeout = 30
 timeout_method = "signal"
+markers = [
+    "integration: requires a real installed bundle — run via scripts/test_bundle_integration.py or with -m integration",
+]
