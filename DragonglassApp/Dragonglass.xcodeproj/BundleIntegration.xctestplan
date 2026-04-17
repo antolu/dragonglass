@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "id": "bundle-integration-config",
+      "name": "Bundle Integration",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "skippedTests": [
+        "BundleInstallerParsingTests"
+      ],
+      "target": {
+        "containerPath": "container:Dragonglass.xcodeproj",
+        "identifier": "298AEF442F92D97F00BC8C4A",
+        "name": "DragonglassTests"
+      }
+    }
+  ],
+  "version": 1
+}
