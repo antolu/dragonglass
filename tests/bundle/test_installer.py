@@ -10,9 +10,12 @@ import tempfile
 
 import pytest
 
+import dragonglass.bundle.installer as installer_mod
+from dragonglass.bundle.cache import set_installed_bundle_version
 from dragonglass.bundle.installer import (
     _extract_bundle,  # noqa: PLC2701
     _run_pip_install,  # noqa: PLC2701
+    install_offline,
 )
 from dragonglass.bundle.types import RuntimeTuple
 
@@ -105,3 +108,68 @@ def test_run_pip_install_calls_pip(
     assert any("pip" in str(c) for c in calls[0])
     assert "--no-index" in calls[0]
     assert "dragonglass[fetch]" in calls[0]
+
+
+def test_install_offline_writes_version_marker(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    tarball, _ = _make_fake_bundle(tmp_path, rt)
+    marker = tmp_path / "marker.txt"
+    opencode_dir = tmp_path / "opencode_install"
+
+    captured: list[dict] = []
+
+    def fake_install_from_archive(  # noqa: PLR0913, PLR0917
+        tarball_: pathlib.Path,
+        rt_: object,
+        deps_hash: str,
+        venv_python: pathlib.Path,
+        opencode_install_dir: pathlib.Path,
+        emit: object,
+        *,
+        marker_path: pathlib.Path | None = None,
+    ) -> None:
+        captured.append({
+            "deps_hash": deps_hash,
+            "marker_path": marker_path,
+            "opencode_install_dir": opencode_install_dir,
+        })
+
+        if marker_path:
+            set_installed_bundle_version(deps_hash, marker_path=marker_path)
+
+    monkeypatch.setattr(
+        installer_mod, "_install_from_archive", fake_install_from_archive
+    )
+    monkeypatch.setattr(installer_mod, "store_bundle", lambda src, version, **kw: src)
+
+    install_offline(
+        bundle_path=tarball,
+        deps_hash="abc123def456",
+        venv_python=pathlib.Path(sys.executable),
+        opencode_install_dir=opencode_dir,
+        version="1.0.0",
+        marker_path=marker,
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["deps_hash"] == "abc123def456"
+    assert captured[0]["marker_path"] == marker
+    assert marker.exists()
+    assert marker.read_text(encoding="utf-8").strip() == "abc123def456"
+
+
+def test_install_offline_invalid_tarball_raises(
+    tmp_path: pathlib.Path,
+) -> None:
+    bad = tmp_path / "bad.tar.gz"
+    bad.write_bytes(b"not a tarball")
+    with pytest.raises(RuntimeError, match=r"not a valid tar\.gz"):
+        install_offline(
+            bundle_path=bad,
+            deps_hash="abc123def456",
+            venv_python=pathlib.Path(sys.executable),
+            opencode_install_dir=tmp_path / "oc",
+            version="1.0.0",
+        )
