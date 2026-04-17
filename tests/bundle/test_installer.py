@@ -16,6 +16,7 @@ from dragonglass.bundle.installer import (
     _extract_bundle,  # noqa: PLC2701
     _run_pip_install,  # noqa: PLC2701
     install_offline,
+    install_online,
 )
 from dragonglass.bundle.types import RuntimeTuple
 
@@ -172,4 +173,97 @@ def test_install_offline_invalid_tarball_raises(
             venv_python=pathlib.Path(sys.executable),
             opencode_install_dir=tmp_path / "oc",
             version="1.0.0",
+        )
+
+
+def test_install_online_fetches_and_installs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    tarball, sha256 = _make_fake_bundle(tmp_path, rt)
+    deps_hash = "abc123def456"
+    filename = f"dragonglass-deps-{deps_hash}-darwin-arm64-py3.13.tar.gz"
+    marker = tmp_path / "marker.txt"
+    opencode_dir = tmp_path / "oc"
+
+    fake_entry = {
+        "filename": filename,
+        "sha256": sha256,
+        "size": tarball.stat().st_size,
+        "runtime": {"os": rt.os, "arch": rt.arch, "python": rt.python},
+        "deps_hash": deps_hash,
+    }
+
+    captured: list[dict] = []
+
+    def fake_install_from_archive(  # noqa: PLR0913, PLR0917
+        tarball_: pathlib.Path,
+        rt_: object,
+        deps_hash_: str,
+        venv_python: pathlib.Path,
+        opencode_install_dir: pathlib.Path,
+        emit: object,
+        *,
+        marker_path: pathlib.Path | None = None,
+    ) -> None:
+        captured.append({"deps_hash": deps_hash_, "marker_path": marker_path})
+        if marker_path:
+            set_installed_bundle_version(deps_hash_, marker_path=marker_path)
+
+    monkeypatch.setattr(installer_mod, "fetch_bytes", lambda url: b"{}")
+    monkeypatch.setattr(
+        installer_mod,
+        "parse_manifest",
+        lambda data: {"python_bundles": [], "app_version": "", "created": ""},
+    )
+    monkeypatch.setattr(
+        installer_mod, "find_matching_bundle", lambda rt_, dh, manifest: fake_entry
+    )
+    monkeypatch.setattr(installer_mod, "verify_file_hash", lambda path, expected: True)
+    monkeypatch.setattr(
+        installer_mod,
+        "fetch_to_file",
+        lambda url, dest, progress=None: dest.write_bytes(tarball.read_bytes()) or dest,
+    )
+    monkeypatch.setattr(installer_mod, "store_bundle", lambda src, version, **kw: src)
+    monkeypatch.setattr(
+        installer_mod, "_install_from_archive", fake_install_from_archive
+    )
+    monkeypatch.setattr(installer_mod, "detect_runtime", lambda: rt)
+
+    install_online(
+        version="1.0.0",
+        deps_hash=deps_hash,
+        venv_python=pathlib.Path(sys.executable),
+        opencode_install_dir=opencode_dir,
+        marker_path=marker,
+    )
+
+    assert marker.exists()
+    assert marker.read_text(encoding="utf-8").strip() == deps_hash
+
+
+def test_install_online_raises_on_no_matching_bundle(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
+    deps_hash = "abc123def456"
+
+    monkeypatch.setattr(installer_mod, "fetch_bytes", lambda url: b"{}")
+    monkeypatch.setattr(
+        installer_mod,
+        "parse_manifest",
+        lambda data: {"python_bundles": [], "app_version": "", "created": ""},
+    )
+    monkeypatch.setattr(
+        installer_mod, "find_matching_bundle", lambda rt_, dh, manifest: None
+    )
+    monkeypatch.setattr(installer_mod, "detect_runtime", lambda: rt)
+
+    with pytest.raises(RuntimeError, match="No bundle found"):
+        install_online(
+            version="1.0.0",
+            deps_hash=deps_hash,
+            venv_python=pathlib.Path(sys.executable),
+            opencode_install_dir=tmp_path / "oc",
         )
