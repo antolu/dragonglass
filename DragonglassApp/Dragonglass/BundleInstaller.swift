@@ -158,7 +158,7 @@ struct BundleInstaller {
     }
 }
 
-private func parseProgressEvent(_ data: Data) -> BundleProgressEvent? {
+func parseProgressEvent(_ data: Data) -> BundleProgressEvent? {
     guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let type_ = obj["type"] as? String else { return nil }
     switch type_ {
