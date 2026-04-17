@@ -14,7 +14,8 @@ struct BundleInstaller {
 
     func install(
         appVersion: String,
-        systemPython: String
+        systemPython: String,
+        depsHash: String?
     ) -> AsyncThrowingStream<BundleProgressEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -22,8 +23,8 @@ struct BundleInstaller {
                     let srcPath = Bundle.main.url(forResource: "dragonglass_src", withExtension: nil)?.path ?? ""
                     let proc = Process()
                     proc.executableURL = URL(fileURLWithPath: systemPython)
-                    let markerPath = paths.appSupportDir.appendingPathComponent("installed_bundle_version.txt").path
-                    proc.arguments = [
+                    let markerPath = paths.appSupportDir.appendingPathComponent("installed_python_bundle_hash.txt").path
+                    var args = [
                         "-m", "dragonglass.bundle",
                         "install",
                         "--version", appVersion,
@@ -31,6 +32,10 @@ struct BundleInstaller {
                         "--opencode-dir", paths.opencodeInstallDir.path,
                         "--marker-path", markerPath
                     ]
+                    if let hash = depsHash {
+                        args += ["--deps-hash", hash]
+                    }
+                    proc.arguments = args
                     var env = ProcessInfo.processInfo.environment
                     env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
                     env["PYTHONPATH"] = srcPath
@@ -83,7 +88,8 @@ struct BundleInstaller {
     func installOffline(
         bundlePath: URL,
         appVersion: String,
-        systemPython: String
+        systemPython: String,
+        depsHash: String? = nil
     ) -> AsyncThrowingStream<BundleProgressEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -91,8 +97,8 @@ struct BundleInstaller {
                     let srcPath = Bundle.main.url(forResource: "dragonglass_src", withExtension: nil)?.path ?? ""
                     let proc = Process()
                     proc.executableURL = URL(fileURLWithPath: systemPython)
-                    let markerPath = paths.appSupportDir.appendingPathComponent("installed_bundle_version.txt").path
-                    proc.arguments = [
+                    let markerPath = paths.appSupportDir.appendingPathComponent("installed_python_bundle_hash.txt").path
+                    var args = [
                         "-m", "dragonglass.bundle",
                         "install-offline",
                         bundlePath.path,
@@ -101,6 +107,10 @@ struct BundleInstaller {
                         "--opencode-dir", paths.opencodeInstallDir.path,
                         "--marker-path", markerPath
                     ]
+                    if let hash = depsHash {
+                        args += ["--deps-hash", hash]
+                    }
+                    proc.arguments = args
                     var env = ProcessInfo.processInfo.environment
                     env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
                     env["PYTHONPATH"] = srcPath
