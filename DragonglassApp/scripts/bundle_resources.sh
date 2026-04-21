@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 find_python() {
@@ -124,6 +124,18 @@ discover_pythons() {
 }
 
 MIN_MINOR="$(echo "$PYTHON_MIN" | cut -d. -f2)"
+
+BUNDLES_ROOT="$SRCROOT/../build/bundles"
+if [ -d "$BUNDLES_ROOT" ]; then
+  for d in "$BUNDLES_ROOT"/*/; do
+    [ -d "$d" ] || continue
+    hash="$(basename "$d")"
+    if [ "$hash" != "$PY_HASH" ]; then
+      echo "Removing stale bundle cache: $hash"
+      rm -rf "$d"
+    fi
+  done
+fi
 
 while IFS=" " read -r py_exe py_version; do
   [ -n "$py_exe" ] || continue
