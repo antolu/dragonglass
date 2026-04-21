@@ -14,14 +14,26 @@ import pathlib
 
 
 def compute_hash(type_: str, root: pathlib.Path) -> str:
+    h = hashlib.sha256()
     if type_ == "python":
-        path = root / "uv.lock"
+        h.update((root / "uv.lock").read_bytes())
+        # include dragonglass version so a new release invalidates cached bundles
+        try:
+            import subprocess  # noqa: PLC0415
+
+            version = subprocess.check_output(
+                ["git", "describe", "--tags", "--always", "--dirty"],
+                cwd=root,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            h.update(version)
+        except Exception:
+            pass
     elif type_ == "opencode":
-        path = root / "DragonglassApp/opencode/package.json"
+        h.update((root / "DragonglassApp/opencode/package.json").read_bytes())
     else:
         raise ValueError(f"unknown type: {type_!r}")
-    content = path.read_bytes()
-    return hashlib.sha256(content).hexdigest()[:12]
+    return h.hexdigest()[:12]
 
 
 def main() -> None:
