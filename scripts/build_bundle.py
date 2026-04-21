@@ -18,6 +18,7 @@ import pathlib
 import platform
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import zipfile
@@ -122,25 +123,45 @@ def main() -> None:  # noqa: PLR0914
         wheelhouse.mkdir(parents=True)
         licenses_dir = bundle_dir / "licenses"
 
-        uv_download_args = [
-            "uv",
+        repo_root = pathlib.Path(__file__).parent.parent
+
+        pip_download_args = [
+            sys.executable,
+            "-m",
             "pip",
             "download",
             "--only-binary",
             ":all:",
-            "--python-platform",
+            "--platform",
             f"macosx_11_0_{arch}",
             "--python-version",
             python_version,
-            "--output-dir",
+            "--dest",
+            str(wheelhouse),
+            "--find-links",
             str(wheelhouse),
         ]
         if wheel_cache:
-            uv_download_args += ["--find-links", str(wheel_cache)]
+            pip_download_args += ["--find-links", str(wheel_cache)]
 
-        print(f"Downloading wheels for Python {python_version} via uv...")
-        subprocess.run([*uv_download_args, "."], check=True)
-        subprocess.run([*uv_download_args, ".[fetch]"], check=True)
+        print("Building dragonglass wheel...")
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                ".",
+                "--no-deps",
+                "--wheel-dir",
+                str(wheelhouse),
+            ],
+            check=True,
+            cwd=repo_root,
+        )
+
+        print(f"Downloading wheels for Python {python_version} via pip...")
+        subprocess.run([*pip_download_args, ".[fetch]"], check=True, cwd=repo_root)
 
         if wheel_cache:
             for whl in wheelhouse.glob("*.whl"):

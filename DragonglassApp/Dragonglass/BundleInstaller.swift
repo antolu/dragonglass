@@ -30,7 +30,8 @@ struct BundleInstaller {
                         "--version", appVersion,
                         "--venv-python", paths.pythonPath.path,
                         "--opencode-dir", paths.opencodeInstallDir.path,
-                        "--marker-path", markerPath
+                        "--marker-path", markerPath,
+                        "--system-python", systemPython
                     ]
                     if let hash = depsHash {
                         args += ["--deps-hash", hash]
@@ -42,10 +43,19 @@ struct BundleInstaller {
                     proc.environment = env
 
                     let pipe = Pipe()
+                    let errPipe = Pipe()
                     proc.standardOutput = pipe
-                    proc.standardError = Pipe()
+                    proc.standardError = errPipe
 
                     try proc.run()
+
+                    errPipe.fileHandleForReading.readabilityHandler = { handle in
+                        let data = handle.availableData
+                        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+                        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                            logger.error("bundle stderr: \(line, privacy: .public)")
+                        }
+                    }
 
                     let handle = pipe.fileHandleForReading
                     var buffer = Data()
@@ -69,6 +79,7 @@ struct BundleInstaller {
                     }
 
                     proc.waitUntilExit()
+                    errPipe.fileHandleForReading.readabilityHandler = nil
                     if proc.terminationStatus != 0 {
                         continuation.finish(throwing: NSError(
                             domain: "BundleInstaller",
@@ -105,7 +116,8 @@ struct BundleInstaller {
                         "--version", appVersion,
                         "--venv-python", paths.pythonPath.path,
                         "--opencode-dir", paths.opencodeInstallDir.path,
-                        "--marker-path", markerPath
+                        "--marker-path", markerPath,
+                        "--system-python", systemPython
                     ]
                     if let hash = depsHash {
                         args += ["--deps-hash", hash]
@@ -117,10 +129,20 @@ struct BundleInstaller {
                     proc.environment = env
 
                     let pipe = Pipe()
+                    let errPipe = Pipe()
                     proc.standardOutput = pipe
-                    proc.standardError = Pipe()
+                    proc.standardError = errPipe
 
                     try proc.run()
+
+                    errPipe.fileHandleForReading.readabilityHandler = { handle in
+                        let data = handle.availableData
+                        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+                        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                            logger.error("bundle stderr: \(line, privacy: .public)")
+                        }
+                    }
+
                     let handle = pipe.fileHandleForReading
                     var buffer = Data()
 
@@ -141,6 +163,7 @@ struct BundleInstaller {
                     }
 
                     proc.waitUntilExit()
+                    errPipe.fileHandleForReading.readabilityHandler = nil
                     if proc.terminationStatus != 0 {
                         continuation.finish(throwing: NSError(
                             domain: "BundleInstaller",
