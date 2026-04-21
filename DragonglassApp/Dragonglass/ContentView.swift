@@ -95,6 +95,7 @@ struct ContentView: View {
             .disabled(client.isThinking)
             .popover(isPresented: $showingSettings, arrowEdge: .top) {
                 SettingsView(isPresented: $showingSettings)
+                    .environmentObject(backend)
                     .environmentObject(client)
                     .environmentObject(sttManager)
                     .environmentObject(hotkeyManager)

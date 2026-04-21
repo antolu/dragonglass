@@ -21,7 +21,7 @@ struct VaultSettingsSection: View {
                     .clipShape(Capsule())
                 Spacer()
                 Button("Change…") {
-                    SetupWindowController.shared.show { vaultPath in
+                    SetupWindowController.shared.showObsidianSetup { vaultPath in
                         var updated = config
                         Task {
                             updated.obsidianDir = vaultPath

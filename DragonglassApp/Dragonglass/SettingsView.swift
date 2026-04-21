@@ -3,6 +3,7 @@ import AppKit
 
 struct SettingsView: View {
     @Binding var isPresented: Bool
+    @EnvironmentObject var backend: BackendManager
     @EnvironmentObject var client: AgentClient
     @EnvironmentObject var sttManager: STTManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
@@ -31,6 +32,9 @@ struct SettingsView: View {
             } else if let config = Binding($config) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        settingsSection("Python") {
+                            PythonSettingsSection()
+                        }
                         settingsSection("Obsidian Vault") {
                             VaultSettingsSection(
                                 config: config,
