@@ -1,0 +1,84 @@
+name: Build OpenCode Bundle
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'DragonglassApp/opencode/package.json'
+  workflow_dispatch:
+
+jobs:
+  check-hash:
+    name: Check if bundle already exists
+    runs-on: ubuntu-latest
+    outputs:
+      deps_hash: ${{ steps.hash.outputs.deps_hash }}
+      tag_exists: ${{ steps.check.outputs.tag_exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compute deps hash
+        id: hash
+        run: echo "deps_hash=$(python scripts/compute_deps_hash.py --type opencode)" >> $GITHUB_OUTPUT
+      - name: Check if tag exists
+        id: check
+        run: |
+          TAG="deps/oc-${{ steps.hash.outputs.deps_hash }}"
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-bundle:
+    name: Build opencode bundle
+    needs: check-hash
+    if: needs.check-hash.outputs.tag_exists == 'false'
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build opencode bundle
+        run: |
+          python scripts/build_opencode_bundle.py \
+            --deps-hash ${{ needs.check-hash.outputs.deps_hash }} \
+            --output-dir dist/bundles/opencode
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-bundle
+          path: dist/bundles/opencode/*.tar.gz
+
+  publish:
+    name: Publish bundle to deps tag
+    needs: [check-hash, build-bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: opencode-bundle
+          path: dist/bundles/opencode
+
+      - name: Create deps tag and upload bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: deps/oc-${{ needs.check-hash.outputs.deps_hash }}
+          name: OpenCode deps ${{ needs.check-hash.outputs.deps_hash }}
+          files: dist/bundles/opencode/*.tar.gz
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

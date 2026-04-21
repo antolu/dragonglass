@@ -14,32 +14,75 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for setuptools-scm to find tags
+          fetch-depth: 0
           lfs: true
           submodules: recursive
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install Python Build Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install setuptools>=61 setuptools-scm[toml]~=6.0 wheel
+          python -m pip install setuptools>=61 setuptools-scm[toml]~=10.0
+
+      - name: Get app version
+        id: version
+        run: echo "version=$(python -c 'import setuptools_scm; print(setuptools_scm.get_version(local_scheme="no-local-version"))')" >> $GITHUB_OUTPUT
+
+      - name: Compute deps hashes
+        id: hashes
+        run: |
+          echo "py_hash=$(python scripts/compute_deps_hash.py --type python)" >> $GITHUB_OUTPUT
+          echo "oc_hash=$(python scripts/compute_deps_hash.py --type opencode)" >> $GITHUB_OUTPUT
+
+      - name: Download Python bundles from deps tag
+        run: |
+          mkdir -p dist/bundles/python
+          gh release download "deps/py-${{ steps.hashes.outputs.py_hash }}" \
+            --pattern "dragonglass-deps-*" \
+            --dir dist/bundles/python
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download opencode bundle from deps tag
+        run: |
+          mkdir -p dist/bundles/opencode
+          gh release download "deps/oc-${{ steps.hashes.outputs.oc_hash }}" \
+            --pattern "dragonglass-opencode-*" \
+            --dir dist/bundles/opencode || echo "No opencode bundle found, skipping"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate manifest
+        run: |
+          OC_BUNDLE="$(ls dist/bundles/opencode/*.tar.gz 2>/dev/null | head -1 || true)"
+          if [ -n "$OC_BUNDLE" ]; then
+            python scripts/generate_manifest.py \
+              --python-bundles-dir dist/bundles/python \
+              --opencode-bundle "$OC_BUNDLE" \
+              --app-version ${{ steps.version.outputs.version }} \
+              --output dist/manifest.json
+          else
+            python scripts/generate_manifest.py \
+              --python-bundles-dir dist/bundles/python \
+              --app-version ${{ steps.version.outputs.version }} \
+              --output dist/manifest.json
+          fi
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Setup Node (npm) and pnpm
-        uses: actions/setup-node@v6
+      - name: Setup Node and pnpm
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
-          package-manager-cache: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@v5
@@ -48,14 +91,6 @@ jobs:
 
       - name: Build macOS App
         run: |
-          # Note: This builds an UNSIGNED app. For signed/notarized releases in CI:
-          # 1. Export your Apple Developer ID Certificate as .p12
-          # 2. Add it to GitHub Secrets
-          # 3. Add steps to import the certificate into a temporary keychain
-          # 4. Configure xcodebuild to use the imported identity
-          #
-          # The Xcode build script in project.pbxproj already handles downloading dependencies,
-          # building the Python wheels, and bundling them into the resources.
           xcodebuild -workspace DragonglassApp/Dragonglass.xcodeproj/project.xcworkspace \
                      -scheme Dragonglass \
                      -configuration Release \
@@ -71,7 +106,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          files: Dragonglass-*.zip
+          files: |
+            Dragonglass-*.zip
+            dist/manifest.json
           draft: false
           prerelease: false
           generate_release_notes: true
