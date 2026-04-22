@@ -112,9 +112,11 @@ class BackendManager: ObservableObject {
         let bundledDepsHash = getBundledDepsHash()
         let installedDepsHash = getInstalledDepsHash()
         logger.info("bundledDepsHash=\((bundledDepsHash ?? "none"), privacy: .public) installedDepsHash=\((installedDepsHash ?? "none"), privacy: .public)")
-        let depsHashChanged = bundledDepsHash != nil && bundledDepsHash != installedDepsHash
-        let needsBundle = pythonChanged || !dragonglassExists || depsHashChanged
-        logger.info("needsBundle=\(needsBundle, privacy: .public) dragonglassExists=\(dragonglassExists, privacy: .public) pythonChanged=\(pythonChanged, privacy: .public)")
+        let isDevHash = bundledDepsHash == "dev"
+        let forceInstall = ProcessInfo.processInfo.environment["DRAGONGLASS_FORCE_BUNDLE_INSTALL"] == "1"
+        let depsHashChanged = !isDevHash && bundledDepsHash != nil && bundledDepsHash != installedDepsHash
+        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged
+        logger.info("needsBundle=\(needsBundle, privacy: .public) dragonglassExists=\(dragonglassExists, privacy: .public) pythonChanged=\(pythonChanged, privacy: .public) isDevHash=\(isDevHash, privacy: .public) forceInstall=\(forceInstall, privacy: .public)")
 
         if needsBundle {
             logger.info("opening setup window for bundle install")
