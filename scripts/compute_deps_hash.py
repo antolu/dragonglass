@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import pathlib
+import subprocess
 
 
 def compute_hash(type_: str, root: pathlib.Path) -> str:
@@ -19,8 +20,6 @@ def compute_hash(type_: str, root: pathlib.Path) -> str:
         h.update((root / "uv.lock").read_bytes())
         h.update((root / "DragonglassApp/opencode/package.json").read_bytes())
         try:
-            import subprocess  # noqa: PLC0415
-
             version = subprocess.check_output(
                 ["git", "describe", "--tags", "--always"],
                 cwd=root,
