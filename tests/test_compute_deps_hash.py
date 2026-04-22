@@ -34,8 +34,18 @@ def test_opencode_hash_is_12_hex_chars() -> None:
 
 
 def test_python_hash_matches_manual_sha256() -> None:
-    content = pathlib.Path("uv.lock").read_bytes()
-    expected = hashlib.sha256(content).hexdigest()[:12]
+    h = hashlib.sha256()
+    h.update(pathlib.Path("uv.lock").read_bytes())
+    h.update(pathlib.Path("DragonglassApp/opencode/package.json").read_bytes())
+    try:
+        version = subprocess.check_output(
+            ["git", "describe", "--tags", "--always"],
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        h.update(version)
+    except Exception:
+        pass
+    expected = h.hexdigest()[:12]
     result = subprocess.run(
         [sys.executable, "scripts/compute_deps_hash.py", "--type", "python"],
         capture_output=True,
