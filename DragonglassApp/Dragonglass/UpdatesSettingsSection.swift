@@ -6,11 +6,16 @@ struct UpdatesSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Check for updates automatically", isOn: Binding(
-                get: { !disabled },
-                set: { disabled = !$0; updateChecker.startPeriodicChecks(disabled: disabled) }
-            ))
-            .toggleStyle(.switch)
+            HStack {
+                Text("Check for updates automatically")
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { !disabled },
+                    set: { disabled = !$0; updateChecker.startPeriodicChecks(disabled: disabled) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
 
             HStack {
                 if updateChecker.isChecking {
