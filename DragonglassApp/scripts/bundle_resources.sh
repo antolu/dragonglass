@@ -94,8 +94,19 @@ cp "$PLUGIN_DIR/dist/main.js" "$PLUGIN_RES_DIR/main.js"
 cp "$PLUGIN_DIR/dist/manifest.json" "$PLUGIN_RES_DIR/manifest.json"
 
 # Compute Python deps hash and write resource file
-PY_HASH="$("$_PY" "$SRCROOT/../scripts/compute_deps_hash.py" --type python --root-dir "$SRCROOT/..")"
+# Debug builds use a sentinel so the app skips the hash staleness check.
+if [ "${CONFIGURATION}" = "Debug" ]; then
+  PY_HASH="dev"
+else
+  PY_HASH="$("$_PY" "$SRCROOT/../scripts/compute_deps_hash.py" --type python --root-dir "$SRCROOT/..")"
+fi
 printf "%s\n" "$PY_HASH" > "$RESOURCES_DIR/python_bundle_hash.txt"
+
+# In Debug builds, skip bundle building — the app uses an existing installed venv.
+if [ "${CONFIGURATION}" = "Debug" ]; then
+  echo "Debug build: skipping bundle build (hash=dev)"
+  exit 0
+fi
 
 # Build Python dependency bundles for all available Python versions
 BUNDLE_CACHE_DIR="$SRCROOT/../build/bundle_cache"
