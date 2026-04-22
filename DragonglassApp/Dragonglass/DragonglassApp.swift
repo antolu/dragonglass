@@ -21,7 +21,8 @@ struct DragonglassApp: App {
             backend: backend,
             client: client,
             sttManager: sttManager,
-            hotkeyManager: hotkeyManager
+            hotkeyManager: hotkeyManager,
+            updateChecker: updateChecker
         )
         let _ = { appDelegate.backend = backend }() // swiftlint:disable:this redundant_discardable_let
 

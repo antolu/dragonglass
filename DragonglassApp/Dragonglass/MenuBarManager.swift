@@ -12,6 +12,7 @@ class MenuBarManager: NSObject, ObservableObject {
     private var client: AgentClient?
     private var sttManager: STTManager?
     private var hotkeyManager: HotkeyManager?
+    private var updateChecker: UpdateChecker?
     private var popover: NSPopover?
     private var cancellables = Set<AnyCancellable>()
 
@@ -19,7 +20,8 @@ class MenuBarManager: NSObject, ObservableObject {
         backend: BackendManager,
         client: AgentClient,
         sttManager: STTManager,
-        hotkeyManager: HotkeyManager
+        hotkeyManager: HotkeyManager,
+        updateChecker: UpdateChecker
     ) {
         guard self.backend == nil else { return }
         logger.info("setup")
@@ -27,6 +29,7 @@ class MenuBarManager: NSObject, ObservableObject {
         self.client = client
         self.sttManager = sttManager
         self.hotkeyManager = hotkeyManager
+        self.updateChecker = updateChecker
 
         hotkeyManager.setup(sttManager: sttManager, menuBarManager: self, agentClient: client)
 
@@ -45,7 +48,8 @@ class MenuBarManager: NSObject, ObservableObject {
 
     func refresh() {
         guard let backend = backend, let client = client,
-              let sttManager = sttManager, let hotkeyManager = hotkeyManager else { return }
+              let sttManager = sttManager, let hotkeyManager = hotkeyManager,
+              let updateChecker = updateChecker else { return }
 
         let isReady: Bool
         switch backend.phase {
@@ -72,6 +76,7 @@ class MenuBarManager: NSObject, ObservableObject {
                         .environmentObject(client)
                         .environmentObject(sttManager)
                         .environmentObject(hotkeyManager)
+                        .environmentObject(updateChecker)
                         .frame(width: 400, height: 500)
                 )
                 hostingController.safeAreaRegions = []

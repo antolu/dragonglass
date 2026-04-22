@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var client: AgentClient
     @EnvironmentObject var sttManager: STTManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
+    @EnvironmentObject var updateChecker: UpdateChecker
     @State private var inputText = ""
     @State private var showingSettings = false
     @State private var showingCustomModel = false
@@ -99,6 +100,7 @@ struct ContentView: View {
                     .environmentObject(client)
                     .environmentObject(sttManager)
                     .environmentObject(hotkeyManager)
+                    .environmentObject(updateChecker)
             }
         }
         .padding()
