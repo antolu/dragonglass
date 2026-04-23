@@ -26,18 +26,18 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.10"
+    rev: "v0.15.11"
     hooks:
       - id: ruff-check
         args: [--fix, --exit-non-zero-on-fix, --preview, --unsafe-fixes]
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: "v1.20.0"
+    rev: "v1.20.2"
     hooks:
       - id: mypy
         additional_dependencies:
-          - "pydantic>=2.12.5"
-          - "pydantic-settings>=2.13.1"
+          - "pydantic>=2.13.3"
+          - "pydantic-settings>=2.14.0"
   - repo: https://github.com/realm/SwiftLint
     rev: 0.63.2
     hooks:
