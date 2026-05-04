@@ -51,6 +51,10 @@ chat command → VaultAgent.run(text)
 - **Conversations:** `~/.cache/dragonglass/data/conversations/{uuid}.json` — auto-saved after each turn.
 - **Extra models:** `~/.config/dragonglass/extra_models.json`.
 
+### LLM Backends
+
+Currently, `litellm` is the sole LLM backend. All requests are routed through LiteLLM to support a wide range of providers (Ollama, Anthropic, OpenAI, etc.). The `llm_backend` field in `Settings` is currently commented out/inactive to simplify the interaction model.
+
 ---
 
 ## Commands
@@ -127,7 +131,7 @@ from textual.app import App, ComposeResult
 
 ```python
 from dragonglass.config import Settings, get_settings
-from dragonglass.agent.agent import VaultAgent, AgentEvent
+from dragonglass.agent.runtime import VaultAgent, AgentEvent
 from dragonglass.log import setup_logging
 ```
 
