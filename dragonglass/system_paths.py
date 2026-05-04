@@ -62,7 +62,7 @@ def resolve_tool_paths(
         entries.extend(_split_path_entries(extra["PATH"]))
 
     candidate_path = os.pathsep.join(dict.fromkeys(entries))
-    for binary in ("node", "uvx", "npx"):
+    for binary in ("uvx",):
         resolved = shutil.which(binary, path=candidate_path) or shutil.which(binary)
         if resolved:
             entries.append(str(pathlib.Path(resolved).parent))
@@ -81,5 +81,5 @@ def resolve_tool_binaries(
     extra: dict[str, str] | None = None,
 ) -> dict[str, str | None]:
     search_path = os.pathsep.join(resolve_tool_paths(settings=settings, extra=extra))
-    binaries = ["node", "npm", "npx", "uvx"]
+    binaries = ["uvx"]
     return {name: shutil.which(name, path=search_path) for name in binaries}
