@@ -279,7 +279,7 @@ class AgentClient: ObservableObject {
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
-                                    self.llmBackend = config.llmBackend
+                                    self.llmBackend = config.llmBackend ?? "litellm"
                                     if let toolPathEnv = config.toolPathEnv {
                                         UserDefaults.standard.set(toolPathEnv, forKey: cachedToolPathEnvKey)
                                     }
