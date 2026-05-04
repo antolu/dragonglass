@@ -12,7 +12,7 @@ struct DragonglassConfig: Codable, Equatable {
     var extraModels: [String]?
     var envVars: [String: String]?
     var selectedModel: String?
-    var llmBackend: String
+    var llmBackend: String?
     var agentsNotePath: String
     var autoAllowEdit: Bool
     var autoAllowCreate: Bool

@@ -10,13 +10,14 @@ struct BackendSettingsSection: View {
                 Text("Backend")
                 Spacer()
                 Picker("", selection: $config.llmBackend) {
-                    Text("LiteLLM").tag("litellm")
+                    Text("LiteLLM").tag("litellm" as String?)
+                    // Text("OpenCode").tag("opencode" as String?)
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
                 .onChange(of: config.llmBackend) { _, newBackend in
                     config.selectedModel = ""
-                    client.setBackend(newBackend)
+                    client.setBackend(newBackend ?? "litellm")
                 }
             }
         }
