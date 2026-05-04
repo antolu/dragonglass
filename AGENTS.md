@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# AGENTS.md
 
 # dragonglass — agent instructions
 
@@ -210,8 +208,8 @@ Use `pytest.MonkeyPatch` (via the `monkeypatch` fixture) for environment and att
 ```python
 from __future__ import annotations
 
-def test_something(monkeypatch: pytest.MonkeyPatch) -> None:
-    ...
+
+def test_something(monkeypatch: pytest.MonkeyPatch) -> None: ...
 ```
 
 All tests must pass before finalising a commit. Run:
