@@ -115,6 +115,7 @@ def install_online(  # noqa: PLR0913, PLR0917
     deps_hash: str,
     venv_python: pathlib.Path,
     opencode_install_dir: pathlib.Path,
+    system_python: str | None = None,
     progress: collections.abc.Callable[[str, float], None] | None = None,
     marker_path: pathlib.Path | None = None,
 ) -> None:
@@ -171,6 +172,7 @@ def install_online(  # noqa: PLR0913, PLR0917
         venv_python,
         opencode_install_dir,
         _emit,
+        system_python=system_python,
         marker_path=marker_path,
     )
 
@@ -181,6 +183,7 @@ def install_offline(  # noqa: PLR0913, PLR0917
     venv_python: pathlib.Path,
     opencode_install_dir: pathlib.Path,
     version: str,
+    system_python: str | None = None,
     progress: collections.abc.Callable[[str, float], None] | None = None,
     marker_path: pathlib.Path | None = None,
 ) -> None:
@@ -206,6 +209,7 @@ def install_offline(  # noqa: PLR0913, PLR0917
         venv_python,
         opencode_install_dir,
         _emit,
+        system_python=system_python,
         marker_path=marker_path,
     )
 
@@ -218,8 +222,13 @@ def _install_from_archive(  # noqa: PLR0913, PLR0917
     opencode_install_dir: pathlib.Path,
     emit: collections.abc.Callable[[str, float], None],
     *,
+    system_python: str | None = None,
     marker_path: pathlib.Path | None = None,
 ) -> None:
+    if system_python and not venv_python.exists():
+        emit("Creating virtual environment...", 0.8)
+        _create_venv(system_python, venv_python)
+
     with tempfile.TemporaryDirectory() as td:
         extract_dir = pathlib.Path(td) / "bundle"
         emit("Extracting bundle...", 0.85)

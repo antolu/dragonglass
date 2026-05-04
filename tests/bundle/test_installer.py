@@ -129,6 +129,7 @@ def test_install_offline_writes_version_marker(
         opencode_install_dir: pathlib.Path,
         emit: object,
         *,
+        system_python: str | None = None,
         marker_path: pathlib.Path | None = None,
     ) -> None:
         captured.append({
@@ -204,6 +205,7 @@ def test_install_online_fetches_and_installs(
         opencode_install_dir: pathlib.Path,
         emit: object,
         *,
+        system_python: str | None = None,
         marker_path: pathlib.Path | None = None,
     ) -> None:
         captured.append({"deps_hash": deps_hash_, "marker_path": marker_path})

@@ -32,9 +32,6 @@ struct SettingsView: View {
             } else if let config = Binding($config) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        settingsSection("Python") {
-                            PythonSettingsSection()
-                        }
                         settingsSection("Obsidian Vault") {
                             VaultSettingsSection(
                                 config: config,
