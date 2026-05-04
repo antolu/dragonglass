@@ -288,10 +288,7 @@ class AgentClient: ObservableObject {
                                        let json = String(data: data, encoding: .utf8) {
                                         UserDefaults.standard.set(json, forKey: cachedToolBinariesKey)
                                     }
-                                    if (config.opencodeAvailable ?? true) == false,
-                                       self.llmBackend == "opencode" {
-                                        self.llmBackend = "litellm"
-                                    }
+
                                     self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list

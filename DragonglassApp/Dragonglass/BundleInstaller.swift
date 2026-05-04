@@ -29,7 +29,6 @@ struct BundleInstaller {
                         "install",
                         "--version", appVersion,
                         "--venv-python", paths.pythonPath.path,
-                        "--opencode-dir", paths.opencodeInstallDir.path,
                         "--marker-path", markerPath,
                         "--system-python", systemPython
                     ]
@@ -115,7 +114,6 @@ struct BundleInstaller {
                         bundlePath.path,
                         "--version", appVersion,
                         "--venv-python", paths.pythonPath.path,
-                        "--opencode-dir", paths.opencodeInstallDir.path,
                         "--marker-path", markerPath,
                         "--system-python", systemPython
                     ]

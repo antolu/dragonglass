@@ -131,7 +131,7 @@ struct ContentView: View {
 
             if !client.availableModels.isEmpty {
                 Divider()
-                Text(client.llmBackend == "opencode" ? "OpenCode Models" : "Ollama Models")
+                Text("Ollama Models")
                 ForEach(client.availableModels, id: \.self) { model in
                     Button(model) {
                         client.setSelectedModel(model)

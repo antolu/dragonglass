@@ -25,10 +25,6 @@ struct BackendPaths {
     var pythonPath: URL { venvDir.appendingPathComponent("bin/python3") }
     var uvPath: URL { venvDir.appendingPathComponent("bin/uv") }
     var dragonglassPath: URL { venvDir.appendingPathComponent("bin/dragonglass") }
-    var opencodeInstallDir: URL { appSupportDir.appendingPathComponent("opencode") }
-    var opencodeBinPath: URL { opencodeInstallDir.appendingPathComponent("node_modules/.bin/opencode") }
-    var opencodeCliPackagePath: URL { opencodeInstallDir.appendingPathComponent("node_modules/opencode-ai/package.json") }
-    var opencodeConfigPath: URL { appSupportDir.appendingPathComponent("config/opencode.json") }
 
     /// Port the dragonglass Python server listens on.
     static let backendPort = 51363
@@ -126,7 +122,6 @@ class BackendManager: ObservableObject {
 
         phase = .starting
         do {
-            try await ensureOpencodeInstalled(paths: paths)
             let deployResult = await deployObsidianPlugin()
             if case .needsUpdate(let installed, let bundled) = deployResult {
                 phase = .needsPluginUpdate(installed, bundled)
@@ -388,15 +383,7 @@ class BackendManager: ObservableObject {
 
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
-        env["OPENCODE_CONFIG"] = paths.opencodeConfigPath.path
-        env["OPENCODE_BIN"] = paths.opencodeBinPath.path
         p.environment = env
-
-        try FileManager.default.createDirectory(
-            at: paths.opencodeConfigPath.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
 
         let processLogger = Logger(subsystem: subsystem, category: "BackendManager")
         let pipe = Pipe()
