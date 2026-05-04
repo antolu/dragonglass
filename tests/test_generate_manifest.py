@@ -6,10 +6,6 @@ _PYTHON_BUNDLE_RE = re.compile(
     r"dragonglass-deps-(?P<deps_hash>[a-f0-9]{12})-(?P<os>[^-]+)-(?P<arch>[^-]+)-py(?P<python>[\d.]+)\.tar\.gz"
 )
 
-_OPENCODE_BUNDLE_RE = re.compile(
-    r"dragonglass-opencode-(?P<deps_hash>[a-f0-9]{12})-(?P<os>[^-]+)-(?P<arch>[^-]+)\.tar\.gz"
-)
-
 
 def test_python_bundle_re_matches() -> None:
     name = "dragonglass-deps-abc123def456-darwin-arm64-py3.13.tar.gz"
@@ -26,16 +22,3 @@ def test_python_bundle_re_rejects_old_version_format() -> None:
         _PYTHON_BUNDLE_RE.match("dragonglass-deps-1.2.3-darwin-arm64-py3.13.tar.gz")
         is None
     )
-
-
-def test_opencode_bundle_re_matches() -> None:
-    name = "dragonglass-opencode-def789abc012-darwin-arm64.tar.gz"
-    m = _OPENCODE_BUNDLE_RE.match(name)
-    assert m is not None
-    assert m.group("deps_hash") == "def789abc012"
-    assert m.group("os") == "darwin"
-    assert m.group("arch") == "arm64"
-
-
-def test_opencode_bundle_re_rejects_unrecognised() -> None:
-    assert _OPENCODE_BUNDLE_RE.match("someother.tar.gz") is None

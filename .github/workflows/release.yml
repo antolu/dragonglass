@@ -38,7 +38,6 @@ jobs:
         id: hashes
         run: |
           echo "py_hash=$(python scripts/compute_deps_hash.py --type python)" >> $GITHUB_OUTPUT
-          echo "oc_hash=$(python scripts/compute_deps_hash.py --type opencode)" >> $GITHUB_OUTPUT
 
       - name: Download Python bundles from deps tag
         run: |
@@ -49,30 +48,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download opencode bundle from deps tag
-        run: |
-          mkdir -p dist/bundles/opencode
-          gh release download "deps/oc-${{ steps.hashes.outputs.oc_hash }}" \
-            --pattern "dragonglass-opencode-*" \
-            --dir dist/bundles/opencode || echo "No opencode bundle found, skipping"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate manifest
         run: |
-          OC_BUNDLE="$(ls dist/bundles/opencode/*.tar.gz 2>/dev/null | head -1 || true)"
-          if [ -n "$OC_BUNDLE" ]; then
-            python scripts/generate_manifest.py \
-              --python-bundles-dir dist/bundles/python \
-              --opencode-bundle "$OC_BUNDLE" \
-              --app-version ${{ steps.version.outputs.version }} \
-              --output dist/manifest.json
-          else
-            python scripts/generate_manifest.py \
-              --python-bundles-dir dist/bundles/python \
-              --app-version ${{ steps.version.outputs.version }} \
-              --output dist/manifest.json
-          fi
+          python scripts/generate_manifest.py \
+            --python-bundles-dir dist/bundles/python \
+            --app-version ${{ steps.version.outputs.version }} \
+            --output dist/manifest.json
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
