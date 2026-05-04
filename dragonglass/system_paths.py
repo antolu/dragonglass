@@ -81,5 +81,5 @@ def resolve_tool_binaries(
     extra: dict[str, str] | None = None,
 ) -> dict[str, str | None]:
     search_path = os.pathsep.join(resolve_tool_paths(settings=settings, extra=extra))
-    binaries = ["node", "npm", "npx", "uvx", "opencode"]
+    binaries = ["node", "npm", "npx", "uvx"]
     return {name: shutil.which(name, path=search_path) for name in binaries}

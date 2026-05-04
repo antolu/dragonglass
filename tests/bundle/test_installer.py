@@ -37,10 +37,6 @@ def _make_fake_bundle(dest: pathlib.Path, rt: RuntimeTuple) -> tuple[pathlib.Pat
         wheelhouse.mkdir()
         (wheelhouse / "placeholder.whl").write_bytes(b"fake wheel")
 
-        opencode_dir = bundle_dir / "opencode"
-        opencode_dir.mkdir()
-        (opencode_dir / "placeholder.tgz").write_bytes(b"fake node")
-
         tarball = dest / "bundle.tar.gz"
         with tarfile.open(tarball, "w:gz") as tar:
             tar.add(bundle_dir, arcname="bundle")
@@ -117,16 +113,14 @@ def test_install_offline_writes_version_marker(
     rt = RuntimeTuple(os="darwin", arch="arm64", python="3.13")
     tarball, _ = _make_fake_bundle(tmp_path, rt)
     marker = tmp_path / "marker.txt"
-    opencode_dir = tmp_path / "opencode_install"
 
     captured: list[dict] = []
 
-    def fake_install_from_archive(  # noqa: PLR0913, PLR0917
+    def fake_install_from_archive(  # noqa: PLR0913
         tarball_: pathlib.Path,
         rt_: object,
         deps_hash: str,
         venv_python: pathlib.Path,
-        opencode_install_dir: pathlib.Path,
         emit: object,
         *,
         system_python: str | None = None,
@@ -135,7 +129,6 @@ def test_install_offline_writes_version_marker(
         captured.append({
             "deps_hash": deps_hash,
             "marker_path": marker_path,
-            "opencode_install_dir": opencode_install_dir,
         })
 
         if marker_path:
@@ -150,7 +143,6 @@ def test_install_offline_writes_version_marker(
         bundle_path=tarball,
         deps_hash="abc123def456",
         venv_python=pathlib.Path(sys.executable),
-        opencode_install_dir=opencode_dir,
         version="1.0.0",
         marker_path=marker,
     )
@@ -172,7 +164,6 @@ def test_install_offline_invalid_tarball_raises(
             bundle_path=bad,
             deps_hash="abc123def456",
             venv_python=pathlib.Path(sys.executable),
-            opencode_install_dir=tmp_path / "oc",
             version="1.0.0",
         )
 
@@ -185,7 +176,6 @@ def test_install_online_fetches_and_installs(
     deps_hash = "abc123def456"
     filename = f"dragonglass-deps-{deps_hash}-darwin-arm64-py3.13.tar.gz"
     marker = tmp_path / "marker.txt"
-    opencode_dir = tmp_path / "oc"
 
     fake_entry = {
         "filename": filename,
@@ -197,12 +187,11 @@ def test_install_online_fetches_and_installs(
 
     captured: list[dict] = []
 
-    def fake_install_from_archive(  # noqa: PLR0913, PLR0917
+    def fake_install_from_archive(  # noqa: PLR0913
         tarball_: pathlib.Path,
         rt_: object,
         deps_hash_: str,
         venv_python: pathlib.Path,
-        opencode_install_dir: pathlib.Path,
         emit: object,
         *,
         system_python: str | None = None,
@@ -237,7 +226,6 @@ def test_install_online_fetches_and_installs(
         version="1.0.0",
         deps_hash=deps_hash,
         venv_python=pathlib.Path(sys.executable),
-        opencode_install_dir=opencode_dir,
         marker_path=marker,
     )
 
@@ -267,5 +255,4 @@ def test_install_online_raises_on_no_matching_bundle(
             version="1.0.0",
             deps_hash=deps_hash,
             venv_python=pathlib.Path(sys.executable),
-            opencode_install_dir=tmp_path / "oc",
         )

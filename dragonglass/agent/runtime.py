@@ -12,7 +12,6 @@ import fastmcp.exceptions
 import litellm
 from mcp import ClientSession
 from mcp.types import TextContent
-from opencode_ai import AsyncOpencode
 from pydantic import JsonValue
 
 from dragonglass.agent.approval import DragonglassTool, needs_approval
@@ -25,7 +24,6 @@ from dragonglass.agent.mcp import (
     fastmcp_tool_to_litellm,
     mcp_tool_to_litellm,
 )
-from dragonglass.agent.opencode import run_opencode_turn
 from dragonglass.agent.parsing import (
     _is_error_result,
     _is_validation_error_result,
@@ -49,7 +47,7 @@ from dragonglass.agent.types import (
     UsageEvent,
     UserMessageEvent,
 )
-from dragonglass.config import LLMBackend, Settings, get_settings
+from dragonglass.config import Settings, get_settings
 from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
 
 logger = logging.getLogger(__name__)
@@ -363,14 +361,11 @@ class VaultAgent:
     async def initialise(self) -> None:
         settings = get_settings()
         logger.info(
-            "agent initialise backend=%s model=%s vector_search=%s",
-            settings.llm_backend,
+            "agent initialise model=%s vector_search=%s",
             settings.llm_model,
             settings.vector_search_url,
         )
-        self._system_prompt, self.agents_note_found = await load_system_prompt(
-            settings, opencode=settings.llm_backend == LLMBackend.opencode
-        )
+        self._system_prompt, self.agents_note_found = await load_system_prompt(settings)
         await self._connect_mcp_servers()
         logger.info(
             "agent ready tools=%d stdio_sessions=%d agents_note_found=%s",
@@ -382,7 +377,6 @@ class VaultAgent:
     def clear_history(self) -> None:
         self._history = []
         self._total_tokens = 0
-        self._opencode_session_id = None
         self._session_approved.clear()
 
     def get_history(self) -> list[Message]:
@@ -496,65 +490,6 @@ class VaultAgent:
             settings = get_settings()
             litellm.drop_params = True
             model_name = resolve_model_name(model_override, settings.llm_model)
-
-            if settings.llm_backend == LLMBackend.opencode:
-                if not self._opencode_session_id:
-                    client = AsyncOpencode(base_url=settings.opencode_url)
-                    try:
-                        model_name_for_session = resolve_model_name(
-                            model_override, settings.llm_model
-                        )
-                        session_provider_id = "copilot"
-                        session_model_id = model_name_for_session
-                        if "/" in model_name_for_session:
-                            session_provider_id, session_model_id = (
-                                model_name_for_session.split("/", 1)
-                            )
-
-                        session = await client.session.create(
-                            extra_body={
-                                "agent": "dragonglass",
-                                "model": {
-                                    "providerID": session_provider_id,
-                                    "modelID": session_model_id,
-                                },
-                            }
-                        )
-                        logger.info(
-                            "created OpenCode session id=%s provider=%s model=%s",
-                            session.id,
-                            session_provider_id,
-                            session_model_id,
-                        )
-                        self._opencode_session_id = session.id
-                    except Exception:
-                        logger.exception("failed to create OpenCode session")
-                        yield StatusEvent(message="Failed to connect to OpenCode")
-                        yield DoneEvent()
-                        return
-
-                provider_id = "copilot"
-                model_id = model_name
-                if "/" in model_name:
-                    provider_id, model_id = model_name.split("/", 1)
-
-                logger.debug(
-                    "Switching to OpenCode backend  session=%s  provider=%s  model=%s",
-                    self._opencode_session_id,
-                    provider_id,
-                    model_id,
-                )
-                async for event in run_opencode_turn(
-                    self._opencode_session_id,
-                    messages[-1]["content"],
-                    model_id,
-                    provider_id,
-                    settings,
-                    system_prompt=self._system_prompt,
-                    agent="dragonglass",
-                ):
-                    yield event
-                return
 
             if model_name.startswith("ollama/"):
                 model_name = "ollama_chat/" + model_name[len("ollama/") :]

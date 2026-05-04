@@ -25,15 +25,7 @@ class BundleEntry(typing.TypedDict):
     runtime: RuntimeTupleDict
 
 
-class OpencodeBundleEntry(typing.TypedDict):
-    filename: str
-    sha256: str
-    size: int
-    deps_hash: str
-
-
 class BundleManifest(typing.TypedDict):
     app_version: str
     created: str
     python_bundles: list[BundleEntry]
-    opencode_bundle: OpencodeBundleEntry | None

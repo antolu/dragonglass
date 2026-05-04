@@ -121,10 +121,6 @@ def stage_verify_structure(tarball: pathlib.Path, deps_hash: str) -> None:
         _fail("wheelhouse/ contains no .whl files")
     _ok(f"wheelhouse has {len(whl_files)} wheel(s)")
 
-    if not _has("bundle/opencode/"):
-        _fail("missing bundle/opencode/ directory")
-    _ok("opencode/ directory present")
-
     with tarfile.open(tarball, "r:gz") as tf:
         meta_member = tf.getmember("bundle/bundle_meta.json")
         f = tf.extractfile(meta_member)
@@ -146,10 +142,9 @@ def stage_install(
     tmp_dir: pathlib.Path,
     deps_hash: str,
     version: str,
-) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+) -> tuple[pathlib.Path, pathlib.Path]:
     _stage(3, "Install bundle into fresh venv")
     venv_dir = tmp_dir / "venv"
-    opencode_dir = tmp_dir / "opencode"
     marker_path = tmp_dir / "installed_python_bundle_hash.txt"
 
     result = _run(
@@ -175,8 +170,6 @@ def stage_install(
             version,
             "--venv-python",
             str(venv_python),
-            "--opencode-dir",
-            str(opencode_dir),
             "--marker-path",
             str(marker_path),
             "--deps-hash",
@@ -210,12 +203,11 @@ def stage_install(
         _fail(f"last JSON line was not 'done': {last}")
     _ok("install-offline completed successfully")
 
-    return venv_python, opencode_dir, marker_path
+    return venv_python, marker_path
 
 
 def stage_structural_checks(
     venv_python: pathlib.Path,
-    opencode_dir: pathlib.Path,
     marker_path: pathlib.Path,
     deps_hash: str,
 ) -> None:
@@ -237,10 +229,6 @@ def stage_structural_checks(
         if result.returncode != 0:
             _fail(f"{pkg} not importable from venv: {result.stderr.strip()}")
         _ok(f"{pkg} importable: {result.stdout.strip()}")
-
-    if not opencode_dir.exists():
-        _fail(f"opencode install dir not created: {opencode_dir}")
-    _ok(f"opencode dir exists: {opencode_dir}")
 
 
 def stage_functional_smoke(venv_python: pathlib.Path) -> None:
@@ -309,10 +297,8 @@ def main() -> None:
     try:
         tarball = stage_build(tmp_dir, deps_hash)
         stage_verify_structure(tarball, deps_hash)
-        venv_python, opencode_dir, marker_path = stage_install(
-            tarball, tmp_dir, deps_hash, version
-        )
-        stage_structural_checks(venv_python, opencode_dir, marker_path, deps_hash)
+        venv_python, marker_path = stage_install(tarball, tmp_dir, deps_hash, version)
+        stage_structural_checks(venv_python, marker_path, deps_hash)
         stage_functional_smoke(venv_python)
         if not args.skip_pytest:
             stage_pytest(venv_python)

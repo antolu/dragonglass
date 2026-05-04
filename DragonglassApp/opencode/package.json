@@ -1,7 +1,0 @@
-{
-  "name": "dragonglass-opencode-bootstrap",
-  "private": true,
-  "dependencies": {
-    "opencode-ai": "1.14.22"
-  }
-}

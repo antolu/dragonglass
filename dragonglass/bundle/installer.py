@@ -114,7 +114,6 @@ def install_online(  # noqa: PLR0913, PLR0917
     version: str,
     deps_hash: str,
     venv_python: pathlib.Path,
-    opencode_install_dir: pathlib.Path,
     system_python: str | None = None,
     progress: collections.abc.Callable[[str, float], None] | None = None,
     marker_path: pathlib.Path | None = None,
@@ -170,7 +169,6 @@ def install_online(  # noqa: PLR0913, PLR0917
         rt,
         deps_hash,
         venv_python,
-        opencode_install_dir,
         _emit,
         system_python=system_python,
         marker_path=marker_path,
@@ -181,7 +179,6 @@ def install_offline(  # noqa: PLR0913, PLR0917
     bundle_path: pathlib.Path,
     deps_hash: str,
     venv_python: pathlib.Path,
-    opencode_install_dir: pathlib.Path,
     version: str,
     system_python: str | None = None,
     progress: collections.abc.Callable[[str, float], None] | None = None,
@@ -207,19 +204,17 @@ def install_offline(  # noqa: PLR0913, PLR0917
         rt,
         deps_hash,
         venv_python,
-        opencode_install_dir,
         _emit,
         system_python=system_python,
         marker_path=marker_path,
     )
 
 
-def _install_from_archive(  # noqa: PLR0913, PLR0917
+def _install_from_archive(  # noqa: PLR0913
     tarball: pathlib.Path,
     rt: RuntimeTuple,
     deps_hash: str,
     venv_python: pathlib.Path,
-    opencode_install_dir: pathlib.Path,
     emit: collections.abc.Callable[[str, float], None],
     *,
     system_python: str | None = None,
@@ -239,13 +234,6 @@ def _install_from_archive(  # noqa: PLR0913, PLR0917
         wheelhouse = extract_dir / "wheelhouse"
         emit("Installing Python packages...", 0.9)
         _run_pip_install(venv_python, wheelhouse)
-
-        opencode_src = extract_dir / "opencode"
-        if opencode_src.exists():
-            emit("Installing OpenCode...", 0.95)
-            if opencode_install_dir.exists():
-                shutil.rmtree(opencode_install_dir)
-            shutil.copytree(opencode_src, opencode_install_dir)
 
     kwargs = {"marker_path": marker_path} if marker_path is not None else {}
     set_installed_bundle_version(deps_hash, **kwargs)

@@ -16,7 +16,6 @@ dependencies = [
   "click >= 8.1",
   "websockets >= 12.0",
   "tomli-w >= 1.2.0",
-  "opencode-ai == 0.1.0a36",
 ]
 
 [[project.authors]]
@@ -86,7 +85,7 @@ disallow_untyped_defs = true
 python_version = "3.11"
 
 [[tool.mypy.overrides]]
-module = ["litellm.*", "textual.*", "fastmcp.*", "opencode_ai.*"]
+module = ["litellm.*", "textual.*", "fastmcp.*"]
 ignore_missing_imports = true
 
 [tool.pyright]

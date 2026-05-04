@@ -11,7 +11,6 @@ from dragonglass.config import Settings
 logger = logging.getLogger(__name__)
 
 _PROMPT_PATH = pathlib.Path(__file__).parent / "system_prompt.md"
-_OPENCODE_ADDENDUM_PATH = pathlib.Path(__file__).parent / "opencode_addendum.md"
 
 
 def _metadata_block() -> str:
@@ -23,16 +22,7 @@ def _metadata_block() -> str:
     )
 
 
-def load_opencode_addendum() -> str:
-    if _OPENCODE_ADDENDUM_PATH.exists():
-        return _OPENCODE_ADDENDUM_PATH.read_text(encoding="utf-8")
-    logger.warning("opencode addendum not found at %s", _OPENCODE_ADDENDUM_PATH)
-    return ""
-
-
-async def load_system_prompt(
-    settings: Settings, opencode: bool = False
-) -> tuple[str, bool]:
+async def load_system_prompt(settings: Settings) -> tuple[str, bool]:
     vault_instructions, found = await _load_agents_note(settings)
 
     if _PROMPT_PATH.exists():
@@ -44,10 +34,6 @@ async def load_system_prompt(
     prompt = global_instructions + "\n" + _metadata_block()
     if vault_instructions:
         prompt += "\n" + vault_instructions
-    if opencode:
-        addendum = load_opencode_addendum()
-        if addendum:
-            prompt += "\n" + addendum
     return prompt, found
 
 

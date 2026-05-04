@@ -16,7 +16,6 @@ from http import HTTPStatus
 import httpx
 import tomli_w
 import websockets.exceptions
-from opencode_ai import AsyncOpencode
 from pydantic import JsonValue
 
 from dragonglass import paths
@@ -29,18 +28,16 @@ from dragonglass.agent import (
     StatusEvent,
     VaultAgent,
 )
-from dragonglass.config import LLMBackend, get_settings, invalidate_settings
+from dragonglass.config import get_settings, invalidate_settings
 from dragonglass.log_context import bind_request_id
 from dragonglass.mcp import drain_tool_events
 from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     Command,
     parse_ollama_models,
-    parse_opencode_models,
     resolve_chat_model,
     serialize_event,
 )
-from dragonglass.server.opencode import OpenCodeManager
 from dragonglass.system_paths import resolve_tool_binaries, resolve_tool_paths
 
 logger = logging.getLogger(__name__)
@@ -88,11 +85,9 @@ class ConnectionHandler:
     def __init__(
         self,
         agent: VaultAgent,
-        opencode: OpenCodeManager,
         conversations: ConversationStore,
     ) -> None:
         self._agent = agent
-        self._opencode = opencode
         self._conversations = conversations
         self._chat_task: asyncio.Task[None] | None = None
         self.agent_ready: bool = False
@@ -146,11 +141,11 @@ class ConnectionHandler:
                     case Command.PING:
                         await websocket.send(json.dumps({"type": "pong"}))
                     case Command.GET_CONFIG:
-                        await self._handle_get_config(websocket)
+                        await ConnectionHandler._handle_get_config(websocket)
                     case Command.SET_CONFIG:
-                        await self._handle_set_config(websocket, data)
+                        await ConnectionHandler._handle_set_config(websocket, data)
                     case Command.LIST_MODELS:
-                        await self._handle_list_models(websocket)
+                        await ConnectionHandler._handle_list_models(websocket)
                     case Command.SAVE_MODEL:
                         await self._handle_save_model(websocket, data)
                     case Command.GET_VERSION:
@@ -299,7 +294,8 @@ class ConnectionHandler:
             with contextlib.suppress(Exception):
                 await websocket.send(serialize_event(DoneEvent()))
 
-    async def _handle_get_config(self, websocket: WebSocketConnection) -> None:
+    @staticmethod
+    async def _handle_get_config(websocket: WebSocketConnection) -> None:
         settings = get_settings()
         tool_paths = resolve_tool_paths(settings=settings)
         tool_binaries = resolve_tool_binaries(settings=settings)
@@ -319,24 +315,17 @@ class ConnectionHandler:
                 "tool_paths": tool_paths,
                 "tool_path_env": os.pathsep.join(tool_paths),
                 "tool_binaries": tool_binaries,
-                "opencode_available": (
-                    self._opencode.resolve_executable() is not None
-                    and self._opencode.start_error is None
-                ),
-                "opencode_disabled_reason": self._opencode.start_error,
             })
         )
 
-    async def _handle_list_models(self, websocket: WebSocketConnection) -> None:
+    @staticmethod
+    async def _handle_list_models(websocket: WebSocketConnection) -> None:
         settings = get_settings()
         models: list[str] = []
         base_urls = settings.ollama_probe_urls()
         if not base_urls:
             parsed_ollama = urllib.parse.urlparse(settings.ollama_url)
-            fallback_host = (
-                parsed_ollama.hostname
-                or urllib.parse.urlparse(settings.opencode_url).hostname
-            )
+            fallback_host = parsed_ollama.hostname
             if fallback_host:
                 base_urls = [
                     settings.build_http_url(fallback_host, DEFAULT_OLLAMA_PORT)
@@ -358,19 +347,6 @@ class ConnectionHandler:
                         break
             except Exception:
                 logger.debug("ollama unreachable at %s", base_url, exc_info=True)
-
-        if settings.llm_backend == LLMBackend.opencode:
-            if self._opencode.start_error:
-                await websocket.send(
-                    serialize_event(StatusEvent(message=self._opencode.start_error))
-                )
-            try:
-                opencode_client = AsyncOpencode(base_url=settings.opencode_url)
-                providers = await opencode_client.app.providers()
-                opencode_models = parse_opencode_models(providers)
-                models = opencode_models
-            except Exception:
-                logger.exception("failed to fetch opencode models")
 
         await websocket.send(json.dumps({"type": "models_list", "models": models}))
 
@@ -398,8 +374,9 @@ class ConnectionHandler:
             except Exception:
                 logger.exception("failed to save extra models")
 
+    @staticmethod
     async def _handle_set_config(
-        self, websocket: WebSocketConnection, data: dict[str, JsonValue]
+        websocket: WebSocketConnection, data: dict[str, JsonValue]
     ) -> None:
         new_config = data.get("config")
         if not isinstance(new_config, dict):
@@ -424,29 +401,7 @@ class ConnectionHandler:
             return
         new_config_map = _coerce_json_map(new_config)
 
-        old_settings = get_settings()
-
-        new_config_map.pop("opencode_available", None)
-        new_config_map.pop("opencode_disabled_reason", None)
-        backend_changed = (
-            "llm_backend" in new_config_map
-            and new_config_map["llm_backend"] != old_settings.llm_backend
-        )
-        if backend_changed:
-            logger.info(
-                "server: llm backend transition %s -> %s",
-                old_settings.llm_backend,
-                new_config_map["llm_backend"],
-            )
-            current_toml[f"selected_model_{old_settings.llm_backend}"] = (
-                old_settings.selected_model
-            )
         current_toml.update(new_config_map)
-        if backend_changed:
-            new_backend = str(new_config_map["llm_backend"])
-            current_toml["selected_model"] = current_toml.get(
-                f"selected_model_{new_backend}", ""
-            )
 
         paths.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -454,39 +409,14 @@ class ConnectionHandler:
             tomli_w.dump(current_toml, f)
 
         invalidate_settings()
-        settings = get_settings()
-
-        old_active = self._opencode.is_active(old_settings)
-        new_active = self._opencode.is_active(settings)
-        should_restart_opencode = (not old_active and new_active) or (
-            old_active
-            and new_active
-            and settings.llm_model != self._opencode.last_model
-        )
-        logger.info(
-            "server: opencode state old_active=%s new_active=%s restart=%s old_model=%s new_model=%s",
-            old_active,
-            new_active,
-            should_restart_opencode,
-            self._opencode.last_model,
-            settings.llm_model,
-        )
-
-        if old_active and not new_active:
-            await self._opencode.stop()
-        elif should_restart_opencode and await self._opencode.restart(
-            settings.llm_model
-        ):
-            pass  # last_model updated inside restart()
+        get_settings()
 
         logger.info(
             "server: config updated and settings invalidated for file %s",
             paths.CONFIG_FILE,
         )
         await websocket.send(json.dumps({"type": "config_ack"}))
-        await self._handle_get_config(websocket)
-        if "llm_backend" in new_config_map:
-            await self._handle_list_models(websocket)
+        await ConnectionHandler._handle_get_config(websocket)
 
     async def _handle_load_conversation(
         self, websocket: WebSocketConnection, data: dict[str, JsonValue]

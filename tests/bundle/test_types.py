@@ -5,7 +5,6 @@ import dataclasses
 from dragonglass.bundle.types import (
     BundleEntry,
     BundleManifest,
-    OpencodeBundleEntry,
     RuntimeTuple,
 )
 
@@ -42,7 +41,6 @@ def test_manifest_structure() -> None:
         "app_version": "1.0.0",
         "created": "2026-01-01T00:00:00Z",
         "python_bundles": [],
-        "opencode_bundle": None,
     }
     assert manifest["app_version"] == "1.0.0"
 
@@ -56,24 +54,3 @@ def test_bundle_entry_has_deps_hash() -> None:
         "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
     }
     assert entry["deps_hash"] == "abc123def456"
-
-
-def test_opencode_bundle_entry_shape() -> None:
-    entry: OpencodeBundleEntry = {
-        "filename": "dragonglass-opencode-def789abc012-darwin-arm64.tar.gz",
-        "sha256": "def",
-        "size": 200,
-        "deps_hash": "def789abc012",
-    }
-    assert entry["deps_hash"] == "def789abc012"
-
-
-def test_bundle_manifest_has_python_and_opencode_sections() -> None:
-    manifest: BundleManifest = {
-        "app_version": "1.2.3",
-        "created": "2026-04-16T12:00:00Z",
-        "python_bundles": [],
-        "opencode_bundle": None,
-    }
-    assert manifest["python_bundles"] == []
-    assert manifest["opencode_bundle"] is None

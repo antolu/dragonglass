@@ -20,7 +20,6 @@ def _make_manifest(bundles: list[BundleEntry]) -> BundleManifest:
         "app_version": "1.0.0",
         "created": "2026-01-01T00:00:00Z",
         "python_bundles": bundles,
-        "opencode_bundle": None,
     }
 
 
@@ -108,11 +107,9 @@ def test_parse_manifest_new_schema() -> None:
                 "runtime": {"os": "darwin", "arch": "arm64", "python": "3.13"},
             }
         ],
-        "opencode_bundle": None,
     }).encode()
     manifest = parse_manifest(data)
     assert manifest["python_bundles"][0]["deps_hash"] == "abc123def456"
-    assert manifest["opencode_bundle"] is None
 
 
 def test_find_matching_bundle_uses_deps_hash() -> None:

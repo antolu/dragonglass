@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 import logging
 import os
 import socket
@@ -16,11 +15,6 @@ from pydantic_settings import (
 from dragonglass import paths
 
 logger = logging.getLogger(__name__)
-
-
-class LLMBackend(enum.StrEnum):
-    litellm = "litellm"
-    opencode = "opencode"
 
 
 class Settings(BaseSettings):
@@ -47,11 +41,9 @@ class Settings(BaseSettings):
 
     obsidian_dir: str = ""
     llm_model: str = "ollama/llama3.2"
-    llm_backend: LLMBackend = LLMBackend.litellm
-    opencode_url: str = "http://localhost:4096"
+    # llm_backend: str = "litellm"
     ws_port: int = 51363
     mcp_http_port: int = 51364
-    spawn_opencode: bool = True
     llm_temperature: float | None = None
     llm_top_p: float | None = None
     llm_top_k: int | None = None
@@ -99,13 +91,9 @@ class Settings(BaseSettings):
             normalized_path = ""
         return f"http://{self._format_http_host(host)}:{port}{normalized_path}"
 
-    def mcp_probe_urls(self, port: int, path: str = "/mcp") -> list[str]:
-        hosts = self._resolve_hosts(self.opencode_url)
-        if not hosts:
-            parsed = urllib.parse.urlparse(self.opencode_url)
-            if parsed.hostname:
-                hosts = [parsed.hostname]
-        return [self.build_http_url(host, port, path) for host in hosts]
+    @staticmethod
+    def mcp_probe_urls(port: int, path: str = "/mcp") -> list[str]:
+        return []
 
     def ollama_probe_urls(self) -> list[str]:
         parsed = urllib.parse.urlparse(self.ollama_url)
@@ -119,14 +107,10 @@ class Settings(BaseSettings):
         urls = self.mcp_probe_urls(self.mcp_http_port, path=path)
         if urls:
             return urls[0]
-        parsed = urllib.parse.urlparse(self.opencode_url)
-        host = parsed.hostname or socket.gethostname()
-        return self.build_http_url(host, self.mcp_http_port, path)
+        return self.build_http_url(socket.gethostname(), self.mcp_http_port, path)
 
-    def bind_host(self) -> str:
-        parsed = urllib.parse.urlparse(self.opencode_url)
-        if parsed.hostname:
-            return parsed.hostname
+    @staticmethod
+    def bind_host() -> str:
         return socket.gethostname()
 
     def websocket_uri(self, host: str | None = None, port: int | None = None) -> str:
@@ -150,11 +134,9 @@ def get_settings() -> Settings:
         s = Settings()
         re_export_settings(s)
         logger.info(
-            "settings loaded backend=%s model=%s mcp_port=%d opencode_url=%s env_vars=%d",
-            s.llm_backend,
+            "settings loaded model=%s mcp_port=%d env_vars=%d",
             s.llm_model,
             s.mcp_http_port,
-            s.opencode_url,
             len(s.env_vars),
         )
         _settings.append(s)

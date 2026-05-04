@@ -22,14 +22,7 @@ CACHE_DIR = get_xdg_dir("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
 
 TEMP_DIR = pathlib.Path(tempfile.gettempdir()) / "dragonglass"
 DATA_DIR = TEMP_DIR / "data"
-OPENCODE_CONFIG_DIR = TEMP_DIR / "config"
 LOG_DIR = XDG_DATA_DIR
-_opencode_config_path = os.environ.get("OPENCODE_CONFIG")
-if _opencode_config_path:
-    OPENCODE_CONFIG_FILE = pathlib.Path(_opencode_config_path).expanduser()
-else:
-    OPENCODE_CONFIG_FILE = OPENCODE_CONFIG_DIR / "opencode.json"
-PROJECT_OPENCODE_CONFIG = OPENCODE_CONFIG_FILE
 
 CONVERSATIONS_DIR = DATA_DIR / "conversations"
 
@@ -39,12 +32,9 @@ for d in (
     DATA_DIR,
     CACHE_DIR,
     CONVERSATIONS_DIR,
-    OPENCODE_CONFIG_DIR,
     LOG_DIR,
 ):
     d.mkdir(parents=True, exist_ok=True)
-
-OPENCODE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 EXTRA_MODELS_FILE = CONFIG_DIR / "extra_models.json"
