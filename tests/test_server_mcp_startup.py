@@ -107,7 +107,6 @@ def test_run_continues_when_managed_services_fail(
     monkeypatch.setattr(
         "dragonglass.server.server.get_settings",
         lambda: types.SimpleNamespace(
-            llm_backend="litellm",
             llm_model="test-model",
             mcp_http_port=51364,
             vector_search_url="http://vector",
@@ -177,7 +176,6 @@ def test_run_stops_when_agent_initialise_fails(
     monkeypatch.setattr(
         "dragonglass.server.server.get_settings",
         lambda: types.SimpleNamespace(
-            llm_backend="litellm",
             llm_model="test-model",
             mcp_http_port=51364,
             vector_search_url="http://vector",
