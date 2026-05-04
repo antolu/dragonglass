@@ -36,7 +36,7 @@ Clients send JSON commands; the server streams back newline-delimited JSON event
 
 ```
 chat command → VaultAgent.run(text)
-  → _agent_loop: LLM call (litellm or OpenCode HTTP)
+  → _agent_loop: LLM call (litellm)
     → parse text + tool_calls
     → _call_tool: search tools → local; others → stdio MCP session
     → append tool result to history (truncated at 4000 chars)
@@ -44,12 +44,6 @@ chat command → VaultAgent.run(text)
   → save conversation JSON → yield DoneEvent
 ```
 
-### LLM backends
-
-- **litellm** (default) — direct async completions; temperature/top-p/top-k from settings.
-- **opencode** — external Node.js process spawned on startup; dragonglass writes its config, health-checks it, then proxies messages via HTTP. Falls back to litellm if startup fails.
-
-Backend is selected by `llm_backend` in settings (`"litellm"` or `"opencode"`).
 
 ### Config & persistence
 

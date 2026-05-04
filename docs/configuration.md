@@ -25,9 +25,7 @@ obsidian_dir = "/Users/you/Documents/ObsidianVault"
 
 # LLM backend settings
 llm_model = "ollama/llama3.2"        # Default provider/model
-llm_backend = "litellm"               # or "opencode"
-opencode_url = "http://localhost:4096"
-spawn_opencode = true
+llm_backend = "litellm"
 
 # Model and search endpoints
 ollama_url = "http://localhost:11434"

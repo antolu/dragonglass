@@ -353,7 +353,6 @@ class VaultAgent:
         self._search = create_search_server(get_settings())
         self.agents_note_found: bool = False
         self._total_tokens: int = 0
-        self._opencode_session_id: str | None = None
         self._approval_gates: dict[str, asyncio.Event] = {}
         self._approval_results: dict[str, bool] = {}
         self._session_approved: set[str] = set()

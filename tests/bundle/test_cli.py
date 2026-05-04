@@ -74,9 +74,6 @@ def _make_fake_bundle_for_cli(dest: pathlib.Path) -> tuple[pathlib.Path, str]:
         wheelhouse = bundle_dir / "wheelhouse"
         wheelhouse.mkdir()
         (wheelhouse / "placeholder.whl").write_bytes(b"fake wheel")
-        opencode_dir = bundle_dir / "opencode"
-        opencode_dir.mkdir()
-        (opencode_dir / "placeholder.tgz").write_bytes(b"fake node")
 
         tarball = dest / "bundle.tar.gz"
         with tarfile.open(tarball, "w:gz") as tar:
@@ -88,8 +85,6 @@ def _make_fake_bundle_for_cli(dest: pathlib.Path) -> tuple[pathlib.Path, str]:
 def test_install_offline_cli_succeeds(tmp_path: pathlib.Path) -> None:
     tarball, deps_hash = _make_fake_bundle_for_cli(tmp_path)
     marker = tmp_path / "marker.txt"
-    opencode_dir = tmp_path / "oc"
-
     fake_pip_script = tmp_path / "fake_python"
     fake_pip_script.write_text(
         "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n",
@@ -111,8 +106,6 @@ def test_install_offline_cli_succeeds(tmp_path: pathlib.Path) -> None:
             "1.0.0",
             "--venv-python",
             str(fake_pip_script),
-            "--opencode-dir",
-            str(opencode_dir),
             "--marker-path",
             str(marker),
             "--deps-hash",
