@@ -107,11 +107,11 @@ class Settings(BaseSettings):
         urls = self.mcp_probe_urls(self.mcp_http_port, path=path)
         if urls:
             return urls[0]
-        return self.build_http_url(socket.gethostname(), self.mcp_http_port, path)
+        return self.build_http_url("localhost", self.mcp_http_port, path)
 
     @staticmethod
     def bind_host() -> str:
-        return socket.gethostname()
+        return "localhost"
 
     def websocket_uri(self, host: str | None = None, port: int | None = None) -> str:
         resolved_host = host or self.bind_host()
