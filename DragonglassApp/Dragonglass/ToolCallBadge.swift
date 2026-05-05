@@ -71,7 +71,7 @@ struct ToolCallBadge: View {
             }
             .frame(maxHeight: 200)
         }
-        let withSelection = selectable ? badge.textSelection(.enabled) : badge.textSelection(.disabled)
+        let withSelection = selectable ? AnyView(badge.textSelection(.enabled)) : AnyView(badge.textSelection(.disabled))
         withSelection.onTapGesture {
             if isErrorLike {
                 showingDetail = true
