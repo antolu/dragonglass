@@ -341,6 +341,9 @@ class BackendManager: ObservableObject {
         proc.arguments = ["-m", "pip", "install", "--quiet", "--no-deps", srcPath]
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+        if let version = getBundledSrcVersion() {
+            env["SETUPTOOLS_SCM_PRETEND_VERSION"] = version
+        }
         proc.environment = env
         try proc.run()
         proc.waitUntilExit()
