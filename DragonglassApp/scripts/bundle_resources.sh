@@ -65,6 +65,7 @@ DRAGONGLASS_SRC="$SRCROOT/../dragonglass"
 DRAGONGLASS_RES="$RESOURCES_DIR/dragonglass_src/dragonglass"
 rm -rf "$DRAGONGLASS_RES"
 cp -R "$DRAGONGLASS_SRC" "$RESOURCES_DIR/dragonglass_src/"
+cp "$SRCROOT/../pyproject.toml" "$RESOURCES_DIR/dragonglass_src/"
 
 # Write the source version so the app can detect src changes in dev/Debug builds.
 printf "%s\n" "$VERSION" > "$RESOURCES_DIR/dragonglass_src_version.txt"

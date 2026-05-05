@@ -338,7 +338,7 @@ class BackendManager: ObservableObject {
         }
         let proc = Process()
         proc.executableURL = paths.pythonPath
-        proc.arguments = ["-m", "pip", "install", "--quiet", srcPath]
+        proc.arguments = ["-m", "pip", "install", "--quiet", "--no-deps", srcPath]
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
         proc.environment = env
