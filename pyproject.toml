@@ -14,7 +14,7 @@ dependencies = [
   "python-dotenv >= 1.2.2",
   "fastmcp >= 3.2.4",
   "click >= 8.1",
-  "websockets >= 12.0",
+  "websockets >= 16.0",
   "tomli-w >= 1.2.0",
 ]
 
