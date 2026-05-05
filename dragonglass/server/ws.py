@@ -285,6 +285,8 @@ class ConnectionHandler:
                     feed_task.cancel()
                     with contextlib.suppress(Exception):
                         await feed_task
+            if not feed_task.cancelled():
+                feed_task.result()
 
             await flush_mcp_telemetry()
             persist_history()
@@ -292,6 +294,13 @@ class ConnectionHandler:
             logger.info("server: chat task cancelled")
             persist_history()
             with contextlib.suppress(Exception):
+                await websocket.send(serialize_event(DoneEvent()))
+        except Exception as exc:
+            logger.exception("server: chat task error")
+            with contextlib.suppress(Exception):
+                await websocket.send(
+                    serialize_event(StatusEvent(message=f"Error: {exc}"))
+                )
                 await websocket.send(serialize_event(DoneEvent()))
 
     @staticmethod
