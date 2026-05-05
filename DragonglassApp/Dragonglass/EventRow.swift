@@ -60,6 +60,16 @@ struct EventRow: View {
             } else {
                 row.textSelection(.disabled)
             }
+        case .error(let msg):
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundColor(.red)
+                    .font(.caption)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .textSelection(.enabled)
+            }
         case .unknown(let type):
             Text("Unknown event: \(type)")
                 .font(.caption)

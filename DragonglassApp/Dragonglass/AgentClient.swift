@@ -31,6 +31,7 @@ enum AgentEvent: Codable {
     case conversationLoaded(String, [AgentEvent])
     case mcpTool(String, String, String, String)
     case approvalRequest(ApprovalRequest)
+    case error(String)
     case unknown(String)
 
     enum CodingKeys: String, CodingKey {
@@ -102,6 +103,8 @@ enum AgentEvent: Codable {
                 diff: try container.decode(String.self, forKey: .diff),
                 description: try container.decode(String.self, forKey: .description)
             ))
+        case "ErrorEvent":
+            self = .error(try container.decode(String.self, forKey: .message))
         default:
             self = .unknown(type)
         }
@@ -152,6 +155,9 @@ enum AgentEvent: Codable {
             try container.encode(detail, forKey: .detail)
         case .approvalRequest:
             break
+        case .error(let msg):
+            try container.encode("ErrorEvent", forKey: .type)
+            try container.encode(msg, forKey: .message)
         }
     }
 }
@@ -161,6 +167,7 @@ struct ChatTurn: Identifiable {
     let userMessageIndex: Int
     var toolCallIndices: [Int] = []
     var assistantMessageIndex: Int?
+    var errorIndex: Int?
     var doneIndex: Int?
     var isCompleted: Bool { doneIndex != nil }
 }
@@ -208,6 +215,8 @@ class AgentClient: ObservableObject {
                 if current?.assistantMessageIndex == nil {
                     current?.assistantMessageIndex = index
                 }
+            case .error:
+                current?.errorIndex = index
             case .done:
                 current?.doneIndex = index
             default:
@@ -303,6 +312,8 @@ class AgentClient: ObservableObject {
                                 case .approvalRequest(let req):
                                     self.events.append(event)
                                     self.pendingApproval = req
+                                case .error:
+                                    self.events.append(event)
                                 case .unknown, .usage, .configAck:
                                     break
                                 }

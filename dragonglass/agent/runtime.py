@@ -35,6 +35,7 @@ from dragonglass.agent.types import (
     AgentEvent,
     ApprovalRequestEvent,
     DoneEvent,
+    ErrorEvent,
     FallbackFunction,
     FallbackToolCall,
     FunctionCall,
@@ -450,7 +451,7 @@ class VaultAgent:
                 yield typing.cast(AgentEvent, event)
         except Exception as exc:
             logger.exception("agent loop error")
-            yield StatusEvent(message=f"Error: {exc}")
+            yield ErrorEvent(message=str(exc))
             yield DoneEvent()
         except BaseException:
             del self._history[history_len_before:]

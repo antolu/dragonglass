@@ -81,6 +81,9 @@ struct ChatTimelineView: View {
                         if let aIdx = turn.assistantMessageIndex {
                             EventRow(event: client.events[aIdx], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
                         }
+                        if let eIdx = turn.errorIndex {
+                            EventRow(event: client.events[eIdx], detailed: client.detailedToolEvents, includeToolCalls: includeToolCallsInSelection)
+                        }
                     }
 
                     if client.isThinking {

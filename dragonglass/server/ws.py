@@ -23,6 +23,7 @@ from dragonglass._version import version
 from dragonglass.agent import (
     AgentEvent,
     DoneEvent,
+    ErrorEvent,
     MCPToolEvent,
     Message,
     StatusEvent,
@@ -298,9 +299,7 @@ class ConnectionHandler:
         except Exception as exc:
             logger.exception("server: chat task error")
             with contextlib.suppress(Exception):
-                await websocket.send(
-                    serialize_event(StatusEvent(message=f"Error: {exc}"))
-                )
+                await websocket.send(serialize_event(ErrorEvent(message=str(exc))))
                 await websocket.send(serialize_event(DoneEvent()))
 
     @staticmethod

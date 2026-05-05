@@ -94,6 +94,11 @@ class ApprovalRequestEvent:
 
 
 @dataclasses.dataclass
+class ErrorEvent:
+    message: str
+
+
+@dataclasses.dataclass
 class ConversationsListEvent:
     conversations: list[dict[str, typing.Any]]
 
@@ -106,6 +111,7 @@ class ConversationLoadedEvent:
 
 AgentEvent = (
     StatusEvent
+    | ErrorEvent
     | TextChunk
     | UsageEvent
     | DoneEvent
