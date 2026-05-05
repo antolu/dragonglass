@@ -91,6 +91,13 @@ class CompletionKwargs(typing.TypedDict, total=False):
     tools: list[Tool]
 
 
+def build_completion_kwargs(model_name: str, ollama_url: str) -> CompletionKwargs:
+    kwargs: CompletionKwargs = {"model": model_name, "stream": True}
+    if model_name.startswith(("ollama_chat/", "ollama/")):
+        kwargs["api_base"] = ollama_url
+    return kwargs
+
+
 def resolve_model_name(model_override: str | None, default_model: str) -> str:
     if model_override is None:
         return default_model
@@ -493,19 +500,15 @@ class VaultAgent:
             if model_name.startswith("ollama/"):
                 model_name = "ollama_chat/" + model_name[len("ollama/") :]
 
-            kwargs: CompletionKwargs = {
-                "model": model_name,
-                "messages": messages,
-                "stream": True,
-                "temperature": settings.llm_temperature,
-                "top_p": settings.llm_top_p,
-                "top_k": settings.llm_top_k,
-                "topK": settings.llm_top_k,
-                "min_p": settings.llm_min_p,
-                "presence_penalty": settings.llm_presence_penalty,
-                "repetition_penalty": settings.llm_repetition_penalty,
-                "api_base": settings.ollama_url,
-            }
+            kwargs = build_completion_kwargs(model_name, settings.ollama_url)
+            kwargs["messages"] = messages
+            kwargs["temperature"] = settings.llm_temperature
+            kwargs["top_p"] = settings.llm_top_p
+            kwargs["top_k"] = settings.llm_top_k
+            kwargs["topK"] = settings.llm_top_k
+            kwargs["min_p"] = settings.llm_min_p
+            kwargs["presence_penalty"] = settings.llm_presence_penalty
+            kwargs["repetition_penalty"] = settings.llm_repetition_penalty
             tools = self._litellm_tools
 
             if tools:
