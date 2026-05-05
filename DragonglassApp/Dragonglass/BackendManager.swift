@@ -111,7 +111,11 @@ class BackendManager: ObservableObject {
         let isDevHash = bundledDepsHash == "dev"
         let forceInstall = ProcessInfo.processInfo.environment["DRAGONGLASS_FORCE_BUNDLE_INSTALL"] == "1"
         let depsHashChanged = !isDevHash && bundledDepsHash != nil && bundledDepsHash != installedDepsHash
-        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged
+        let bundledSrcVersion = getBundledSrcVersion()
+        let installedSrcVersion = getInstalledSrcVersion()
+        let srcVersionChanged = isDevHash && bundledSrcVersion != nil && bundledSrcVersion != installedSrcVersion
+        logger.info("bundledSrcVersion=\((bundledSrcVersion ?? "none"), privacy: .public) installedSrcVersion=\((installedSrcVersion ?? "none"), privacy: .public) srcVersionChanged=\(srcVersionChanged, privacy: .public)")
+        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged || srcVersionChanged
         logger.info("needsBundle=\(needsBundle, privacy: .public) dragonglassExists=\(dragonglassExists, privacy: .public) pythonChanged=\(pythonChanged, privacy: .public) isDevHash=\(isDevHash, privacy: .public) forceInstall=\(forceInstall, privacy: .public)")
 
         if needsBundle {
@@ -266,6 +270,23 @@ class BackendManager: ObservableObject {
         try? hash.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    private func getBundledSrcVersion() -> String? {
+        guard let url = Bundle.main.url(forResource: "dragonglass_src_version", withExtension: "txt"),
+              let value = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func getInstalledSrcVersion() -> String? {
+        let url = paths.appSupportDir.appendingPathComponent("installed_dragonglass_src_version.txt")
+        guard let value = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func saveInstalledSrcVersion(_ version: String) {
+        let url = paths.appSupportDir.appendingPathComponent("installed_dragonglass_src_version.txt")
+        try? version.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func getBundledVersion() -> String? {
         guard let url = Bundle.main.url(forResource: "version", withExtension: "txt"),
               let version = try? String(contentsOf: url, encoding: .utf8) else {
@@ -309,6 +330,7 @@ class BackendManager: ObservableObject {
                 phase = .installingBundle
                 saveInstalledPythonPath(systemPython)
                 if let hash = depsHash { saveInstalledDepsHash(hash) }
+                if let v = getBundledSrcVersion() { saveInstalledSrcVersion(v) }
             case .error(let message):
                 throw NSError(
                     domain: "BundleInstaller",
