@@ -10,15 +10,31 @@
 		29D202802F78014200A0B14C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 29D2027F2F78014200A0B14C /* WhisperKit */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		298AEF492F92D97F00BC8C4A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 292A4A4E2F51C89500E0A96B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 292A4A552F51C89500E0A96B;
+			remoteInfo = Dragonglass;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		292A4A562F51C89500E0A96B /* Dragonglass.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dragonglass.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		292A4A652F51C89500E0A96B /* wheels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = wheels; path = Resources/wheels; sourceTree = "<group>"; };
+		298AEF452F92D97F00BC8C4A /* DragonglassTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DragonglassTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		292A4A582F51C89500E0A96B /* Dragonglass */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Dragonglass;
+			sourceTree = "<group>";
+		};
+		298AEF462F92D97F00BC8C4A /* DragonglassTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DragonglassTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +48,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		298AEF422F92D97F00BC8C4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +63,7 @@
 			children = (
 				292A4A582F51C89500E0A96B /* Dragonglass */,
 				292A4A652F51C89500E0A96B /* wheels */,
+				298AEF462F92D97F00BC8C4A /* DragonglassTests */,
 				292A4A572F51C89500E0A96B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				292A4A562F51C89500E0A96B /* Dragonglass.app */,
+				298AEF452F92D97F00BC8C4A /* DragonglassTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +104,29 @@
 			productReference = 292A4A562F51C89500E0A96B /* Dragonglass.app */;
 			productType = "com.apple.product-type.application";
 		};
+		298AEF442F92D97F00BC8C4A /* DragonglassTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 298AEF4D2F92D97F00BC8C4A /* Build configuration list for PBXNativeTarget "DragonglassTests" */;
+			buildPhases = (
+				298AEF412F92D97F00BC8C4A /* Sources */,
+				298AEF422F92D97F00BC8C4A /* Frameworks */,
+				298AEF432F92D97F00BC8C4A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				298AEF4A2F92D97F00BC8C4A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				298AEF462F92D97F00BC8C4A /* DragonglassTests */,
+			);
+			name = DragonglassTests;
+			packageProductDependencies = (
+			);
+			productName = DragonglassTests;
+			productReference = 298AEF452F92D97F00BC8C4A /* DragonglassTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -86,11 +134,15 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
+				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					292A4A552F51C89500E0A96B = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					298AEF442F92D97F00BC8C4A = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = 292A4A552F51C89500E0A96B;
 					};
 				};
 			};
@@ -113,12 +165,20 @@
 			projectRoot = "";
 			targets = (
 				292A4A552F51C89500E0A96B /* Dragonglass */,
+				298AEF442F92D97F00BC8C4A /* DragonglassTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		292A4A542F51C89500E0A96B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		298AEF432F92D97F00BC8C4A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -143,7 +203,9 @@
 			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/version.txt",
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/python_version.txt",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/python_min_version.txt",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/python_bundle_hash.txt",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/bundles",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/wheels",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianPlugin/main.js",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianPlugin/manifest.json",
@@ -162,7 +224,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		298AEF412F92D97F00BC8C4A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		298AEF4A2F92D97F00BC8C4A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 292A4A552F51C89500E0A96B /* Dragonglass */;
+			targetProxy = 298AEF492F92D97F00BC8C4A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		292A4A5F2F51C89600E0A96B /* Debug */ = {
@@ -369,6 +446,50 @@
 			};
 			name = Release;
 		};
+		298AEF4B2F92D97F00BC8C4A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8WLD6DMJDR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lua.DragonglassTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dragonglass.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dragonglass";
+			};
+			name = Debug;
+		};
+		298AEF4C2F92D97F00BC8C4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8WLD6DMJDR;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lua.DragonglassTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dragonglass.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dragonglass";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -386,6 +507,15 @@
 			buildConfigurations = (
 				292A4A622F51C89600E0A96B /* Debug */,
 				292A4A632F51C89600E0A96B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		298AEF4D2F92D97F00BC8C4A /* Build configuration list for PBXNativeTarget "DragonglassTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				298AEF4B2F92D97F00BC8C4A /* Debug */,
+				298AEF4C2F92D97F00BC8C4A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -18,19 +18,6 @@ class OllamaModelRecord(typing.TypedDict, total=False):
 OllamaModelEntry = str | OllamaModelRecord
 
 
-class OpenCodeProviderModel(typing.TypedDict, total=False):
-    id: str
-    name: str
-
-
-OpenCodeProviderModelEntry = str | OpenCodeProviderModel
-
-
-class OpenCodeProviderRecord(typing.TypedDict, total=False):
-    id: str
-    models: list[OpenCodeProviderModelEntry]
-
-
 EncodableValue = (
     JsonValue | AgentEvent | list["EncodableValue"] | dict[str, "EncodableValue"]
 )
@@ -49,32 +36,6 @@ def _coerce_ollama_model_entry(value: JsonValue) -> OllamaModelEntry | None:
     if isinstance(model, str):
         parsed["model"] = model
     return parsed if parsed else None
-
-
-def _coerce_opencode_provider(value: JsonValue) -> OpenCodeProviderRecord | None:
-    if not isinstance(value, dict):
-        return None
-    provider_id = value.get("id")
-    models = value.get("models")
-    if not isinstance(provider_id, str) or not isinstance(models, list):
-        return None
-    parsed_models: list[OpenCodeProviderModelEntry] = []
-    for model in models:
-        if isinstance(model, str):
-            parsed_models.append(model)
-            continue
-        if not isinstance(model, dict):
-            continue
-        model_id = model.get("id")
-        model_name = model.get("name")
-        parsed_model: OpenCodeProviderModel = {}
-        if isinstance(model_id, str):
-            parsed_model["id"] = model_id
-        if isinstance(model_name, str):
-            parsed_model["name"] = model_name
-        if parsed_model:
-            parsed_models.append(parsed_model)
-    return {"id": provider_id, "models": parsed_models}
 
 
 class Command(enum.StrEnum):
@@ -164,28 +125,5 @@ def parse_ollama_models(raw_models: JsonValue) -> list[str]:
         display_name = f"ollama/{bare}"
         if not is_embedding_model(bare):
             parsed_models.append(display_name)
-
-    return parsed_models
-
-
-def parse_opencode_models(raw_providers: JsonValue) -> list[str]:
-    if not isinstance(raw_providers, list):
-        return []
-
-    parsed_models: list[str] = []
-    for provider in raw_providers:
-        provider_entry = _coerce_opencode_provider(provider)
-        if provider_entry is None:
-            continue
-        provider_id = provider_entry["id"]
-        models = provider_entry["models"]
-        for model in models:
-            model_id = None
-            if isinstance(model, str):
-                model_id = model
-            elif isinstance(model, dict):
-                model_id = model.get("id") or model.get("name")
-            if isinstance(model_id, str):
-                parsed_models.append(f"{provider_id}/{model_id}")
 
     return parsed_models

@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var backend: BackendManager
     @EnvironmentObject var client: AgentClient
     @EnvironmentObject var sttManager: STTManager
     @EnvironmentObject var hotkeyManager: HotkeyManager
+    @EnvironmentObject var updateChecker: UpdateChecker
     @State private var inputText = ""
     @State private var showingSettings = false
     @State private var showingCustomModel = false
@@ -94,9 +96,11 @@ struct ContentView: View {
             .disabled(client.isThinking)
             .popover(isPresented: $showingSettings, arrowEdge: .top) {
                 SettingsView(isPresented: $showingSettings)
+                    .environmentObject(backend)
                     .environmentObject(client)
                     .environmentObject(sttManager)
                     .environmentObject(hotkeyManager)
+                    .environmentObject(updateChecker)
             }
         }
         .padding()
@@ -127,7 +131,7 @@ struct ContentView: View {
 
             if !client.availableModels.isEmpty {
                 Divider()
-                Text(client.llmBackend == "opencode" ? "OpenCode Models" : "Ollama Models")
+                Text("Ollama Models")
                 ForEach(client.availableModels, id: \.self) { model in
                     Button(model) {
                         client.setSelectedModel(model)
@@ -195,6 +199,44 @@ struct ContentView: View {
         VStack {
             Spacer()
             switch backend.phase {
+            case .checkingBundle:
+                ProgressView("Checking for dependency bundle...")
+            case .downloadingBundle(let progress, let label):
+                VStack(spacing: 8) {
+                    Text(label)
+                        .foregroundColor(.secondary)
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .frame(width: 260)
+                }
+            case .installingBundle:
+                ProgressView("Installing dependencies...")
+            case .bundleError(let message):
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundColor(.red)
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    HStack(spacing: 12) {
+                        Button("Retry") {
+                            Task { await backend.startBackend() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Install from file…") {
+                            let panel = NSOpenPanel()
+                            panel.allowedContentTypes = [.init(filenameExtension: "gz")!]
+                            panel.title = "Select dependency bundle (.tar.gz)"
+                            panel.prompt = "Install"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                backend.triggerOfflineInstall(bundleURL: url)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                    }
+                }
             case .installing:
                 ProgressView("Installing dependencies...")
             case .starting:

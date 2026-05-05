@@ -2,7 +2,7 @@ import AppKit
 import os
 import UserNotifications
 
-private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "CursorDictationSession")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "dragonglass", category: "CursorDictationSession")
 
 @MainActor
 final class CursorDictationSession {

@@ -279,7 +279,7 @@ class AgentClient: ObservableObject {
                                 case .config(let config):
                                     self.extraModels = config.extraModels ?? []
                                     self.selectedModel = config.selectedModel ?? ""
-                                    self.llmBackend = config.llmBackend
+                                    self.llmBackend = config.llmBackend ?? "litellm"
                                     if let toolPathEnv = config.toolPathEnv {
                                         UserDefaults.standard.set(toolPathEnv, forKey: cachedToolPathEnvKey)
                                     }
@@ -288,10 +288,7 @@ class AgentClient: ObservableObject {
                                        let json = String(data: data, encoding: .utf8) {
                                         UserDefaults.standard.set(json, forKey: cachedToolBinariesKey)
                                     }
-                                    if (config.opencodeAvailable ?? true) == false,
-                                       self.llmBackend == "opencode" {
-                                        self.llmBackend = "litellm"
-                                    }
+
                                     self.events.append(event)
                                 case .conversationsList(let list):
                                     self.conversations = list

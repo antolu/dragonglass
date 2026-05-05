@@ -5,13 +5,16 @@ import SwiftUI
 final class SetupWindowController: NSObject, NSWindowDelegate {
     static let shared = SetupWindowController()
 
-    private var window: NSWindow?
-    private var onComplete: ((String) -> Void)?
+    private var obsidianWindow: NSWindow?
+    private var pythonWindow: NSWindow?
+    private var onObsidianComplete: ((String) -> Void)?
+    private weak var pythonBackend: BackendManager?
+    private var pythonSetupRequired = false
 
-    func show(onComplete: ((String) -> Void)? = nil) {
-        self.onComplete = onComplete
+    func showObsidianSetup(onComplete: ((String) -> Void)? = nil) {
+        self.onObsidianComplete = onComplete
 
-        if let window {
+        if let window = obsidianWindow {
             NSApp.activate(ignoringOtherApps: true)
             window.orderFrontRegardless()
             window.makeKeyAndOrderFront(nil)
@@ -19,47 +22,79 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
 
         let isPresented = Binding<Bool>(
-            get: { self.window != nil },
-            set: { visible in
-                if !visible {
-                    self.closeWindow()
-                }
-            }
+            get: { self.obsidianWindow != nil },
+            set: { visible in if !visible { self.closeObsidianWindow() } }
         )
 
         let rootView = ObsidianSetupView(
             isPresented: isPresented,
-            onComplete: { [weak self] vaultPath in
-                self?.onComplete?(vaultPath)
-            }
+            onComplete: { [weak self] vaultPath in self?.onObsidianComplete?(vaultPath) }
         )
-        let host = NSHostingController(rootView: rootView)
-        let setupWindow = NSWindow(contentViewController: host)
-        setupWindow.title = "Obsidian Setup"
-        setupWindow.styleMask = [.titled, .closable]
-        setupWindow.level = .floating
-        setupWindow.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        setupWindow.isReleasedWhenClosed = false
-        setupWindow.delegate = self
-        setupWindow.center()
+        obsidianWindow = makeWindow(rootView, title: "Obsidian Setup")
+    }
 
-        window = setupWindow
+    func showPythonSetup(backend: BackendManager, required: Bool = false) {
+        if let window = pythonWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            window.orderFrontRegardless()
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
 
-        NSApp.activate(ignoringOtherApps: true)
-        setupWindow.orderFrontRegardless()
-        setupWindow.makeKeyAndOrderFront(nil)
+        let isPresented = Binding<Bool>(
+            get: { self.pythonWindow != nil },
+            set: { visible in if !visible { self.closePythonWindow() } }
+        )
+
+        pythonBackend = backend
+        pythonSetupRequired = required
+        let rootView = PythonSetupView(isPresented: isPresented)
+            .environmentObject(backend)
+        pythonWindow = makeWindow(rootView, title: "Dragonglass — Environment Setup")
     }
 
     func windowWillClose(_ notification: Notification) {
-        if let closedWindow = notification.object as? NSWindow, closedWindow == window {
-            window = nil
-            onComplete = nil
+        guard let closed = notification.object as? NSWindow else { return }
+        if closed == obsidianWindow {
+            obsidianWindow = nil
+            onObsidianComplete = nil
+        } else if closed == pythonWindow {
+            pythonWindow = nil
+            if pythonSetupRequired, let backend = pythonBackend {
+                if case .ready = backend.phase { } else {
+                    NSApp.terminate(nil)
+                }
+            }
+            pythonBackend = nil
+            pythonSetupRequired = false
         }
     }
 
-    private func closeWindow() {
-        guard let window else { return }
-        self.window = nil
+    private func makeWindow<V: View>(_ rootView: V, title: String) -> NSWindow {
+        let host = NSHostingController(rootView: rootView)
+        let window = NSWindow(contentViewController: host)
+        window.title = title
+        window.styleMask = [.titled, .closable]
+        window.level = .floating
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    private func closeObsidianWindow() {
+        guard let window = obsidianWindow else { return }
+        obsidianWindow = nil
+        window.close()
+    }
+
+    private func closePythonWindow() {
+        guard let window = pythonWindow else { return }
+        pythonWindow = nil
         window.close()
     }
 }

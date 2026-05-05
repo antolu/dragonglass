@@ -31,7 +31,7 @@ struct ChatTimelineView: View {
                     }
 
                     ForEach(client.turns) { turn in
-                        if !turn.isCompleted, case .userMessage(let msg) = client.events[turn.userMessageIndex] {
+                        if !turn.isCompleted, !client.isThinking, case .userMessage(let msg) = client.events[turn.userMessageIndex] {
                             HStack(alignment: .top, spacing: 4) {
                                 Button(action: { inputText = msg }) {
                                     Image(systemName: "arrow.counterclockwise")

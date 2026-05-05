@@ -3,7 +3,7 @@ import Carbon
 import Combine
 import os
 
-private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "HotkeyManager")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "dragonglass", category: "HotkeyManager")
 
 @MainActor
 final class HotkeyManager: NSObject, ObservableObject {

@@ -12,15 +12,11 @@ struct DragonglassConfig: Codable, Equatable {
     var extraModels: [String]?
     var envVars: [String: String]?
     var selectedModel: String?
-    var llmBackend: String
-    var opencodeUrl: String
-    var spawnOpencode: Bool
+    var llmBackend: String?
     var agentsNotePath: String
     var autoAllowEdit: Bool
     var autoAllowCreate: Bool
     var autoAllowDelete: Bool
-    var opencodeAvailable: Bool?
-    var opencodeDisabledReason: String?
     var toolPaths: [String]?
     var toolPathEnv: String?
     var toolBinaries: [String: String?]?
@@ -31,8 +27,6 @@ struct DragonglassConfig: Codable, Equatable {
         case vectorSearchUrl = "vector_search_url"
         case llmModel = "llm_model"
         case llmBackend = "llm_backend"
-        case opencodeUrl = "opencode_url"
-        case spawnOpencode = "spawn_opencode"
         case llmTemperature = "llm_temperature"
         case llmTopP = "llm_top_p"
         case llmTopK = "llm_top_k"
@@ -44,8 +38,6 @@ struct DragonglassConfig: Codable, Equatable {
         case autoAllowDelete = "auto_allow_delete"
         case extraModels = "extra_models"
         case envVars = "env_vars"
-        case opencodeAvailable = "opencode_available"
-        case opencodeDisabledReason = "opencode_disabled_reason"
         case toolPaths = "tool_paths"
         case toolPathEnv = "tool_path_env"
         case toolBinaries = "tool_binaries"

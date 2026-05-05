@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# AGENTS.md
 
 # dragonglass — agent instructions
 
@@ -36,7 +34,7 @@ Clients send JSON commands; the server streams back newline-delimited JSON event
 
 ```
 chat command → VaultAgent.run(text)
-  → _agent_loop: LLM call (litellm or OpenCode HTTP)
+  → _agent_loop: LLM call (litellm)
     → parse text + tool_calls
     → _call_tool: search tools → local; others → stdio MCP session
     → append tool result to history (truncated at 4000 chars)
@@ -44,18 +42,16 @@ chat command → VaultAgent.run(text)
   → save conversation JSON → yield DoneEvent
 ```
 
-### LLM backends
-
-- **litellm** (default) — direct async completions; temperature/top-p/top-k from settings.
-- **opencode** — external Node.js process spawned on startup; dragonglass writes its config, health-checks it, then proxies messages via HTTP. Falls back to litellm if startup fails.
-
-Backend is selected by `llm_backend` in settings (`"litellm"` or `"opencode"`).
 
 ### Config & persistence
 
 - **Settings:** `~/.config/dragonglass/config.toml` — loaded via Pydantic `BaseSettings`; singleton invalidated and reloaded on `set_config`.
 - **Conversations:** `~/.cache/dragonglass/data/conversations/{uuid}.json` — auto-saved after each turn.
 - **Extra models:** `~/.config/dragonglass/extra_models.json`.
+
+### LLM Backends
+
+Currently, `litellm` is the sole LLM backend. All requests are routed through LiteLLM to support a wide range of providers (Ollama, Anthropic, OpenAI, etc.). The `llm_backend` field in `Settings` is currently commented out/inactive to simplify the interaction model.
 
 ---
 
@@ -133,7 +129,7 @@ from textual.app import App, ComposeResult
 
 ```python
 from dragonglass.config import Settings, get_settings
-from dragonglass.agent.agent import VaultAgent, AgentEvent
+from dragonglass.agent.runtime import VaultAgent, AgentEvent
 from dragonglass.log import setup_logging
 ```
 
@@ -212,8 +208,8 @@ Use `pytest.MonkeyPatch` (via the `monkeypatch` fixture) for environment and att
 ```python
 from __future__ import annotations
 
-def test_something(monkeypatch: pytest.MonkeyPatch) -> None:
-    ...
+
+def test_something(monkeypatch: pytest.MonkeyPatch) -> None: ...
 ```
 
 All tests must pass before finalising a commit. Run:

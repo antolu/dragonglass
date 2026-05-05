@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "com.antolu.dragonglass", category: "DictationKeyRemapper")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "dragonglass", category: "DictationKeyRemapper")
 
 // Remaps the Siri/Dictation key (HID consumer page usage 0xCF) to F13 (0x700000072)
 // via hidutil. No persistent effect; must be called on every launch.

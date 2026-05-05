@@ -12,6 +12,8 @@ struct DragonglassApp: App {
     @StateObject private var menuBarManager = MenuBarManager()
     @StateObject private var sttManager = STTManager()
     @StateObject private var hotkeyManager = HotkeyManager()
+    @StateObject private var updateChecker = UpdateChecker()
+    @AppStorage("updateChecker.disabled") private var updateChecksDisabled = false
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
 
     var body: some Scene {
@@ -19,7 +21,8 @@ struct DragonglassApp: App {
             backend: backend,
             client: client,
             sttManager: sttManager,
-            hotkeyManager: hotkeyManager
+            hotkeyManager: hotkeyManager,
+            updateChecker: updateChecker
         )
         let _ = { appDelegate.backend = backend }() // swiftlint:disable:this redundant_discardable_let
 
@@ -29,6 +32,8 @@ struct DragonglassApp: App {
                 .environmentObject(client)
                 .environmentObject(sttManager)
                 .environmentObject(hotkeyManager)
+                .environmentObject(updateChecker)
+                .onAppear { updateChecker.startPeriodicChecks(disabled: updateChecksDisabled) }
         }
     }
 }

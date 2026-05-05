@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 import signal
 from http import HTTPStatus
 
@@ -20,11 +19,9 @@ from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     is_embedding_model,
     parse_ollama_models,
-    parse_opencode_models,
     resolve_chat_model,
     serialize_event,
 )
-from dragonglass.server.opencode import PROCESS_TERMINATE_GRACE_SECONDS, OpenCodeManager
 from dragonglass.server.ws import ConnectionHandler
 
 logger = logging.getLogger(__name__)
@@ -36,7 +33,6 @@ __all__ = [
     "is_embedding_model",
     "main",
     "parse_ollama_models",
-    "parse_opencode_models",
     "resolve_chat_model",
     "serialize_event",
 ]
@@ -48,23 +44,19 @@ class DragonglassServer:
         self.port = port
         self._stop_event = asyncio.Event()
         self._mcp_task: asyncio.Task[None] | None = None
-        self._opencode = OpenCodeManager()
         self._conversations = ConversationStore()
 
     async def run(self) -> None:
         settings = get_settings()
         server_host = self.host or settings.bind_host()
         logger.info(
-            "server: startup backend=%s model=%s ws_port=%d mcp_port=%d opencode_url=%s spawn_opencode=%s",
-            settings.llm_backend,
+            "server: startup model=%s ws_port=%d mcp_port=%d",
             settings.llm_model,
             self.port,
             settings.mcp_http_port,
-            settings.opencode_url,
-            settings.spawn_opencode,
         )
         agent = VaultAgent(settings)
-        handler = ConnectionHandler(agent, self._opencode, self._conversations)
+        handler = ConnectionHandler(agent, self._conversations)
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -125,28 +117,11 @@ class DragonglassServer:
         logger.info("server: shutting down")
         if self._mcp_task:
             self._mcp_task.cancel()
-        await self._opencode.stop()
-        settings = get_settings()
-        await self._opencode.kill_stale_on_port(
-            self._opencode.get_port(settings.opencode_url)
-        )
         await agent.close()
 
     async def _start_managed_services(
         self, settings: Settings, handler: ConnectionHandler
     ) -> None:
-        for pid in self._opencode.list_listener_pids(settings.mcp_http_port):
-            logger.warning(
-                "server: killing stale process pid=%d on port %d",
-                pid,
-                settings.mcp_http_port,
-            )
-            with contextlib.suppress(Exception):
-                os.kill(pid, signal.SIGTERM)
-            await asyncio.sleep(PROCESS_TERMINATE_GRACE_SECONDS)
-            if self._opencode.pid_exists(pid):
-                with contextlib.suppress(Exception):
-                    os.kill(pid, signal.SIGKILL)
 
         mcp_server = create_search_server(settings)
 
@@ -165,16 +140,6 @@ class DragonglassServer:
         logger.info(
             "server: MCP HTTP/SSE server ready on port %d", settings.mcp_http_port
         )
-
-        if self._opencode.is_active(settings):
-            port = self._opencode.get_port(settings.opencode_url)
-            logger.info("server: starting OpenCode server on port %d", port)
-            await self._opencode.kill_stale_on_port(port)
-            if (
-                not await self._opencode.restart(settings.llm_model)
-                and self._opencode.start_error
-            ):
-                await self._opencode.fallback_to_litellm(self._opencode.start_error)
 
 
 async def main() -> None:

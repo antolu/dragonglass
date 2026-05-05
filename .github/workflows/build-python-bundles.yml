@@ -1,0 +1,138 @@
+name: Build Python Dependency Bundles
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+    paths:
+      - 'uv.lock'
+      - 'dragonglass/bundle/**'
+      - 'scripts/build_bundle.py'
+  pull_request:
+    paths:
+      - 'uv.lock'
+      - 'dragonglass/bundle/**'
+      - 'scripts/build_bundle.py'
+      - 'scripts/test_bundle_integration.py'
+  workflow_dispatch:
+
+jobs:
+  check-hash:
+    name: Check if bundles already exist
+    runs-on: ubuntu-latest
+    outputs:
+      deps_hash: ${{ steps.hash.outputs.deps_hash }}
+      tag_exists: ${{ steps.check.outputs.tag_exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compute deps hash
+        id: hash
+        run: echo "deps_hash=$(python scripts/compute_deps_hash.py --type python)" >> $GITHUB_OUTPUT
+      - name: Check if tag exists
+        id: check
+        run: |
+          TAG="deps/py-${{ steps.hash.outputs.deps_hash }}"
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-bundle:
+    name: Build bundle (Python ${{ matrix.python-version }})
+    needs: check-hash
+    if: needs.check-hash.outputs.tag_exists == 'false'
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Build bundle
+        run: |
+          python scripts/build_bundle.py \
+            --python-version ${{ matrix.python-version }} \
+            --deps-hash ${{ needs.check-hash.outputs.deps_hash }} \
+            --output-dir dist/bundles/python
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-bundle-py${{ matrix.python-version }}
+          path: dist/bundles/python/*.tar.gz
+
+  publish:
+    name: Publish bundles to deps tag
+    needs: [check-hash, build-bundle]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-bundle-py*
+          path: dist/bundles/python
+          merge-multiple: true
+
+      - name: Create deps tag and upload bundles
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: deps/py-${{ needs.check-hash.outputs.deps_hash }}
+          name: Python deps ${{ needs.check-hash.outputs.deps_hash }}
+          files: dist/bundles/python/*.tar.gz
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-bundle-integration:
+    name: Integration test (Python ${{ matrix.python-version }})
+    needs: [check-hash, build-bundle]
+    if: needs.check-hash.outputs.tag_exists == 'false'
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Download bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-bundle-py${{ matrix.python-version }}
+          path: dist/bundles/python
+
+      - name: Install dragonglass (editable, for CLI access)
+        run: pip install -e ".[dev,test]"
+
+      - name: Run bundle integration test
+        run: |
+          python scripts/test_bundle_integration.py \
+            --version ${{ github.ref_name || '0.0.0-dev' }} \
+            --skip-pytest

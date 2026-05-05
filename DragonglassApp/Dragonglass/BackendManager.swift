@@ -5,6 +5,10 @@ import OSLog
 private let logger = Logger(subsystem: subsystem, category: "BackendManager")
 
 enum BackendPhase: Equatable {
+    case checkingBundle
+    case downloadingBundle(progress: Double, label: String)
+    case installingBundle
+    case bundleError(String)
     case installing
     case starting
     case ready
@@ -21,10 +25,6 @@ struct BackendPaths {
     var pythonPath: URL { venvDir.appendingPathComponent("bin/python3") }
     var uvPath: URL { venvDir.appendingPathComponent("bin/uv") }
     var dragonglassPath: URL { venvDir.appendingPathComponent("bin/dragonglass") }
-    var opencodeInstallDir: URL { appSupportDir.appendingPathComponent("opencode") }
-    var opencodeBinPath: URL { opencodeInstallDir.appendingPathComponent("node_modules/.bin/opencode") }
-    var opencodeCliPackagePath: URL { opencodeInstallDir.appendingPathComponent("node_modules/opencode-ai/package.json") }
-    var opencodeConfigPath: URL { appSupportDir.appendingPathComponent("config/opencode.json") }
 
     /// Port the dragonglass Python server listens on.
     static let backendPort = 51363
@@ -79,41 +79,49 @@ class BackendManager: ObservableObject {
         logger.info("startBackend begin")
         await findAndKillExistingBackend()
 
+        guard let systemPython = getSelectedPythonPath() else {
+            logger.info("no Python selected — opening setup")
+            SetupWindowController.shared.showPythonSetup(backend: self, required: true)
+            return
+        }
+        logger.info("systemPython=\(systemPython, privacy: .public)")
+
         guard let bundledVersion = getBundledVersion() else {
             phase = .failed("Missing bundled backend version metadata (version.txt). Rebuild app.")
             return
         }
-        guard getBundledPythonVersion() != nil else {
-            phase = .failed("Missing bundled python metadata (python_version.txt). Rebuild app.")
-            return
-        }
-        guard Bundle.main.url(forResource: "wheels", withExtension: nil) != nil else {
-            phase = .failed("Missing bundled wheels directory. Rebuild app.")
-            return
-        }
-        let installedVersion = getInstalledVersion()
+        logger.info("bundledVersion=\(bundledVersion, privacy: .public)")
 
-        let needsInstall = !FileManager.default.fileExists(atPath: paths.dragonglassPath.path)
-            || bundledVersion != installedVersion
+        let installedBundleVersion = getInstalledBundleVersion()
+        let installedPython = getInstalledPythonPath()
+        logger.info("installedBundleVersion=\((installedBundleVersion ?? "none"), privacy: .public) installedPython=\((installedPython ?? "none"), privacy: .public)")
 
-        if needsInstall {
-            logger.info("startBackend install required bundled=\(bundledVersion, privacy: .public) installed=\((installedVersion ?? "none"), privacy: .public)")
-            phase = .installing
-            do {
-                if FileManager.default.fileExists(atPath: paths.venvDir.path) {
-                    try? FileManager.default.removeItem(at: paths.venvDir)
-                }
-                try await installVenv(paths: paths)
-                try? bundledVersion.write(to: paths.appSupportDir.appendingPathComponent("installed_version.txt"), atomically: true, encoding: .utf8)
-            } catch {
-                phase = .failed("Installation failed: \(error.localizedDescription)")
-                return
-            }
+        let pythonChanged = installedPython != nil && installedPython != systemPython
+
+        if pythonChanged {
+            logger.info("Python changed old=\(installedPython ?? "", privacy: .public) new=\(systemPython, privacy: .public) — wiping venv")
+            try? FileManager.default.removeItem(at: paths.venvDir)
+            try? FileManager.default.removeItem(at: paths.appSupportDir.appendingPathComponent("installed_bundle_version.txt"))
+        }
+
+        let dragonglassExists = FileManager.default.fileExists(atPath: paths.dragonglassPath.path)
+        let bundledDepsHash = getBundledDepsHash()
+        let installedDepsHash = getInstalledDepsHash()
+        logger.info("bundledDepsHash=\((bundledDepsHash ?? "none"), privacy: .public) installedDepsHash=\((installedDepsHash ?? "none"), privacy: .public)")
+        let isDevHash = bundledDepsHash == "dev"
+        let forceInstall = ProcessInfo.processInfo.environment["DRAGONGLASS_FORCE_BUNDLE_INSTALL"] == "1"
+        let depsHashChanged = !isDevHash && bundledDepsHash != nil && bundledDepsHash != installedDepsHash
+        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged
+        logger.info("needsBundle=\(needsBundle, privacy: .public) dragonglassExists=\(dragonglassExists, privacy: .public) pythonChanged=\(pythonChanged, privacy: .public) isDevHash=\(isDevHash, privacy: .public) forceInstall=\(forceInstall, privacy: .public)")
+
+        if needsBundle {
+            logger.info("opening setup window for bundle install")
+            SetupWindowController.shared.showPythonSetup(backend: self, required: true)
+            return
         }
 
         phase = .starting
         do {
-            try await ensureOpencodeInstalled(paths: paths)
             let deployResult = await deployObsidianPlugin()
             if case .needsUpdate(let installed, let bundled) = deployResult {
                 phase = .needsPluginUpdate(installed, bundled)
@@ -233,6 +241,31 @@ class BackendManager: ObservableObject {
         logger.info("Obsidian poll loop exited (cancelled)")
     }
 
+    var bundledVersion: String? { getBundledVersion() }
+
+    var isDevVersion: Bool {
+        getBundledVersion().map { $0.contains(".dev") || $0.contains("+") } ?? false
+    }
+
+    private func getBundledDepsHash() -> String? {
+        guard let url = Bundle.main.url(forResource: "python_bundle_hash", withExtension: "txt"),
+              let hash = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        return hash.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func getInstalledDepsHash() -> String? {
+        let url = paths.appSupportDir.appendingPathComponent("installed_python_bundle_hash.txt")
+        guard let value = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func saveInstalledDepsHash(_ hash: String) {
+        let url = paths.appSupportDir.appendingPathComponent("installed_python_bundle_hash.txt")
+        try? hash.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func getBundledVersion() -> String? {
         guard let url = Bundle.main.url(forResource: "version", withExtension: "txt"),
               let version = try? String(contentsOf: url, encoding: .utf8) else {
@@ -247,6 +280,74 @@ class BackendManager: ObservableObject {
             return nil
         }
         return version.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func getInstalledBundleVersion() -> String? {
+        let url = paths.appSupportDir.appendingPathComponent("installed_bundle_version.txt")
+        guard let version = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return version.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func getInstalledPythonPath() -> String? {
+        let url = paths.appSupportDir.appendingPathComponent("installed_python.txt")
+        guard let value = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func saveInstalledPythonPath(_ path: String) {
+        let url = paths.appSupportDir.appendingPathComponent("installed_python.txt")
+        try? path.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func runBundleInstall(appVersion: String, systemPython: String, depsHash: String?) async throws {
+        let installer = BundleInstaller(paths: paths)
+        for try await event in installer.install(appVersion: appVersion, systemPython: systemPython, depsHash: depsHash) {
+            switch event {
+            case .progress(let message, let fraction):
+                phase = .downloadingBundle(progress: fraction, label: message)
+            case .done:
+                phase = .installingBundle
+                saveInstalledPythonPath(systemPython)
+                if let hash = depsHash { saveInstalledDepsHash(hash) }
+            case .error(let message):
+                throw NSError(
+                    domain: "BundleInstaller",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+            }
+        }
+    }
+
+    func triggerOfflineInstall(bundleURL: URL) {
+        Task {
+            guard let bundledVersion = getBundledVersion() else { return }
+            let systemPython = getSelectedPythonPath() ?? findPython3()
+            let installer = BundleInstaller(paths: paths)
+            let depsHash = getBundledDepsHash()
+            do {
+                for try await event in installer.installOffline(
+                    bundlePath: bundleURL,
+                    appVersion: bundledVersion,
+                    systemPython: systemPython,
+                    depsHash: depsHash
+                ) {
+                    switch event {
+                    case .progress(let message, let fraction):
+                        phase = .downloadingBundle(progress: fraction, label: message)
+                    case .done:
+                        phase = .installingBundle
+                        saveInstalledPythonPath(systemPython)
+                    case .error(let message):
+                        phase = .bundleError(message)
+                        return
+                    }
+                }
+                await startBackend()
+            } catch {
+                phase = .bundleError(error.localizedDescription)
+            }
+        }
     }
 
     private func findAndKillExistingBackend() async {
@@ -282,15 +383,7 @@ class BackendManager: ObservableObject {
 
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
-        env["OPENCODE_CONFIG"] = paths.opencodeConfigPath.path
-        env["OPENCODE_BIN"] = paths.opencodeBinPath.path
         p.environment = env
-
-        try FileManager.default.createDirectory(
-            at: paths.opencodeConfigPath.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
 
         let processLogger = Logger(subsystem: subsystem, category: "BackendManager")
         let pipe = Pipe()

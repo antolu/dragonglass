@@ -58,6 +58,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install dependencies
+        run: pip install -e .
+
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
