@@ -62,13 +62,6 @@ struct ToolCallBadge: View {
         .padding(4)
         .background(badgeColor.opacity(0.08))
         .cornerRadius(4)
-        .onTapGesture {
-            if isErrorLike {
-                showingDetail = true
-            } else if let path = notePath {
-                onOpenNote?(path)
-            }
-        }
         .popover(isPresented: $showingDetail) {
             ScrollView {
                 Text(detail.isEmpty ? "No detail available." : detail)
@@ -78,10 +71,13 @@ struct ToolCallBadge: View {
             }
             .frame(maxHeight: 200)
         }
-        if selectable {
-            badge.textSelection(.enabled)
-        } else {
-            badge.textSelection(.disabled)
+        let withSelection = selectable ? badge.textSelection(.enabled) : badge.textSelection(.disabled)
+        withSelection.onTapGesture {
+            if isErrorLike {
+                showingDetail = true
+            } else if let path = notePath {
+                onOpenNote?(path)
+            }
         }
     }
 }
