@@ -48,7 +48,19 @@ if [ -z "$_PY" ]; then
   exit 1
 fi
 
-VERSION="$(cd "$SRCROOT/.." && "$_PY" -m setuptools_scm 2>/dev/null || "$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)")"
+_SCM_PY=""
+for _candidate in "$HOME/.conda/envs/dragonglass/bin/python" "$HOME/.conda/bin/python3" "$_PY"; do
+  if [ -x "$_candidate" ] && "$_candidate" -m setuptools_scm --version >/dev/null 2>&1; then
+    _SCM_PY="$_candidate"
+    break
+  fi
+done
+if [ -n "$_SCM_PY" ]; then
+  VERSION="$(cd "$SRCROOT/.." && "$_SCM_PY" -m setuptools_scm 2>/dev/null)"
+fi
+if [ -z "$VERSION" ]; then
+  VERSION="$("$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)")"
+fi
 printf "%s\n" "$VERSION" > "$RESOURCES_DIR/version.txt"
 
 # Extract minimum Python version from pyproject.toml (e.g. ">=3.11" -> "3.11")
