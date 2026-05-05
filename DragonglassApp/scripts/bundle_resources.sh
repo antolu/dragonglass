@@ -48,7 +48,7 @@ if [ -z "$_PY" ]; then
   exit 1
 fi
 
-VERSION="$("$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)")"
+VERSION="$(cd "$SRCROOT/.." && "$_PY" -m setuptools_scm 2>/dev/null || "$_PY" -c "import sys; sys.path.insert(0, '$SRCROOT/../'); from dragonglass._version import version; print(version)")"
 printf "%s\n" "$VERSION" > "$RESOURCES_DIR/version.txt"
 
 # Extract minimum Python version from pyproject.toml (e.g. ">=3.11" -> "3.11")
