@@ -50,10 +50,6 @@ struct SettingsView: View {
                         settingsSection("Model") {
                             ModelSettingsSection(config: config)
                         }
-                        settingsSection("LLM Backend") {
-                            BackendSettingsSection(config: config)
-                                .environmentObject(client)
-                        }
                         settingsSection("Permissions") {
                             PermissionsSettingsSection(config: config)
                         }
@@ -181,7 +177,14 @@ struct SettingsView: View {
     }
 
     private func saveConfig() {
-        guard let config = config else { return }
+        guard var config = config else { return }
+        if !newEnvKey.isEmpty {
+            if config.envVars == nil { config.envVars = [:] }
+            config.envVars?[newEnvKey] = newEnvValue
+            self.config = config
+            newEnvKey = ""
+            newEnvValue = ""
+        }
         Task {
             do {
                 await MainActor.run {
@@ -207,7 +210,7 @@ struct SettingsView: View {
         guard let current = config, let baseline = baselineConfig else {
             return false
         }
-        return current != baseline
+        return current != baseline || !newEnvKey.isEmpty
     }
 
     @ViewBuilder

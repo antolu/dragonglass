@@ -86,6 +86,14 @@ Do NOT run `ruff` or `mypy` standalone — use `pre-commit run --all-files` inst
 
 No explicit build step. The package is installed in editable mode. Version is derived from git tags via `setuptools-scm`.
 
+### Logs
+
+Python backend log: `~/.local/share/dragonglass/dragonglass.log` (rotated as `.log.1`, `.log.2`, etc.)
+
+```bash
+tail -100 ~/.local/share/dragonglass/dragonglass.log
+```
+
 ---
 
 ## Code style
