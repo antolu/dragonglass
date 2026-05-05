@@ -50,10 +50,6 @@ struct SettingsView: View {
                         settingsSection("Model") {
                             ModelSettingsSection(config: config)
                         }
-                        settingsSection("LLM Backend") {
-                            BackendSettingsSection(config: config)
-                                .environmentObject(client)
-                        }
                         settingsSection("Permissions") {
                             PermissionsSettingsSection(config: config)
                         }
