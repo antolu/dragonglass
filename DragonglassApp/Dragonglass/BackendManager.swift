@@ -115,13 +115,25 @@ class BackendManager: ObservableObject {
         let installedSrcVersion = getInstalledSrcVersion()
         let srcVersionChanged = isDevHash && bundledSrcVersion != nil && bundledSrcVersion != installedSrcVersion
         logger.info("bundledSrcVersion=\((bundledSrcVersion ?? "none"), privacy: .public) installedSrcVersion=\((installedSrcVersion ?? "none"), privacy: .public) srcVersionChanged=\(srcVersionChanged, privacy: .public)")
-        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged || srcVersionChanged
+        let needsBundle = forceInstall || pythonChanged || !dragonglassExists || depsHashChanged
         logger.info("needsBundle=\(needsBundle, privacy: .public) dragonglassExists=\(dragonglassExists, privacy: .public) pythonChanged=\(pythonChanged, privacy: .public) isDevHash=\(isDevHash, privacy: .public) forceInstall=\(forceInstall, privacy: .public)")
 
         if needsBundle {
             logger.info("opening setup window for bundle install")
             SetupWindowController.shared.showPythonSetup(backend: self, required: true)
             return
+        }
+
+        if srcVersionChanged, let srcVersion = bundledSrcVersion {
+            logger.info("dev src changed — reinstalling dragonglass into existing venv")
+            phase = .installing
+            do {
+                try await reinstallDragonglassSrc()
+                saveInstalledSrcVersion(srcVersion)
+            } catch {
+                phase = .failed("Failed to reinstall dragonglass: \(error.localizedDescription)")
+                return
+            }
         }
 
         phase = .starting
@@ -318,6 +330,23 @@ class BackendManager: ObservableObject {
     private func saveInstalledPythonPath(_ path: String) {
         let url = paths.appSupportDir.appendingPathComponent("installed_python.txt")
         try? path.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func reinstallDragonglassSrc() async throws {
+        guard let srcPath = Bundle.main.url(forResource: "dragonglass_src", withExtension: nil)?.path else {
+            throw NSError(domain: "BackendManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "dragonglass_src not found in bundle"])
+        }
+        let proc = Process()
+        proc.executableURL = paths.pythonPath
+        proc.arguments = ["-m", "pip", "install", "--quiet", srcPath]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (env["PATH"] ?? "")
+        proc.environment = env
+        try proc.run()
+        proc.waitUntilExit()
+        if proc.terminationStatus != 0 {
+            throw NSError(domain: "BackendManager", code: Int(proc.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "pip install exited with \(proc.terminationStatus)"])
+        }
     }
 
     private func runBundleInstall(appVersion: String, systemPython: String, depsHash: String?) async throws {
