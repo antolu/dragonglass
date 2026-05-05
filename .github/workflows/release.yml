@@ -62,7 +62,7 @@ jobs:
           xcode-version: latest-stable
 
       - name: Setup Node and pnpm
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
 
