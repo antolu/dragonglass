@@ -10,6 +10,7 @@ import uuid
 
 import fastmcp.exceptions
 import litellm
+from kv_search import SearchEngine
 from mcp import ClientSession
 from mcp.types import TextContent
 from pydantic import JsonValue
@@ -49,7 +50,6 @@ from dragonglass.agent.types import (
     UserMessageEvent,
 )
 from dragonglass.config import Settings, get_settings
-from dragonglass.hybrid_search import SearchEngine
 from dragonglass.mcp import ToolPhase, compute_diff, create_search_server
 from dragonglass.search import ObsidianHttpBackend
 

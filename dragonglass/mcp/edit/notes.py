@@ -4,9 +4,9 @@ import logging
 import typing
 
 import httpx
+from kv_search import SearchSession
 
 from dragonglass.config import Settings
-from dragonglass.hybrid_search import SearchSession
 from dragonglass.mcp.edit.frontmatter import (
     ManageFrontmatterArgs,
     PatchLinesArgs,

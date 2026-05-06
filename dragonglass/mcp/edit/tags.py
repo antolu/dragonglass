@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 import typing
 
+from kv_search import SearchSession
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.hybrid_search import SearchSession
 from dragonglass.mcp.edit.frontmatter import (
     ManageTagsArgs,
     _body_from_frontmatter_rest,

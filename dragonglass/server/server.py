@@ -10,11 +10,11 @@ import websockets
 import websockets.asyncio.server
 import websockets.datastructures
 import websockets.http11
+from kv_search import SearchEngine
 from uvicorn import Config, Server
 
 from dragonglass.agent import VaultAgent
 from dragonglass.config import Settings, get_settings
-from dragonglass.hybrid_search import SearchEngine
 from dragonglass.mcp import create_search_server
 from dragonglass.search import ObsidianHttpBackend
 from dragonglass.server.conversations import ConversationStore

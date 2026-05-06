@@ -7,10 +7,10 @@ from typing import Self
 
 import httpx
 import pytest
+from kv_search import SearchSession
 
 import dragonglass.mcp.edit as mcp_search
 from dragonglass.config import Settings
-from dragonglass.hybrid_search import SearchSession
 
 _EXPECTED_PATCH_CALLS = 2
 _EXPECTED_END_LINE = 6

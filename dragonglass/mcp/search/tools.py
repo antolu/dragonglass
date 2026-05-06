@@ -9,10 +9,10 @@ import typing
 import fastmcp
 import httpx
 import pydantic
+from kv_search import SearchEngine, SearchSession
 from pydantic import JsonValue
 
 from dragonglass.config import Settings
-from dragonglass.hybrid_search import SearchEngine, SearchSession
 from dragonglass.mcp.edit.frontmatter import ManageFrontmatterArgs, ManageTagsArgs
 from dragonglass.mcp.edit.notes import (
     do_manage_frontmatter,

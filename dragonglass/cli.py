@@ -8,11 +8,11 @@ import time
 
 import click
 import dotenv
+from kv_search import SearchEngine
 
 from dragonglass import paths
 from dragonglass.agent.headless import run_headless
 from dragonglass.config import get_settings
-from dragonglass.hybrid_search import SearchEngine
 from dragonglass.log import LOG_FILE, setup_logging
 from dragonglass.mcp import create_search_server
 from dragonglass.search import ObsidianHttpBackend

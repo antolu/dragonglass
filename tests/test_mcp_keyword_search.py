@@ -11,23 +11,25 @@ if sys.version_info >= (3, 12):
 else:
     from typing_extensions import override
 
-import dragonglass.mcp.search as mcp_search
-from dragonglass.config import Settings
-from dragonglass.hybrid_search import (
+from kv_search import (
+    KeywordQueries,
     KeywordSearchBackend,
     SearchEngine,
     SearchHit,
     VectorSearchBackend,
 )
 
+import dragonglass.mcp.search as mcp_search
+from dragonglass.config import Settings
+
 
 class MockObsidianBackend(KeywordSearchBackend, VectorSearchBackend):
     def __init__(self, keyword_hits: list[SearchHit]) -> None:
         self._keyword_hits = keyword_hits
-        self.keyword_calls: list[list[str]] = []
+        self.keyword_calls: list[KeywordQueries] = []
 
     @override
-    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
+    async def keyword_search(self, queries: KeywordQueries) -> list[SearchHit]:
         self.keyword_calls.append(queries)
         return self._keyword_hits
 
@@ -66,7 +68,7 @@ def test_keyword_search_with_list_of_queries() -> None:
     data = json.loads(result.content[0].text)
 
     assert data["total_found"] == 2  # noqa: PLR2004
-    assert backend.keyword_calls == [["query1", "query2"]]
+    assert backend.keyword_calls == [KeywordQueries(queries=["query1", "query2"])]
 
 
 def test_keyword_search_with_single_string_queries() -> None:
@@ -78,7 +80,7 @@ def test_keyword_search_with_single_string_queries() -> None:
     data = json.loads(result.content[0].text)
 
     assert data["total_found"] == 1
-    assert backend.keyword_calls == [["query1"]]
+    assert backend.keyword_calls == [KeywordQueries(queries=["query1"])]
 
 
 def test_keyword_search_with_query_alias() -> None:
@@ -90,7 +92,7 @@ def test_keyword_search_with_query_alias() -> None:
     data = json.loads(result.content[0].text)
 
     assert data["total_found"] == 1
-    assert backend.keyword_calls == [["query1"]]
+    assert backend.keyword_calls == [KeywordQueries(queries=["query1"])]
 
 
 def test_keyword_search_preview_paths() -> None:

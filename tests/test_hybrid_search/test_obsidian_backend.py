@@ -6,6 +6,7 @@ from typing import Self
 
 import httpx
 import pytest
+from kv_search import KeywordQueries
 from pydantic import JsonValue
 
 from dragonglass.search.backends import ObsidianHttpBackend
@@ -65,7 +66,7 @@ def test_keyword_search_returns_keyword_hits(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_: fake_client)
 
     backend = ObsidianHttpBackend(base_url="http://localhost:51362")
-    hits = asyncio.run(backend.keyword_search(["foo"]))
+    hits = asyncio.run(backend.keyword_search(KeywordQueries(queries=["foo"])))
 
     assert len(hits) == 2  # noqa: PLR2004
     assert hits[0].path == "note1.md"
@@ -79,7 +80,7 @@ def test_keyword_search_deduplicates_across_queries(
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_: fake_client)
 
     backend = ObsidianHttpBackend(base_url="http://localhost:51362")
-    hits = asyncio.run(backend.keyword_search(["foo", "bar"]))
+    hits = asyncio.run(backend.keyword_search(KeywordQueries(queries=["foo", "bar"])))
 
     assert len(hits) == 1
     assert hits[0].path == "note1.md"
@@ -90,7 +91,7 @@ def test_keyword_search_handles_http_error(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_: fake_client)
 
     backend = ObsidianHttpBackend(base_url="http://localhost:51362")
-    hits = asyncio.run(backend.keyword_search(["foo"]))
+    hits = asyncio.run(backend.keyword_search(KeywordQueries(queries=["foo"])))
     assert hits == []
 
 

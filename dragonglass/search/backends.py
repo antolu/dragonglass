@@ -4,13 +4,13 @@ import logging
 import typing
 
 import httpx
-from pydantic import JsonValue
-
-from dragonglass.hybrid_search import (
+from kv_search import (
+    KeywordQueries,
     KeywordSearchBackend,
     SearchHit,
     VectorSearchBackend,
 )
+from pydantic import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +45,14 @@ class ObsidianHttpBackend(KeywordSearchBackend, VectorSearchBackend):
             logger.exception("keyword search failed for query %r", query)
         return []
 
-    async def keyword_search(self, queries: list[str]) -> list[SearchHit]:
+    async def keyword_search(self, queries: KeywordQueries) -> list[SearchHit]:
         hits: list[SearchHit] = []
         seen: set[str] = set()
         async with httpx.AsyncClient(
             timeout=self._keyword_timeout, verify=False
         ) as client:
-            for query in queries:
-                for hit in await self._keyword_search_one(client, query, seen):
+            for term in queries.queries:
+                for hit in await self._keyword_search_one(client, term, seen):
                     seen.add(hit.path)
                     hits.append(hit)
         return hits
