@@ -10,11 +10,13 @@ import websockets
 import websockets.asyncio.server
 import websockets.datastructures
 import websockets.http11
+from kv_search import SearchEngine
 from uvicorn import Config, Server
 
 from dragonglass.agent import VaultAgent
 from dragonglass.config import Settings, get_settings
 from dragonglass.mcp import create_search_server
+from dragonglass.search import ObsidianHttpBackend
 from dragonglass.server.conversations import ConversationStore
 from dragonglass.server.models import (
     is_embedding_model,
@@ -123,7 +125,9 @@ class DragonglassServer:
         self, settings: Settings, handler: ConnectionHandler
     ) -> None:
 
-        mcp_server = create_search_server(settings)
+        backend = ObsidianHttpBackend(base_url=settings.vector_search_url)
+        engine = SearchEngine(keyword_backend=backend, vector_backend=backend)
+        mcp_server = create_search_server(engine, settings)
 
         def run_uvicorn() -> None:
             config = Config(

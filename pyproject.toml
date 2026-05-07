@@ -5,9 +5,17 @@ description = "LLM-powered Obsidian vault agent with TUI"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-  "litellm >= 1.81.13, < 1.82.7",
-  "textual >= 8.0.0",
+  "kv-search >= 0.2, < 0.3",
+  # search / obsidian backend (dragonglass.search)
   "httpx >= 0.28.1",
+  "pydantic >= 2.12.5",
+  # agent
+  "litellm >= 1.81.13, < 1.82.7",
+  "opencode-ai == 0.1.0a36",
+  "mcp >= 1.26.0",
+  # mcp server
+  "fastmcp >= 3.0.0",
+  # config
   "pydantic >= 2.12.5",
   "pydantic-settings >= 2.14.0",
   "mcp >= 1.27.0",
@@ -60,23 +68,78 @@ include = '\.pyi?$'
 
 [tool.ruff]
 exclude = [
-  ".bzr", ".direnv", ".eggs", ".git", ".hg", ".mypy_cache", ".nox",
-  ".pants.d", ".pytype", ".ruff_cache", ".svn", ".tox", ".venv",
-  "__pypackages__", "_build", "buck-out", "build", "dist",
-  "node_modules", "venv", ".venv",
+  ".bzr",
+  ".direnv",
+  ".eggs",
+  ".git",
+  ".hg",
+  ".mypy_cache",
+  ".nox",
+  ".pants.d",
+  ".pytype",
+  ".ruff_cache",
+  ".svn",
+  ".tox",
+  ".venv",
+  "__pypackages__",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "node_modules",
+  "venv",
+  ".venv",
 ]
 line-length = 88
 target-version = "py311"
 
 [tool.ruff.lint]
 select = [
-  "F", "E", "W", "I", "N", "UP", "PLC", "PLE", "PLW", "PLR",
-  "TRY", "PERF", "RUF",
-  "B", "C4", "FBT", "A", "EM", "ISC", "FA", "G", "PIE", "PYI",
-  "PT", "Q", "RSE", "RET", "SLF", "SIM",
+  "F",
+  "E",
+  "W",
+  "I",
+  "N",
+  "UP",
+  "PLC",
+  "PLE",
+  "PLW",
+  "PLR",
+  "TRY",
+  "PERF",
+  "RUF",
+  "B",
+  "C4",
+  "FBT",
+  "A",
+  "EM",
+  "ISC",
+  "FA",
+  "G",
+  "PIE",
+  "PYI",
+  "PT",
+  "Q",
+  "RSE",
+  "RET",
+  "SLF",
+  "SIM",
 ]
 fixable = ["ALL"]
-ignore = ["E501", "W505", "ISC001", "PLW2901", "N806", "G004", "TRY003", "EM101", "EM102", "FBT001", "FBT002", "FBT003"]
+ignore = [
+  "E501",
+  "W505",
+  "ISC001",
+  "PLW2901",
+  "N806",
+  "G004",
+  "TRY003",
+  "EM101",
+  "EM102",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+]
 
 [tool.ruff.format]
 preview = true
@@ -96,5 +159,5 @@ reportPrivateImportUsage = "none"
 timeout = 30
 timeout_method = "signal"
 markers = [
-    "integration: requires a real installed bundle — run via scripts/test_bundle_integration.py or with -m integration",
+  "integration: requires a real installed bundle — run via scripts/test_bundle_integration.py or with -m integration",
 ]
