@@ -24,7 +24,7 @@ jobs:
       deps_hash: ${{ steps.hash.outputs.deps_hash }}
       tag_exists: ${{ steps.check.outputs.tag_exists }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -51,7 +51,7 @@ jobs:
         python-version: ['3.11', '3.12', '3.13', '3.14']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -83,7 +83,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v8
         with:
@@ -111,7 +111,7 @@ jobs:
         python-version: ['3.11', '3.12', '3.13', '3.14']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
