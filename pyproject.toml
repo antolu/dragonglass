@@ -27,7 +27,7 @@ repository = "https://github.com/antolu/dragonglass"
 
 [project.optional-dependencies]
 dev = ["pre-commit", "ruff", "mypy"]
-test = ["pytest", "pytest-timeout >= 2.1"]
+test = ["pytest", "pytest-timeout >= 2.4.0"]
 fetch = ["mcp-server-fetch >= 0.6.0"]
 
 [project.scripts]
